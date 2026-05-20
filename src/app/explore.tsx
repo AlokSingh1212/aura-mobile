@@ -15,6 +15,7 @@ import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 
 const { height, width } = Dimensions.get("window");
+const BottomTabInset = 80;
 
 export default function ReelsScreen() {
   const { stories, loadingFeed, fetchFeed, addToCart, triggerHaptic } = useStore();
