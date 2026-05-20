@@ -1,181 +1,310 @@
-import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
-import React from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useEffect, useRef, useState } from "react";
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  FlatList, 
+  Dimensions, 
+  TouchableOpacity, 
+  ActivityIndicator,
+  Share,
+  Alert
+} from "react-native";
+import { Video, ResizeMode } from "expo-av";
+import { useStore } from "@/store/useStore";
+import Lucide from "@expo/vector-icons/Ionicons";
 
-import { ExternalLink } from '@/components/external-link';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+const { height, width } = Dimensions.get("window");
 
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
+export default function ReelsScreen() {
+  const { stories, loadingFeed, fetchFeed, addToCart, triggerHaptic } = useStore();
+  const [activeStoryIndex, setActiveStoryIndex] = useState(0);
+
+  useEffect(() => {
+    fetchFeed();
+  }, []);
+
+  const handleLikePress = () => {
+    triggerHaptic("heavy");
+    Alert.alert("Liked Curation", "Syndicated validation broadcast to global mesh.");
   };
-  const theme = useTheme();
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
+  const handleShare = async (item: any) => {
+    triggerHaptic("light");
+    try {
+      await Share.share({
+        message: `Observe AURA Sovereign Curation: ${item.caption || "Atelier masterpiece"}.`,
+      });
+    } catch (error) {
+      console.warn("Share error:", error);
+    }
+  };
+
+  const renderReelItem = ({ item, index }: { item: any; index: number }) => {
+    const isPlayed = index === activeStoryIndex;
+    const mockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4";
+    const videoUrl = item.url && item.url.endsWith(".mp4") ? item.url : mockVideoUrl;
+
+    return (
+      <View style={styles.reelContainer}>
+        {/* Fullscreen Video Loops */}
+        <Video
+          source={{ uri: videoUrl }}
+          rate={1.0}
+          volume={1.0}
+          isMuted={true}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={isPlayed}
+          isLooping
+          style={StyleSheet.absoluteFillObject}
+        />
+
+        <View style={styles.gradientOverlay} />
+
+        {/* Floating Shoppable Card (Top Left) */}
+        {item.artifact && (
+          <TouchableOpacity 
+            style={styles.shoppableCard}
+            activeOpacity={0.9}
+            onPress={() => addToCart(item.artifact)}
+          >
+            <View style={styles.shopIconContainer}>
+              <Lucide name="sparkles" size={14} color="#000" />
+            </View>
+            <View style={styles.shopInfo}>
+              <Text style={styles.shopSub}>Shop The Look</Text>
+              <Text style={styles.shopTitle} numberOfLines={1}>{item.artifact.title}</Text>
+              <Text style={styles.shopPrice}>₹{item.artifact.price?.toLocaleString()}</Text>
+            </View>
+            <Lucide name="chevron-forward" size={14} color="#d4af37" />
+          </TouchableOpacity>
+        )}
+
+        {/* Creator Metadata (Bottom Left) */}
+        <View style={styles.metaContainer}>
+          <View style={styles.creatorRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarChar}>
+                {item.user?.name?.[0]?.toUpperCase() || "S"}
+              </Text>
+            </View>
+            <View>
+              <Text style={styles.creatorName}>{item.user?.name || "Sovereign Merchant"}</Text>
+              {item.location && <Text style={styles.location}>📍 {item.location}</Text>}
+            </View>
+          </View>
+          <Text style={styles.caption} numberOfLines={2}>
+            "{item.caption || "A creative exhibition broadcasting our lineage details. Direct private inquiries welcome."}"
+          </Text>
+        </View>
+
+        {/* Right Interaction Column (Likes, Comments, Share) */}
+        <View style={styles.interactionColumn}>
+          <TouchableOpacity style={styles.iconButton} onPress={handleLikePress}>
+            <View style={styles.iconCircle}>
+              <Lucide name="heart" size={20} color="#fff" />
+            </View>
+            <Text style={styles.iconLabel}>{item.likesCount || 142}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.iconButton} onPress={() => triggerHaptic("light")}>
+            <View style={styles.iconCircle}>
+              <Lucide name="chatbubble-ellipses" size={20} color="#fff" />
+            </View>
+            <Text style={styles.iconLabel}>{item.comments?.length || 18}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.iconButton} onPress={() => handleShare(item)}>
+            <View style={styles.iconCircle}>
+              <Lucide name="paper-plane" size={20} color="#fff" />
+            </View>
+            <Text style={styles.iconLabel}>Share</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const simulatedStories = [
+    { id: "s1", url: "https://assets.mixkit.co/videos/preview/mixkit-fashion-woman-with-silver-glitter-makeup-40149-large.mp4", caption: "Premium Avant-Garde curations for selected nodes.", likesCount: 412, comments: [1,2,3], user: { name: "Gucci Atelier" }, artifact: { title: "Obsidian Gold Vestment", price: 185000 } },
+    { id: "s2", url: "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4", caption: "Bespoke fabrics handpicked in Bengaluru flagships.", likesCount: 654, comments: [1,2], user: { name: "Alok Maison" }, artifact: { title: "Atelier Silk Drape Jacket", price: 245000 } }
+  ];
+
+  const displayStories = stories.length > 0 ? stories : simulatedStories;
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems && viewableItems.length > 0) {
+      setActiveStoryIndex(viewableItems[0].index || 0);
+      triggerHaptic("light");
+    }
+  }).current;
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
-          </ThemedText>
-
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
-
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
-            </ThemedView>
-          </Collapsible>
-
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
-
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
+    <View style={styles.container}>
+      {loadingFeed ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#d4af37" />
+        </View>
+      ) : (
+        <FlatList
+          data={displayStories}
+          renderItem={renderReelItem}
+          keyExtractor={(item) => item.id}
+          pagingEnabled
+          snapToInterval={height}
+          decelerationRate="fast"
+          showsVerticalScrollIndicator={false}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={{ itemVisiblePercentThreshold: 75 }}
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
   container: {
-    maxWidth: MaxContentWidth,
-    flexGrow: 1,
+    flex: 1,
+    backgroundColor: "#000",
   },
-  titleContainer: {
-    gap: Spacing.three,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  centerText: {
-    textAlign: 'center',
+  reelContainer: {
+    width: width,
+    height: height,
+    position: "relative",
   },
-  pressed: {
-    opacity: 0.7,
+  gradientOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: height * 0.4,
+    backgroundColor: "rgba(0,0,0,0.6)",
   },
-  linkButton: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-    justifyContent: 'center',
-    gap: Spacing.one,
-    alignItems: 'center',
+  shoppableCard: {
+    position: "absolute",
+    top: 60,
+    left: 20,
+    right: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.65)",
+    borderWidth: 1,
+    borderColor: "rgba(212,175,55,0.3)",
+    padding: 12,
+    borderRadius: 20,
+    zIndex: 10,
   },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
+  shopIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#d4af37",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  collapsibleContent: {
-    alignItems: 'center',
+  shopInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: "center",
   },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
+  shopSub: {
+    color: "#d4af37",
+    fontSize: 7,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
+  shopTitle: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "bold",
+    marginTop: 2,
+  },
+  shopPrice: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  metaContainer: {
+    position: "absolute",
+    bottom: BottomTabInset + 100,
+    left: 20,
+    right: 80,
+    zIndex: 10,
+  },
+  creatorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#d4af37",
+    borderWidth: 2,
+    borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  avatarChar: {
+    color: "#000",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  creatorName: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14,
+    letterSpacing: 0.5,
+  },
+  location: {
+    color: "#d4af37",
+    fontSize: 8,
+    fontWeight: "700",
+    marginTop: 2,
+    textTransform: "uppercase",
+  },
+  caption: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    lineHeight: 18,
+    fontStyle: "italic",
+  },
+  interactionColumn: {
+    position: "absolute",
+    bottom: BottomTabInset + 100,
+    right: 20,
+    alignItems: "center",
+    gap: 20,
+    zIndex: 10,
+  },
+  iconButton: {
+    alignItems: "center",
+  },
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconLabel: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "bold",
+    marginTop: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });
