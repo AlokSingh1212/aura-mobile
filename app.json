@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "aura-mobile",
+    "name": "AURA",
     "slug": "aura-mobile",
+    "jsEngine": "hermes",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -11,6 +12,7 @@
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.aisastra.aura",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

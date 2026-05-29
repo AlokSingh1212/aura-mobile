@@ -1,16 +1,25 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import React from 'react';
-import { useColorScheme } from 'react-native';
+import { Stack } from "expo-router";
+import React from "react";
+import { StatusBar } from "expo-status-bar";
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+export default function RootLayout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
-    </ThemeProvider>
+    <>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: "fade_from_bottom",
+          contentStyle: { backgroundColor: "#080415" }
+        }}
+      >
+        <Stack.Screen name="index" options={{ animation: "none" }} />
+        <Stack.Screen name="shop" options={{ animation: "none" }} />
+        <Stack.Screen name="cart" options={{ animation: "none" }} />
+        <Stack.Screen name="dashboard" />
+        <Stack.Screen name="account" options={{ animation: "none" }} />
+        <Stack.Screen name="login" options={{ animation: "fade_from_bottom" }} />
+      </Stack>
+    </>
   );
 }
