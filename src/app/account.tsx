@@ -91,7 +91,7 @@ export default function AccountScreen() {
   // UI state hooks
   const [showEditModal, setShowEditModal] = useState(false);
   const [activeGridTab, setActiveGridTab] = useState<"grid" | "reels" | "repeat" | "mentions">("grid");
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingProfile, setLoadingProfile] = useState(false);
   const [availableMaisons, setAvailableMaisons] = useState<any[]>([]);
   const [showSwitcherModal, setShowSwitcherModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -163,7 +163,7 @@ export default function AccountScreen() {
     if (!currentUser) return;
     const fetchProfileData = async () => {
       try {
-        const res = await fetch(`https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/profile?maisonId=${activeMaisonId}`);
+        const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/profile?maisonId=${activeMaisonId}`);
         const data = await res.json();
         if (data.success) {
           if (data.profile) {
@@ -250,7 +250,7 @@ export default function AccountScreen() {
 
   const handleAddStory = async (url: string) => {
     try {
-      const res = await fetch("https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/feed", {
+      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/feed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -280,7 +280,7 @@ export default function AccountScreen() {
     try {
       setLogo(url);
       setEditLogo(url);
-      const res = await fetch("https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/profile", {
+      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -519,7 +519,7 @@ export default function AccountScreen() {
     setShowEditModal(false);
 
     try {
-      const res = await fetch("https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/profile", {
+      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/profile", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -631,7 +631,7 @@ export default function AccountScreen() {
                     if (!name || !name.trim()) return;
                     triggerHaptic("success");
                     try {
-                      const res = await fetch("https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/profile", {
+                      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/profile", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -879,7 +879,7 @@ export default function AccountScreen() {
                       text: "🕸️ Open Web flagship Store",
                       onPress: () => {
                         triggerHaptic("success");
-                        const webUrl = `https://mfqnt-106-219-120-58.run.pinggy-free.link/maison/${username}`;
+                        const webUrl = `https://duhpj-106-219-122-49.run.pinggy-free.link/maison/${username}`;
                         Linking.openURL(webUrl);
                       }
                     },
@@ -906,14 +906,6 @@ export default function AccountScreen() {
           </View>
         </View>
 
-        {loadingProfile ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#00f5ff" />
-            <Text style={styles.loadingText}>
-              Synchronizing with main website...
-            </Text>
-          </View>
-        ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             
             {/* 🔴 PROFILE SUMMARY AND STATS BLOCK */}
@@ -1117,7 +1109,6 @@ export default function AccountScreen() {
             </View>
 
           </ScrollView>
-        )}
 
       </SafeAreaView>
 
@@ -1941,7 +1932,7 @@ export default function AccountScreen() {
                   style={{ width: "100%", backgroundColor: "#00f5ff", paddingVertical: 12, borderRadius: 8, alignItems: "center" }}
                   onPress={() => {
                     triggerHaptic("success");
-                    Linking.openURL("https://mfqnt-106-219-120-58.run.pinggy-free.link/discover/onboarding");
+                    Linking.openURL("https://duhpj-106-219-122-49.run.pinggy-free.link/discover/onboarding");
                   }}
                 >
                   <Text style={{ color: "#000000", fontSize: 11, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1.5 }}>Commence Onboarding</Text>

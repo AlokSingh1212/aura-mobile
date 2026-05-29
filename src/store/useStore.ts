@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import * as Haptics from "expo-haptics";
 
-const API_BASE = "https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile";
+const API_BASE = "https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile";
 
 interface StoreState {
   products: any[];

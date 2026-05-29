@@ -636,7 +636,7 @@ export default function ReelsScreen() {
   const fetchChats = async () => {
     setLoadingChats(true);
     try {
-      const res = await fetch(`https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/chat?userId=user_2pk5xskr&maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/chat?userId=user_2pk5xskr&maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.conversations.length > 0) {
         const mapped = data.conversations.map((c: any, index: number) => {
@@ -664,7 +664,7 @@ export default function ReelsScreen() {
   // ── Business Hub API fetchers ──
   const fetchBusinessStats = async () => {
     try {
-      const res = await fetch(`https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/business-stats?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/business-stats?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.stats) {
         setLiveBusinessStats([
@@ -682,7 +682,7 @@ export default function ReelsScreen() {
   const fetchPromotions = async () => {
     setLoadingPromos(true);
     try {
-      const res = await fetch(`https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/promotions?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/promotions?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.promos?.length > 0) {
         setLivePromos(data.promos);
@@ -696,7 +696,7 @@ export default function ReelsScreen() {
 
   const fetchBroadcasts = async () => {
     try {
-      const res = await fetch(`https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/broadcast?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/broadcast?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success) setLiveBroadcasts(data.broadcasts || []);
     } catch { /* fallback */ }
@@ -704,7 +704,7 @@ export default function ReelsScreen() {
 
   const fetchAds = async () => {
     try {
-      const res = await fetch(`https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/ads?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/ads?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.metrics?.bids?.length > 0) {
         setLiveAds(data.metrics.bids.map((b: any) => ({
@@ -720,7 +720,7 @@ export default function ReelsScreen() {
 
   const sendBroadcast = async (title: string, content: string) => {
     try {
-      const res = await fetch("https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/broadcast", {
+      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/broadcast", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ maisonId: activeMaisonId, title, content, audience: "ALL", type: "TEXT" }),
@@ -732,7 +732,7 @@ export default function ReelsScreen() {
 
   const createPromo = async (code: string, discount: number, type: string) => {
     try {
-      const res = await fetch("https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/promotions", {
+      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/promotions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ maisonId: activeMaisonId, code, discount, type }),
@@ -755,7 +755,7 @@ export default function ReelsScreen() {
   const fetchAutoReply = async () => {
     setLoadingAutoReply(true);
     try {
-      const res = await fetch(`https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/auto-reply?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/auto-reply?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.config) {
         setAutoReplyEnabled(data.config.enabled);
@@ -770,7 +770,7 @@ export default function ReelsScreen() {
 
   const saveAutoReply = async () => {
     try {
-      const res = await fetch("https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/auto-reply", {
+      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/auto-reply", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -831,7 +831,7 @@ export default function ReelsScreen() {
     triggerHaptic("success");
 
     try {
-      const res = await fetch("https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/feed", {
+      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/feed", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -925,7 +925,7 @@ export default function ReelsScreen() {
     } : c));
 
     try {
-      const res = await fetch("https://mfqnt-106-219-120-58.run.pinggy-free.link/api/mobile/chat", {
+      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
