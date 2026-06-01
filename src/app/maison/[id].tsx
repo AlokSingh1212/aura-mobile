@@ -24,7 +24,7 @@ export default function MaisonProfileScreen() {
     p => p.maisonId === id || p.maison?.id === id || (id === "rare_raven" && (!p.maisonId || p.maison?.id === "rare_raven"))
   );
 
-  const maisonName = id === "rare_raven" ? "Rare Raven" : id ? id.replace(/-/g, " ").toUpperCase() : "AURA Maison";
+  const maisonName = id === "rare_raven" ? "Rare Raven" : id ? id.replace(/-/g, " ").toUpperCase() : "AURAGRAM Maison";
   const initials = maisonName.substring(0, 2).toUpperCase();
 
   const handleProductPress = (itemId: string) => {
@@ -74,7 +74,7 @@ export default function MaisonProfileScreen() {
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
           <Text style={styles.maisonTitle}>{maisonName}</Text>
-          <Text style={styles.directorName}>Sovereign Pro Director Curator</Text>
+          <Text style={styles.directorName}>Director Curator</Text>
 
           {/* Maison Telemetry stats */}
           <View style={styles.statsRow}>
@@ -85,7 +85,7 @@ export default function MaisonProfileScreen() {
             <View style={styles.statDivider} />
             <View style={styles.statCell}>
               <Text style={styles.statVal}>9.8</Text>
-              <Text style={styles.statLabel}>Aura Level</Text>
+              <Text style={styles.statLabel}>AuraGram Level</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statCell}>
@@ -99,7 +99,7 @@ export default function MaisonProfileScreen() {
         <View style={styles.catalogContainer}>
           <View style={styles.catalogHeader}>
             <Lucide name="apps" size={16} color="#00f5ff" />
-            <Text style={styles.catalogSectionTitle}>Sovereign Curations</Text>
+            <Text style={styles.catalogSectionTitle}>Curated Collections</Text>
           </View>
 
           <FlatList

@@ -18,6 +18,7 @@ export default function RootLayout() {
         <Stack.Screen name="cart" options={{ animation: "none" }} />
         <Stack.Screen name="dashboard" />
         <Stack.Screen name="account" options={{ animation: "none" }} />
+        <Stack.Screen name="profile/[username]" options={{ animation: "fade_from_bottom" }} />
         <Stack.Screen name="login" options={{ animation: "fade_from_bottom" }} />
       </Stack>
     </>

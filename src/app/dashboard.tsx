@@ -65,7 +65,8 @@ export default function DashboardScreen() {
     products, loadingProducts, fetchProducts, createProduct,
     orders, loadingOrders, fetchOrders,
     triggerHaptic,
-    activeMaisonId 
+    activeMaisonId,
+    activeProfile
   } = useStore();
 
   const [activeSegment, setActiveSegment] = useState<"logistics" | "inventory" | "orders">("inventory");
@@ -132,7 +133,7 @@ export default function DashboardScreen() {
       triggerHaptic("success");
       setWarehouseModalVisible(false);
       setWForm({ name: "", countryCode: "IN", city: "Bengaluru", stateCode: "KA", complianceId: "", phone: "" });
-      alert("Sovereign Physical Node Successfully Hydrated!");
+      alert("Profile successfully synced!");
     } else {
       triggerHaptic("heavy");
       alert("Failed to synchronize node.");
@@ -174,7 +175,9 @@ export default function DashboardScreen() {
   // Aggregates for Inventory mirroring web stats exactly
   const maisonProducts = products.filter(p => p.maisonId === maisonId || p.maison?.id === maisonId);
   const totalVaultValue = maisonProducts.reduce((sum, p) => sum + (p.price || 0), 0);
-  const maxAuraScore = maisonProducts.length > 0 ? "9.8" : "0.0";
+  const maxAuraGramScore = activeProfile?.auragramScore 
+    ? activeProfile.auragramScore.toFixed(1) 
+    : (maisonProducts.length > 0 ? "9.8" : "0.0");
 
   // RENDERS
   const renderInventoryHeader = () => (
@@ -196,7 +199,7 @@ export default function DashboardScreen() {
           </Text>
           
           <Text style={styles.oracleDescription}>
-            Global telemetry indicates a shift toward quiet luxury and earthy tones. AURA recommends surfacing your <Text style={styles.highlightText}>Heritage Calfskin Tote</Text> to targeted collectors in the mesh.
+            Global telemetry indicates a shift toward quiet luxury and earthy tones. AURAGRAM recommends surfacing your <Text style={styles.highlightText}>Heritage Calfskin Tote</Text> to targeted collectors in the network.
           </Text>
 
           <View style={styles.oracleButtonsRow}>
@@ -303,6 +306,53 @@ export default function DashboardScreen() {
         </View>
       </View>
 
+      {/* 📈 DYNAMIC VERHULST LOGISTIC AUDIENCE FORECAST */}
+      {(() => {
+        const p0 = activeProfile?.followersCount || 10;
+        const k = 50000; // Carrying capacity
+        const rVal = 0.12; // Growth constant velocity (12% daily)
+        
+        const getProjectedFollowers = (days: number) => {
+          const ert = Math.exp(rVal * days);
+          const projection = (k * p0 * ert) / (k + p0 * (ert - 1));
+          return Math.round(projection);
+        };
+
+        const day5 = getProjectedFollowers(5);
+        const day15 = getProjectedFollowers(15);
+        const day30 = getProjectedFollowers(30);
+
+        return (
+          <View style={styles.forecastCard}>
+            <View style={styles.forecastHeader}>
+              <Lucide name="analytics-outline" size={18} color="#00f5ff" />
+              <Text style={styles.forecastTitle}>Verhulst Logistic Audience Forecast</Text>
+            </View>
+            <Text style={styles.forecastDesc}>
+              Predictive mathematical model projecting growth trajectory based on active category carrying capacity (K = 50k) and follow velocity dynamics.
+            </Text>
+            
+            <View style={styles.forecastMetricsGrid}>
+              <View style={styles.forecastMetricCol}>
+                <Text style={styles.forecastDayLabel}>Day 5</Text>
+                <Text style={styles.forecastDayValue}>{day5.toLocaleString()}</Text>
+                <Text style={styles.forecastGrowthPct}>+{Math.round(((day5 - p0)/p0)*100)}% reach</Text>
+              </View>
+              <View style={styles.forecastMetricCol}>
+                <Text style={styles.forecastDayLabel}>Day 15</Text>
+                <Text style={styles.forecastDayValue}>{day15.toLocaleString()}</Text>
+                <Text style={styles.forecastGrowthPct}>+{Math.round(((day15 - p0)/p0)*100)}% reach</Text>
+              </View>
+              <View style={styles.forecastMetricCol}>
+                <Text style={styles.forecastDayLabel}>Day 30</Text>
+                <Text style={styles.forecastDayValue}>{day30.toLocaleString()}</Text>
+                <Text style={styles.forecastGrowthPct}>+{Math.round(((day30 - p0)/p0)*100)}% reach</Text>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
+
       {/* Vault Metrics */}
       <View style={styles.statsRow}>
         <View style={styles.statBox}>
@@ -323,10 +373,10 @@ export default function DashboardScreen() {
         </View>
         <View style={[styles.statBox, styles.statBoxPeak]}>
           <View style={styles.statHeader}>
-            <Text style={[styles.statLabel, styles.statLabelPeak]}>Maison Aura Peak</Text>
+            <Text style={[styles.statLabel, styles.statLabelPeak]}>Maison AuraGram Peak</Text>
             <Lucide name="flash" size={17} color="#00f5ff" />
           </View>
-          <Text style={[styles.statVal, styles.statValPeak]}>{maxAuraScore}</Text>
+          <Text style={[styles.statVal, styles.statValPeak]}>{maxAuraGramScore}</Text>
         </View>
       </View>
 
@@ -378,7 +428,7 @@ export default function DashboardScreen() {
               </View>
             )}
           </View>
-          <Text style={styles.sovereignIdText}>Sovereign ID: AR-{item.id.substring(0, 8).toUpperCase()}</Text>
+          <Text style={styles.sovereignIdText}>Profile ID: AR-{item.id.substring(0, 8).toUpperCase()}</Text>
           <View style={styles.engagementRow}>
             <Text style={styles.viewsCount}>84 </Text>
             <Text style={styles.viewsLabel}>Unique Node Views</Text>
@@ -415,7 +465,7 @@ export default function DashboardScreen() {
 
       {/* Splits courier tracking */}
       <View style={styles.splitBox}>
-        <Text style={styles.splitTitle}>Sovereign Parcel Nodes Splits</Text>
+        <Text style={styles.splitTitle}>Parcel Node Splits</Text>
         {item.splits.map((s: any, idx: number) => {
           const isDone = s.status === "COMPLETED";
           return (
@@ -1634,5 +1684,63 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  forecastCard: {
+    backgroundColor: "#0b071e",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 20,
+  },
+  forecastHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  forecastTitle: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 0.5,
+  },
+  forecastDesc: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 16,
+  },
+  forecastMetricsGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.03)",
+  },
+  forecastMetricCol: {
+    alignItems: "center",
+    flex: 1,
+  },
+  forecastDayLabel: {
+    color: "rgba(255, 255, 255, 0.35)",
+    fontSize: 10,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  forecastDayValue: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 2,
+  },
+  forecastGrowthPct: {
+    color: "#00f5ff",
+    fontSize: 10,
+    fontWeight: "bold",
   },
 });

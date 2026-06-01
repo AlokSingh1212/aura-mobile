@@ -114,7 +114,7 @@ export default function LoginScreen() {
         });
         if (res.success) {
           triggerHaptic("success");
-          Alert.alert("Account Minted", "Welcome to the AURA Social Mesh! Your personal Maison has been seeded.");
+          Alert.alert("Account Minted", "Welcome to the AURAGRAM Social Network! Your personal Maison has been seeded.");
           router.replace("/");
         } else {
           triggerHaptic("heavy");
@@ -141,7 +141,7 @@ export default function LoginScreen() {
         {/* Brand Header */}
         <View style={styles.header}>
           <Text style={styles.brandTitle}>A U R A</Text>
-          <Text style={styles.brandSubtitle}>SOVEREIGN SOCIAL MESH</Text>
+          <Text style={styles.brandSubtitle}>PREMIUM SOCIAL NETWORK</Text>
         </View>
 
         {/* Step Indicator dots for Signup Wizard */}
@@ -277,7 +277,7 @@ export default function LoginScreen() {
                 /* STEP 2: Social metadata details */
                 <View style={styles.wizardStepContainer}>
                   <Text style={styles.stepTitle}>Personal Details</Text>
-                  <Text style={styles.stepSubtitle}>AURA keeps your data secure. These are never shared publicly.</Text>
+                  <Text style={styles.stepSubtitle}>AURAGRAM keeps your data secure. These are never shared publicly.</Text>
 
                   <View style={styles.inputContainer}>
                     <Lucide name="calendar-outline" size={20} color="#8e8e8e" style={styles.inputIcon} />
@@ -366,7 +366,7 @@ export default function LoginScreen() {
         {/* Footer switch layout */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            {isLogin ? "New to AURA?" : "Already have an account?"}
+            {isLogin ? "New to AURAGRAM?" : "Already have an account?"}
           </Text>
           <TouchableOpacity
             onPress={() => {

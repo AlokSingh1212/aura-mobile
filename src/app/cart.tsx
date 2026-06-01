@@ -17,7 +17,7 @@ import { router } from "expo-router";
 const { width } = Dimensions.get("window");
 
 export default function CartScreen() {
-  const { cart, removeFromCart, triggerHaptic } = useStore();
+  const { cart, removeFromCart, triggerHaptic, activeProfile, activeMaisonId } = useStore();
   const insets = useSafeAreaInsets();
 
   const handleRemove = (id: string) => {
@@ -44,7 +44,7 @@ export default function CartScreen() {
         <Image source={{ uri: imageUrl }} style={styles.image} />
         
         <View style={styles.info}>
-          <Text style={styles.maison} numberOfLines={1}>{item.maison?.name || "AURA Maison"}</Text>
+          <Text style={styles.maison} numberOfLines={1}>{item.maison?.name || "AURAGRAM Maison"}</Text>
           <Text style={styles.title} numberOfLines={1}>{item.title}</Text>
           <Text style={styles.price}>₹{item.price?.toLocaleString()}</Text>
         </View>
@@ -83,7 +83,7 @@ export default function CartScreen() {
                 <Text style={styles.rowVal}>₹{calculateSubtotal().toLocaleString()}</Text>
               </View>
               <View style={styles.row}>
-                <Text style={styles.rowLabel}>Sovereign Duty & GST (18%)</Text>
+                <Text style={styles.rowLabel}>Import Duty & GST (18%)</Text>
                 <Text style={styles.rowVal}>₹{calculateTax().toLocaleString()}</Text>
               </View>
               <View style={styles.row}>
@@ -101,7 +101,7 @@ export default function CartScreen() {
                 activeOpacity={0.9}
                 onPress={() => {
                   triggerHaptic("heavy");
-                  alert("Securing sovereign clearance node transaction...");
+                  alert("Securing customs clearance... transaction...");
                 }}
               >
                 <Text style={styles.checkoutText}>Authenticate Purchase</Text>
@@ -138,11 +138,17 @@ export default function CartScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/account"); }}>
-          <View style={styles.profileTabCircle}>
-            <Image 
-              source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80" }} 
-              style={styles.profileTabImg} 
-            />
+          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "#00f5ff", overflow: "hidden" }]}>
+            {activeProfile?.logo ? (
+              <Image 
+                source={{ uri: activeProfile.logo }} 
+                style={styles.profileTabImg} 
+              />
+            ) : (
+              <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
+                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId[0]?.toUpperCase() || "A"}</Text>
+              </View>
+            )}
             <View style={styles.profileActiveIndicator} />
           </View>
         </TouchableOpacity>

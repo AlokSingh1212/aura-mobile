@@ -40,7 +40,7 @@ const CATEGORY_ITEMS = [
 const HERO_SLIDES = [
   {
     img: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=1200",
-    title: "THE SOVEREIGN",
+    title: "THE VERIFIED",
     subtitle: "DISCOVERY NODE",
     desc: "Our algorithm synthesizes global craftsmanship with your aesthetic node, curating artifacts that transcend mere possession.",
     link: "/maison/alok-maison"
@@ -62,7 +62,7 @@ const HERO_SLIDES = [
 ];
 
 export default function ShopScreen() {
-  const { products, loadingProducts, fetchProducts, addToCart, triggerHaptic, activeMaisonId } = useStore();
+  const { products, loadingProducts, fetchProducts, addToCart, triggerHaptic, activeMaisonId, activeProfile, loyaltyPoints } = useStore();
   const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState("For You");
@@ -124,13 +124,13 @@ export default function ShopScreen() {
     return matchesCategory && matchesSearch;
   });
 
-  const highAuraProducts = products.filter(p => (p.auraScore || p.aura || 9.0) >= 9.5);
+  const highAuraGramProducts = products.filter(p => (p.auragramScore || p.auragram || 9.0) >= 9.5);
 
   const renderProductItem = ({ item }: { item: any }) => {
     const imageUrl = item.images?.[0] || "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600";
     const maisonName = item.maison?.name || "Rare Raven";
     const targetMaisonId = item.maison?.id || "rare_raven";
-    const auraScore = item.auraScore || item.aura || 9.8;
+    const auragramScore = item.auragramScore || item.auragram || 9.8;
     const rating = item.rating || 4.9;
 
     return (
@@ -141,10 +141,10 @@ export default function ShopScreen() {
       >
         <View style={styles.imageContainer}>
           <Image source={{ uri: imageUrl }} style={styles.image} />
-          {/* Top-Left Aura Tag bubble identical to website */}
-          <View style={styles.auraBadge}>
+          {/* Top-Left AuraGram Tag bubble identical to website */}
+          <View style={styles.auragramBadge}>
             <Lucide name="flash" size={12} color="#00f5ff" />
-            <Text style={styles.auraScoreText}>{auraScore}</Text>
+            <Text style={styles.auragramScoreText}>{auragramScore}</Text>
           </View>
 
           {/* Quick acquisition action overlay button */}
@@ -232,13 +232,37 @@ export default function ShopScreen() {
         </View>
       </View>
 
-      {/* 🧬 AURA-AI PERSONALIZED RECOMMENDATIONS CAROUSEL ("Alok, still looking for these?") */}
-      {highAuraProducts.length > 0 && (
+      {/* 🎟️ PREMIUM LOYALTY PORTAL CROSSOVER BANNER */}
+      <TouchableOpacity 
+        style={styles.premiumLoyaltyBanner} 
+        activeOpacity={0.9}
+        onPress={() => {
+          triggerHaptic("medium");
+          router.push("/account/loyalty-vault");
+        }}
+      >
+        <View style={styles.loyaltyBannerLeft}>
+          <Lucide name="ribbon-sharp" size={20} color="#00f5ff" />
+          <View style={{ marginLeft: 12 }}>
+            <Text style={styles.loyaltyBannerTitle}>AURA PREMIUM LOYALTY MATRIX</Text>
+            <Text style={styles.loyaltyBannerSub}>
+              You have <Text style={styles.loyaltyBannerPoints}>{loyaltyPoints?.toLocaleString() || "0"} Credits</Text> available
+            </Text>
+          </View>
+        </View>
+        <View style={styles.loyaltyBannerRight}>
+          <Text style={styles.loyaltyBannerAction}>REDEEM</Text>
+          <Lucide name="chevron-forward" size={14} color="#00f5ff" />
+        </View>
+      </TouchableOpacity>
+
+      {/* 🧬 AURAGRAM-AI PERSONALIZED RECOMMENDATIONS CAROUSEL ("Alok, still looking for these?") */}
+      {highAuraGramProducts.length > 0 && (
         <View style={styles.personalizedSection}>
           <View style={styles.personalizedHeader}>
             <View style={styles.personalizedSubtitleRow}>
               <Lucide name="finger-print" size={17} color="#00f5ff" style={styles.pulseIcon} />
-              <Text style={styles.personalizedSubtitle}>AURA-AI Personalized Curation</Text>
+              <Text style={styles.personalizedSubtitle}>AURAGRAM-AI Personalized Curation</Text>
             </View>
             <Text style={styles.personalizedTitle}>Alok, still looking for these?</Text>
             <Text style={styles.personalizedDesc}>
@@ -253,9 +277,9 @@ export default function ShopScreen() {
             decelerationRate="fast"
             contentContainerStyle={styles.personalizedScroll}
           >
-            {highAuraProducts.map((item) => {
+            {highAuraGramProducts.map((item) => {
               const imageUrl = item.images?.[0] || "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600";
-              const auraScore = item.auraScore || item.aura || 9.8;
+              const auragramScore = item.auragramScore || item.auragram || 9.8;
               return (
                 <TouchableOpacity 
                   key={`personal-${item.id}`}
@@ -265,9 +289,9 @@ export default function ShopScreen() {
                 >
                   <View style={styles.personalizedImgContainer}>
                     <Image source={{ uri: imageUrl }} style={styles.personalizedImg} />
-                    <View style={styles.personalAuraBadge}>
+                    <View style={styles.personalAuraGramBadge}>
                       <Lucide name="sparkles" size={11} color="#00f5ff" />
-                      <Text style={styles.personalAuraText}>{auraScore}</Text>
+                      <Text style={styles.personalAuraGramText}>{auragramScore}</Text>
                     </View>
                   </View>
                   <View style={styles.personalMeta}>
@@ -329,7 +353,7 @@ export default function ShopScreen() {
       <View style={styles.trustGrid}>
         <View style={styles.trustCard}>
           <Lucide name="shield-checkmark" size={34} color="#00f5ff" />
-          <Text style={styles.trustTitle}>Sovereign{"\n"}Identity</Text>
+          <Text style={styles.trustTitle}>Verified{"\n"}Identity</Text>
           <Text style={styles.trustText}>
             Cryptographic validation of every artisan and artifact in our network.
           </Text>
@@ -338,7 +362,7 @@ export default function ShopScreen() {
           <Lucide name="globe" size={34} color="#00f5ff" />
           <Text style={styles.trustTitle}>Global{"\n"}Discovery</Text>
           <Text style={styles.trustText}>
-            Cross-border acquisitions secured by the AURA Neural Ledger.
+            Cross-border acquisitions secured by the AURAGRAM Neural Ledger.
           </Text>
         </View>
         <View style={styles.trustCard}>
@@ -354,12 +378,12 @@ export default function ShopScreen() {
       <View style={styles.globalFooter}>
         {/* Massive backdrop typography watermark */}
         <View style={styles.watermarkBox}>
-          <Text style={styles.watermarkText}>AURA</Text>
+          <Text style={styles.watermarkText}>AURAGRAM</Text>
         </View>
 
         <View style={styles.footerContent}>
-          <Text style={styles.footerLogo}>AURA</Text>
-          <Text style={styles.footerTag}>DIRECT SOVEREIGN{"\n"}LUXURY ARCHIVE</Text>
+          <Text style={styles.footerLogo}>AURAGRAM</Text>
+          <Text style={styles.footerTag}>DIRECT VERIFIED{"\n"}LUXURY ARCHIVE</Text>
 
           {/* Socials Row */}
           <View style={styles.socialsRow}>
@@ -375,7 +399,7 @@ export default function ShopScreen() {
             <View style={styles.dirCol}>
               <Text style={styles.dirHeader}>Ecosystem</Text>
               <Text style={styles.dirItem}>Marketplace</Text>
-              <Text style={styles.dirItem}>AURA Feeds</Text>
+              <Text style={styles.dirItem}>AURAGRAM Feeds</Text>
               <Text style={styles.dirItem}>Discover</Text>
               <Text style={styles.dirItem}>The Vault</Text>
             </View>
@@ -388,10 +412,10 @@ export default function ShopScreen() {
           </View>
 
           <View style={styles.footerBottom}>
-            <Text style={styles.copyright}>© 2026 AURA SOVEREIGN. ALL RIGHTS RESERVED.</Text>
+            <Text style={styles.copyright}>© 2026 AURAGRAM VERIFIED. ALL RIGHTS RESERVED.</Text>
             <View style={styles.footerPowered}>
               <Text style={styles.poweredLabel}>Powered by</Text>
-              <Text style={styles.poweredBrand}>AURA</Text>
+              <Text style={styles.poweredBrand}>AURAGRAM</Text>
             </View>
           </View>
         </View>
@@ -403,44 +427,6 @@ export default function ShopScreen() {
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
         
-        {/* 🎛️ FLIPKART-STYLE AURA SWITCHER BAR */}
-        {!collapsed && (
-          <View style={styles.topSwitcherBar}>
-            <TouchableOpacity 
-              style={[styles.switcherTab, styles.switcherTabActive]}
-              activeOpacity={0.8}
-              onPress={() => triggerHaptic("light")}
-            >
-              <Lucide name="sparkles" size={17} color="#000" />
-              <Text style={styles.switcherTabTextActive}>AURA</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.switcherTab}
-              activeOpacity={0.8}
-              onPress={() => {
-                triggerHaptic("light");
-                router.push("/" as any);
-              }}
-            >
-              <Lucide name="play" size={17} color="#fff" />
-              <Text style={styles.switcherTabText}>Stories</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.switcherTab}
-              activeOpacity={0.8}
-              onPress={() => {
-                triggerHaptic("light");
-                router.push("/account/loyalty-vault");
-              }}
-            >
-              <Lucide name="ribbon" size={17} color="#fff" />
-              <Text style={styles.switcherTabText}>Loyalty</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* 📍 TELEMETRY / LOCATION NODE BAR */}
         {!collapsed && (
           <View style={styles.telemetryBar}>
@@ -454,7 +440,7 @@ export default function ShopScreen() {
             
             <View style={styles.curationPointsBox}>
               <Lucide name="flash" size={15} color="#00f5ff" />
-              <Text style={styles.pointsText}>1,240</Text>
+              <Text style={styles.pointsText}>{loyaltyPoints?.toLocaleString() || "0"}</Text>
             </View>
           </View>
         )}
@@ -524,7 +510,7 @@ export default function ShopScreen() {
           {loadingProducts ? (
             <View style={styles.loaderContainer}>
               <ActivityIndicator size="large" color="#00f5ff" />
-              <Text style={styles.loaderText}>Syncing Neural Mesh...</Text>
+              <Text style={styles.loaderText}>Syncing Premium Feed...</Text>
             </View>
           ) : (
             <FlatList
@@ -578,14 +564,14 @@ export default function ShopScreen() {
 
         <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/account"); }}>
           <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "#00f5ff", overflow: "hidden" }]}>
-            {activeMaisonId === "aloksingh" ? (
+            {activeProfile?.logo ? (
               <Image 
-                source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80" }} 
+                source={{ uri: activeProfile.logo }} 
                 style={styles.profileTabImg} 
               />
             ) : (
               <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
-                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId[0]?.toUpperCase() || "R"}</Text>
+                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId[0]?.toUpperCase() || "A"}</Text>
               </View>
             )}
             <View style={styles.profileActiveIndicator} />
@@ -646,7 +632,7 @@ const styles = StyleSheet.create({
     height: "100%",
     resizeMode: "cover",
   },
-  auraBadge: {
+  auragramBadge: {
     position: "absolute",
     top: 12,
     left: 12,
@@ -660,7 +646,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     gap: 3,
   },
-  auraScoreText: {
+  auragramScoreText: {
     color: "#fff",
     fontSize: 11.5,
     fontWeight: "bold",
@@ -960,7 +946,7 @@ const styles = StyleSheet.create({
     height: "100%",
     resizeMode: "cover",
   },
-  personalAuraBadge: {
+  personalAuraGramBadge: {
     position: "absolute",
     top: 10,
     left: 10,
@@ -972,7 +958,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     gap: 3,
   },
-  personalAuraText: {
+  personalAuraGramText: {
     color: "#fff",
     fontSize: 10.5,
     fontWeight: "bold",
@@ -1207,42 +1193,56 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     letterSpacing: -0.5,
   },
-  topSwitcherBar: {
-    flexDirection: "row",
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 10,
-    backgroundColor: "#080415",
-  },
-  switcherTab: {
-    flex: 1,
+  premiumLoyaltyBanner: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 16,
-    backgroundColor: "#0d0d0d",
+    justifyContent: "space-between",
+    backgroundColor: "#0b071e",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.04)",
+    borderColor: "rgba(0, 245, 255, 0.15)",
+    borderRadius: 20,
+    marginHorizontal: 24,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: "#00f5ff",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
   },
-  switcherTabActive: {
-    backgroundColor: "#00f5ff",
-    borderColor: "#00f5ff",
+  loyaltyBannerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-  switcherTabText: {
-    color: "rgba(255, 255, 255, 0.7)",
-    fontSize: 13,
+  loyaltyBannerTitle: {
+    color: "rgba(255, 255, 255, 0.4)",
+    fontSize: 10,
     fontWeight: "bold",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1.5,
   },
-  switcherTabTextActive: {
-    color: "#000",
-    fontSize: 13,
+  loyaltyBannerSub: {
+    color: "#ffffff",
+    fontSize: 13.5,
+    marginTop: 2,
+  },
+  loyaltyBannerPoints: {
+    color: "#00f5ff",
     fontWeight: "bold",
-    textTransform: "uppercase",
+  },
+  loyaltyBannerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0, 245, 255, 0.08)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(0, 245, 255, 0.2)",
+  },
+  loyaltyBannerAction: {
+    color: "#00f5ff",
+    fontSize: 11.5,
+    fontWeight: "bold",
     letterSpacing: 0.5,
   },
   telemetryBar: {

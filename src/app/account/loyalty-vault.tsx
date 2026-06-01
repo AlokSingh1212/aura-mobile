@@ -70,15 +70,15 @@ export default function LoyaltyVaultScreen() {
                 triggerHaptic("success");
                 Alert.alert(
                   "Vault Secured!",
-                  `Successfully minted coupon code: ${res.couponCode || "AURA-PRO-GOLD"}`
+                  `Successfully minted coupon code: ${res.couponCode || "AURAGRAM-PRO-GOLD"}`
                 );
                 setSelectedBenefit(null);
                 fetchLoyaltyInfo(userId);
               } else {
-                Alert.alert("Redemption Issue", "Server was unable to process your sovereign vault transaction.");
+                Alert.alert("Redemption Issue", "Server was unable to process your verified vault transaction.");
               }
             } catch {
-              Alert.alert("Network Failure", "Failed to connect to the AURA Loyalty node.");
+              Alert.alert("Network Failure", "Failed to connect to the AURAGRAM Loyalty node.");
             } finally {
               setRedeeming(false);
             }
@@ -100,7 +100,7 @@ export default function LoyaltyVaultScreen() {
     {
       id: "b2",
       title: "Paris Fashion Week Seat",
-      desc: "Front-row early access reservation at the sovereign showcase.",
+      desc: "Front-row early access reservation at the verified showcase.",
       cost: 2500,
       icon: "ribbon-outline",
       type: "EARLY_ACCESS"
@@ -176,7 +176,7 @@ export default function LoyaltyVaultScreen() {
               triggerHaptic("light");
               Alert.alert(
                 "Loyalty Ledger",
-                "Your AURA Curation Credits are accumulated across verified marketplace activities and catalog sorting interactions. Credits can be traded for premium early-access slots and bespoke atelier coupons."
+                "Your AURAGRAM Curation Credits are accumulated across verified marketplace activities and catalog sorting interactions. Credits can be traded for premium early-access slots and bespoke atelier coupons."
               );
             }}
           >
@@ -190,7 +190,7 @@ export default function LoyaltyVaultScreen() {
             <View style={styles.tierHeader}>
               <View style={styles.tierBadge}>
                 <Lucide name="sparkles" size={17} color="#000" />
-                <Text style={styles.tierBadgeText}>{loyaltyElite ? "ELITE CURATOR" : "SOVEREIGN MEMBER"}</Text>
+                <Text style={styles.tierBadgeText}>{loyaltyElite ? "ELITE CURATOR" : "VERIFIED MEMBER"}</Text>
               </View>
               <Lucide name="infinite" size={26} color="#00f5ff" />
             </View>
@@ -270,7 +270,7 @@ export default function LoyaltyVaultScreen() {
             {/* REDEEM TAB */}
             {activeTab === "redeem" && (
               <View style={styles.tabContent}>
-                <Text style={styles.sectionHeading}>Mint Sovereign Coupons</Text>
+                <Text style={styles.sectionHeading}>Mint Verified Coupons</Text>
                 <View style={styles.benefitsGrid}>
                   {REDEEMABLE_BENEFITS.map((benefit) => {
                     const isAffordable = loyaltyPoints >= benefit.cost;
@@ -307,7 +307,7 @@ export default function LoyaltyVaultScreen() {
                   <View style={styles.emptyLogsCard}>
                     <Lucide name="receipt-outline" size={34} color="rgba(255,255,255,0.2)" />
                     <Text style={styles.emptyLogsText}>{"No reward transactions recorded."}</Text>
-                    <Text style={styles.emptyLogsSub}>Engage in verified mesh transactions to populate this ledger.</Text>
+                    <Text style={styles.emptyLogsSub}>Engage in verified transactions to populate this ledger.</Text>
                   </View>
                 ) : (
                   rewardLogs.map((log: any) => {
@@ -348,7 +348,7 @@ export default function LoyaltyVaultScreen() {
 
               <Text style={styles.drawerDesc}>{selectedBenefit.desc}</Text>
               <Text style={styles.drawerTelemetryText}>
-                {"Every redemption initiates a validated cryptographic block update inside our AURA database. Coupon is generated immediately and remains stackable."}
+                {"Every redemption initiates a validated cryptographic block update inside our AURAGRAM database. Coupon is generated immediately and remains stackable."}
               </Text>
 
               <View style={styles.drawerActions}>

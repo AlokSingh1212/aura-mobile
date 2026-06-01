@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "AURA",
-    "slug": "aura-mobile",
+    "name": "AURAGRAM",
+    "slug": "auragram-mobile",
     "jsEngine": "hermes",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "auramobile",
+    "scheme": "auragrammobile",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
-      "package": "com.aisastra.aura",
+      "package": "com.aisastra.auragram",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -43,6 +43,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7915ac91-71f7-4ec5-9c19-310cce94419e"
+      }
+    },
+    "owner": "aloksingh1212"
   }
 }

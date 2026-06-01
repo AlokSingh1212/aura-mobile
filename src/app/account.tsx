@@ -13,9 +13,11 @@ import {
   FlatList,
   ActivityIndicator,
   StatusBar,
-  Linking
+  Linking,
+  Share
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
@@ -48,9 +50,11 @@ export default function AccountScreen() {
     fetchProducts,
     currentUser,
     updateProfile,
-    authLogOut
+    authLogOut,
+    addInstaStorySlide
   } = useStore();
   const insets = useSafeAreaInsets();
+  const [presetPosts, setPresetPosts] = useState(PRESET_POSTS);
 
   // 👥 Personal Details states
   const [showPersonalDetails, setShowPersonalDetails] = useState(false);
@@ -67,6 +71,11 @@ export default function AccountScreen() {
   const [editLogo, setEditLogo] = useState<string | null>(null);
   const [profileName, setProfileName] = useState(activeMaisonId === "aloksingh" ? "Alok Singh" : "Rare Raven");
   const [category, setCategory] = useState(activeMaisonId === "aloksingh" ? "Personal Profile" : "Clothing (Brand)");
+
+  // 🧠 Profile-Centric Logical Helpers
+  const isPersonalProfile = category === "Personal Profile" || category?.toLowerCase().includes("personal");
+  const isCreatorProfile = category?.toLowerCase().includes("creator") || category?.toLowerCase().includes("stylist") || category?.toLowerCase().includes("influencer") || category?.toLowerCase().includes("artist");
+  const isBusinessProfile = !isPersonalProfile && !isCreatorProfile;
   const [bioText, setBioText] = useState(
     activeMaisonId === "aloksingh" 
       ? "Founder of AURA. Brutalist Web Architect & Sovereign Creator."
@@ -90,7 +99,7 @@ export default function AccountScreen() {
 
   // UI state hooks
   const [showEditModal, setShowEditModal] = useState(false);
-  const [activeGridTab, setActiveGridTab] = useState<"grid" | "reels" | "repeat" | "mentions">("grid");
+  const [activeGridTab, setActiveGridTab] = useState<"posts" | "reels" | "products" | "collabs">("posts");
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [availableMaisons, setAvailableMaisons] = useState<any[]>([]);
   const [showSwitcherModal, setShowSwitcherModal] = useState(false);
@@ -130,6 +139,10 @@ export default function AccountScreen() {
   const [aiTitle, setAiTitle] = useState("");
   const [aiPrice, setAiPrice] = useState("");
 
+  // 📤 Share Profile states
+  const [showShareProfileSheet, setShowShareProfileSheet] = useState(false);
+  const [shareSearch, setShareSearch] = useState("");
+
   // Live simulator states
   const [liveComments, setLiveComments] = useState<any[]>([]);
   const [viewerCount, setViewerCount] = useState(1280);
@@ -163,7 +176,7 @@ export default function AccountScreen() {
     if (!currentUser) return;
     const fetchProfileData = async () => {
       try {
-        const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/profile?maisonId=${activeMaisonId}`);
+        const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/profile?maisonId=${activeMaisonId}`);
         const data = await res.json();
         if (data.success) {
           if (data.profile) {
@@ -250,7 +263,7 @@ export default function AccountScreen() {
 
   const handleAddStory = async (url: string) => {
     try {
-      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/feed", {
+      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/feed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -280,7 +293,7 @@ export default function AccountScreen() {
     try {
       setLogo(url);
       setEditLogo(url);
-      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/profile", {
+      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -519,7 +532,7 @@ export default function AccountScreen() {
     setShowEditModal(false);
 
     try {
-      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/profile", {
+      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/profile", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -598,7 +611,8 @@ export default function AccountScreen() {
 
   const handleShareProfile = () => {
     triggerHaptic("medium");
-    Alert.alert("Share Profile", `Your AURA profile is ready to share:\n\nLink: https://aura.luxury/${username}`);
+    setShareSearch("");
+    setShowShareProfileSheet(true);
   };
 
   const handleSwitchMaison = async (id: string) => {
@@ -631,7 +645,7 @@ export default function AccountScreen() {
                     if (!name || !name.trim()) return;
                     triggerHaptic("success");
                     try {
-                      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/profile", {
+                      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/profile", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -685,8 +699,37 @@ export default function AccountScreen() {
     );
   };
 
-  // 📸 Product publishing handler
+  // 📸 Product/Post publishing handler
   const handlePublishPost = async () => {
+    // 👥 PERSONAL PROFILE LOOKBOOK POSTING LOGIC
+    if (category === "Personal Profile") {
+      if (!postTitle.trim()) {
+        Alert.alert("Missing Caption", "Please enter a caption for your look.");
+        return;
+      }
+      triggerHaptic("success");
+      
+      const newPost = {
+        id: `post_${Date.now()}`,
+        url: postImage,
+        isVideo: false
+      };
+
+      setPresetPosts(prev => [newPost, ...prev]);
+      setPostsCount(prev => prev + 1);
+      
+      Alert.alert(
+        "Look Posted",
+        "Your new aesthetic look has been published to your personal lookbook grid!"
+      );
+
+      // Reset fields
+      setPostTitle("");
+      setShowPostModal(false);
+      return;
+    }
+
+    // 🏛️ BUSINESS / BRAND MAISON PRODUCT PUBLISHING LOGIC
     if (!postTitle.trim() || !postPrice.trim()) {
       Alert.alert("Missing Parameters", "Please enter title and price for curating your AURA artifact.");
       return;
@@ -721,10 +764,11 @@ export default function AccountScreen() {
 
     // In offline fallback mode, still append to local memory to keep user experience responsive
     useStore.setState((state) => ({ products: [newProduct, ...state.products] }));
+    setPostsCount(prev => prev + 1);
 
     Alert.alert(
       "Artifact Curated",
-      "Your brutalist physical curation has been hydrated to PostgreSQL and live catalog grids!"
+      "Your brand physical curation has been hydrated to PostgreSQL and live catalog grids!"
     );
 
     // Reset fields
@@ -855,58 +899,58 @@ export default function AccountScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#080415" />
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
         
-        {/* 🔴 HEADER BAR - MATCHES AURA THEME (DARK BG, WHITE ICONS) */}
-        <View style={styles.headerBar}>
-          <TouchableOpacity onPress={() => { triggerHaptic("light"); setShowCreateModal(true); }}>
-            <Lucide name="add-outline" size={28} color="#ffffff" />
-          </TouchableOpacity>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           
-          <TouchableOpacity style={styles.headerDropdown} onPress={() => { triggerHaptic("medium"); setShowSwitcherModal(true); }}>
-            <Text style={styles.headerUsername}>{username}</Text>
-            <Lucide name="chevron-down-outline" size={14} color="#ffffff" style={{ marginLeft: 3 }} />
-          </TouchableOpacity>
+          {/* 🏔️ IMMERSIVE CANVAS HEADER ROW - NO RIGID STRIP */}
+          <View style={styles.canvasHeaderRow}>
+            <TouchableOpacity onPress={() => { triggerHaptic("light"); setShowCreateModal(true); }}>
+              <Lucide name="add-outline" size={28} color="#ffffff" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.canvasHeaderDropdown} onPress={() => { triggerHaptic("medium"); setShowSwitcherModal(true); }}>
+              <Text style={styles.canvasHeaderUsername}>{username}</Text>
+              <Lucide name="chevron-down-outline" size={14} color="#ffffff" style={{ marginLeft: 3 }} />
+            </TouchableOpacity>
 
-          <View style={styles.headerRightIcons}>
-            <TouchableOpacity 
-              style={{ marginRight: 16 }} 
-              onPress={() => { 
-                triggerHaptic("light"); 
-                Alert.alert(
-                  "Unified Crossover",
-                  "Cross over seamlessly to your connected social channels or live web flagship showroom:",
-                  [
-                    {
-                      text: "🕸️ Open Web flagship Store",
-                      onPress: () => {
-                        triggerHaptic("success");
-                        const webUrl = `https://duhpj-106-219-122-49.run.pinggy-free.link/maison/${username}`;
-                        Linking.openURL(webUrl);
+            <View style={styles.canvasHeaderRightIcons}>
+              <TouchableOpacity 
+                style={{ marginRight: 16 }} 
+                onPress={() => { 
+                  triggerHaptic("light"); 
+                  Alert.alert(
+                    "Unified Crossover",
+                    "Cross over seamlessly to your connected social channels or live web flagship showroom:",
+                    [
+                      {
+                        text: "🕸️ Open Web flagship Store",
+                        onPress: () => {
+                          triggerHaptic("success");
+                          const webUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                          Linking.openURL(webUrl);
+                        }
+                      },
+                      {
+                        text: "🧵 Open AURA Threads Hub",
+                        onPress: () => {
+                          triggerHaptic("success");
+                          Linking.openURL("https://threads.net");
+                        }
+                      },
+                      {
+                        text: "Cancel",
+                        style: "cancel"
                       }
-                    },
-                    {
-                      text: "🧵 Open AURA Threads Hub",
-                      onPress: () => {
-                        triggerHaptic("success");
-                        Linking.openURL("https://threads.net");
-                      }
-                    },
-                    {
-                      text: "Cancel",
-                      style: "cancel"
-                    }
-                  ]
-                );
-              }}
-            >
-              <Lucide name="logo-instagram" size={24} color="#ffffff" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => { triggerHaptic("medium"); setShowAccountsCenter(true); }}>
-              <Lucide name="menu-outline" size={28} color="#ffffff" />
-            </TouchableOpacity>
+                    ]
+                  );
+                }}
+              >
+                <Lucide name="logo-instagram" size={24} color="#ffffff" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { triggerHaptic("medium"); setShowAccountsCenter(true); }}>
+                <Lucide name="menu-outline" size={28} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             
             {/* 🔴 PROFILE SUMMARY AND STATS BLOCK */}
             <View style={styles.profileSection}>
@@ -917,23 +961,53 @@ export default function AccountScreen() {
                     <Text style={styles.bubbleText}>Can't decide...</Text>
                     <View style={styles.bubblePointer} />
                   </View>
-                  <View style={styles.avatarCircle}>
-                    {logo ? (
-                      <Image 
-                        source={{ uri: logo }} 
-                        style={{ width: "100%", height: "100%", borderRadius: 45 }} 
-                      />
-                    ) : username === "aloksingh" ? (
-                      <Image 
-                        source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150" }} 
-                        style={{ width: "100%", height: "100%", borderRadius: 45 }} 
-                      />
-                    ) : (
-                      <Text style={styles.avatarInitial}>
-                        {profileName[0]?.toUpperCase() || "R"}
-                      </Text>
-                    )}
-                  </View>
+                  <LinearGradient
+                    colors={["#fb923c", "#d946ef", "#8b5cf6"]}
+                    start={{ x: 0, y: 1 }}
+                    end={{ x: 1, y: 0 }}
+                    style={{
+                      width: 88,
+                      height: 88,
+                      borderRadius: 44,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <View style={{
+                      width: 82,
+                      height: 82,
+                      borderRadius: 41,
+                      backgroundColor: "#080415",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}>
+                      <View style={{
+                        width: 76,
+                        height: 76,
+                        borderRadius: 38,
+                        overflow: "hidden",
+                        backgroundColor: "#080415",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}>
+                        {logo ? (
+                          <Image 
+                            source={{ uri: logo }} 
+                            style={{ width: "100%", height: "100%", borderRadius: 38 }} 
+                          />
+                        ) : username === "aloksingh" ? (
+                          <Image 
+                            source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150" }} 
+                            style={{ width: "100%", height: "100%", borderRadius: 38 }} 
+                          />
+                        ) : (
+                          <Text style={styles.avatarInitial}>
+                            {profileName[0]?.toUpperCase() || "R"}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  </LinearGradient>
                   <TouchableOpacity style={styles.avatarPlusBadge} onPress={handleAvatarPress}>
                     <Lucide name="add" size={13} color="#ffffff" />
                   </TouchableOpacity>
@@ -963,23 +1037,48 @@ export default function AccountScreen() {
                 
                 <Text style={styles.bioDescriptionText}>{bioText}</Text>
                 
+                {websiteLink ? (
+                  <TouchableOpacity 
+                    style={styles.websiteRow} 
+                    onPress={() => { 
+                      triggerHaptic("light"); 
+                      try {
+                        const url = websiteLink.trim().startsWith("http") ? websiteLink.trim() : "https://" + websiteLink.trim();
+                        Linking.openURL(url);
+                      } catch (e) {
+                        Alert.alert("URL Error", "Failed to cross over to the target URL.");
+                      }
+                    }}
+                  >
+                    <Lucide name="link-outline" size={15} color="#00f5ff" />
+                    <Text style={styles.websiteText}>
+                      {websiteLink} <Text style={{ color: "#8e8e8e", fontWeight: "normal" }}>and 1 more</Text>
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {/* Threads pill badge exactly matching Instagram screenshot */}
                 <TouchableOpacity 
-                  style={styles.websiteRow} 
-                  onPress={() => { 
-                    triggerHaptic("light"); 
-                    try {
-                      const url = websiteLink.trim().startsWith("http") ? websiteLink.trim() : "https://" + websiteLink.trim();
-                      Linking.openURL(url);
-                    } catch (e) {
-                      Alert.alert("URL Error", "Failed to cross over to the target URL.");
-                    }
-                  }}
+                  style={styles.threadsPill} 
+                  onPress={() => { triggerHaptic("light"); Alert.alert("Threads Node", `Syncing to @${username} Threads coordinates...`); }}
                 >
-                  <Lucide name="link-outline" size={15} color="#00f5ff" />
-                  <Text style={styles.websiteText}>
-                    {websiteLink} <Text style={{ color: "#8e8e8e", fontWeight: "normal" }}>and 1 more</Text>
+                  <Text style={styles.threadsIcon}>@</Text>
+                  <Text style={styles.threadsPillText}>
+                    {username} <Text style={{ color: "rgba(255,255,255,0.4)" }}>2 new •</Text>
                   </Text>
                 </TouchableOpacity>
+
+                {/* Overlapping followed-by avatars list exactly matching Instagram screenshot */}
+                <View style={styles.socialProofRow}>
+                  <View style={styles.socialProofAvatars}>
+                    <Image source={{ uri: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=80" }} style={[styles.socialProofAvatar, { zIndex: 3 }]} />
+                    <Image source={{ uri: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=80" }} style={[styles.socialProofAvatar, { zIndex: 2, marginLeft: -10 }]} />
+                    <Image source={{ uri: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=80" }} style={[styles.socialProofAvatar, { zIndex: 1, marginLeft: -10 }]} />
+                  </View>
+                  <Text style={styles.socialProofText} numberOfLines={1}>
+                    Followed by <Text style={styles.socialProofBold}>studywithjasmeet</Text>, <Text style={styles.socialProofBold}>fitwithyashika_</Text> and <Text style={styles.socialProofBold}>23 others</Text>
+                  </Text>
+                </View>
               </View>
 
               {/* 🔴 HORIZONTAL TAG BADGES */}
@@ -996,17 +1095,34 @@ export default function AccountScreen() {
               </View>
             </View>
 
-            {/* 🔴 PROFESSIONAL DASHBOARD */}
-            <TouchableOpacity 
-              style={styles.dashboardCard}
-              onPress={() => { triggerHaptic("medium"); Alert.alert("Professional Dashboard", "AURA Creator Portal analytics:\n\n• Reach: +148% this week\n• Direct Affiliate Sales: ₹85,200\n• Top Look: Obsidian Gold Vestment"); }}
-            >
-              <View>
-                <Text style={styles.dashboardTitle}>Professional dashboard</Text>
-                <Text style={styles.dashboardSubtitle}>New tools are now available.</Text>
-              </View>
-              <View style={styles.dashboardIndicatorDot} />
-            </TouchableOpacity>
+            {/* 🔴 PROFESSIONAL DASHBOARD (CREATOR & BUSINESS ONLY) */}
+            {!isPersonalProfile && (
+              <TouchableOpacity 
+                style={styles.dashboardCard}
+                onPress={() => { 
+                  triggerHaptic("medium"); 
+                  if (isCreatorProfile) {
+                    Alert.alert(
+                      "Creator Insights", 
+                      "AURA Creator Influence Matrix:\n\n• Aura Score: 9.8 (Top 1.2%)\n• Direct Commission Earned: ₹24,800\n• Brand Deal Campaign: Atelier Paris (Pending Approval)\n• Viral Rank: #42 Fashion Stylist"
+                    );
+                  } else {
+                    Alert.alert(
+                      "Professional Dashboard", 
+                      "AURA Brand Merchant analytics:\n\n• Total Sales: ₹1,85,200\n• Active Inventory Items: 6 boutique items\n• Payouts: ₹85,200 (Escrow Lock settled)\n• Active Promotions: Quiet Luxury Campaign"
+                    );
+                  }
+                }}
+              >
+                <View>
+                  <Text style={styles.dashboardTitle}>Professional dashboard</Text>
+                  <Text style={styles.dashboardSubtitle}>
+                    {isCreatorProfile ? "Creator analytics & affiliate earnings" : "Brand tools & retail catalog metrics"}
+                  </Text>
+                </View>
+                <View style={styles.dashboardIndicatorDot} />
+              </TouchableOpacity>
+            )}
 
             {/* 🔴 ACTION BUTTONS (EDIT PROFILE, SHARE PROFILE) */}
             <View style={styles.actionButtonsRow}>
@@ -1048,13 +1164,34 @@ export default function AccountScreen() {
               </ScrollView>
             </View>
 
-            {/* 🔴 GRID TAB BAR (GRID, REELS, MENTIONS) */}
+            {/* 🔮 CREATOR SCORE INFLUENCE BANNER (CREATOR ONLY) */}
+            {isCreatorProfile && (
+              <View style={styles.creatorBannerCard}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={styles.auraBadgeCircle}>
+                    <Text style={styles.auraBadgeText}>AURA</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.creatorBannerTitle}>Creator Rank • Global #42</Text>
+                    <Text style={styles.creatorBannerScore}>Aura Score: 9.8/10 ✦ High Influence</Text>
+                  </View>
+                </View>
+                <TouchableOpacity 
+                  style={styles.creatorBadgeBtn}
+                  onPress={() => { triggerHaptic("medium"); Alert.alert("AURA Score System", "Calculated hourly by matching engagement velocity, purchase triggers, and lookbook curations."); }}
+                >
+                  <Text style={styles.creatorBadgeBtnText}>Verify</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* 🔴 GRID TAB BAR (POSTS, REELS, PRODUCTS, COLLABS) */}
             <View style={styles.gridTabBar}>
               {[
-                { tab: "grid", icon: "grid-outline" },
+                { tab: "posts", icon: "grid-outline" },
                 { tab: "reels", icon: "film-outline" },
-                { tab: "repeat", icon: "repeat-outline" },
-                { tab: "mentions", icon: "person-outline" }
+                { tab: "products", icon: "bag-handle-outline" },
+                { tab: "collabs", icon: "repeat-outline" }
               ].map((item) => (
                 <TouchableOpacity 
                    key={item.tab} 
@@ -1070,41 +1207,113 @@ export default function AccountScreen() {
               ))}
             </View>
 
-            {/* 🔴 BESPOKE GRID OF ACTUAL DATABASE PRODUCTS / REELS */}
+            {/* 🔴 GRID OF PRODUCTS / PERSONAL POSTS */}
             <View style={styles.gridWrapper}>
-              {activeGridTab === "grid" ? (
-                // Displays ACTUAL products from the AURA database synced to this profile!
-                maisonProducts.map((product) => {
-                  const imageUrl = product.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400";
-                  return (
-                    <TouchableOpacity 
-                      key={product.id} 
-                      style={styles.gridImageContainer}
-                      onPress={() => { triggerHaptic("medium"); router.push(`/product/${product.id}` as any); }}
-                    >
-                      <Image source={{ uri: imageUrl }} style={styles.gridPostImage} />
-                      <View style={styles.gridPriceBadge}>
-                        <Text style={styles.gridPriceText}>₹{product.price?.toLocaleString()}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              ) : (
-                // Reels or default content with video indicators
-                PRESET_POSTS.map((post: any) => (
+              {activeGridTab === "posts" && (
+                // 👥 Posts lookbook - photo items
+                presetPosts.filter((post: any) => !post.isVideo).map((post: any) => (
                   <TouchableOpacity 
                     key={post.id} 
                     style={styles.gridImageContainer}
-                    onPress={() => { triggerHaptic("medium"); Alert.alert("AURA Curation", "Opening selected look..."); }}
+                    onPress={() => { triggerHaptic("medium"); Alert.alert("Look Curation", "Opening premium look detail view..."); }}
                   >
                     <Image source={{ uri: post.url }} style={styles.gridPostImage} />
-                    {post.isVideo && (
-                      <View style={styles.gridVideoBadge}>
-                        <Lucide name="play" size={11} color="#ffffff" />
-                      </View>
-                    )}
                   </TouchableOpacity>
                 ))
+              )}
+
+              {activeGridTab === "reels" && (
+                // 🎥 Reels - video items
+                presetPosts.filter((post: any) => post.isVideo).map((post: any) => (
+                  <TouchableOpacity 
+                    key={post.id} 
+                    style={styles.gridImageContainer}
+                    onPress={() => { triggerHaptic("medium"); Alert.alert("Reel Curation", "Playing high-fidelity visual reel..."); }}
+                  >
+                    <Image source={{ uri: post.url }} style={styles.gridPostImage} />
+                    <View style={styles.gridVideoBadge}>
+                      <Lucide name="play" size={11} color="#ffffff" />
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+
+              {activeGridTab === "products" && (
+                // 🏛️ storefront products with price tag overlays
+                maisonProducts.length > 0 ? (
+                  maisonProducts.map((product) => {
+                    const imageUrl = product.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400";
+                    return (
+                      <TouchableOpacity 
+                        key={product.id} 
+                        style={styles.gridImageContainer}
+                        onPress={() => { triggerHaptic("medium"); router.push(`/product/${product.id}` as any); }}
+                      >
+                        <Image source={{ uri: imageUrl }} style={styles.gridPostImage} />
+                        <View style={styles.gridPriceBadge}>
+                          <Text style={styles.gridPriceText}>₹{product.price?.toLocaleString()}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                ) : (
+                  // Fallback storefront products mock grid
+                  [
+                    { id: "fp1", price: 185000, img: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400" },
+                    { id: "fp2", price: 245000, img: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400" },
+                    { id: "fp3", price: 340000, img: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=400" }
+                  ].map((product) => (
+                    <TouchableOpacity
+                      key={product.id}
+                      style={styles.gridImageContainer}
+                      onPress={() => triggerHaptic("medium")}
+                    >
+                      <Image source={{ uri: product.img }} style={styles.gridPostImage} />
+                      <View style={styles.gridPriceBadge}>
+                        <Text style={styles.gridPriceText}>₹{product.price.toLocaleString()}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                )
+              )}
+
+              {activeGridTab === "collabs" && (
+                // 🔮 Collabs - affiliate commission lookbook
+                maisonProducts.length > 0 ? (
+                  maisonProducts.map((product) => {
+                    const imageUrl = product.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400";
+                    return (
+                      <TouchableOpacity 
+                        key={product.id} 
+                        style={styles.gridImageContainer}
+                        onPress={() => { triggerHaptic("medium"); router.push(`/product/${product.id}` as any); }}
+                      >
+                        <Image source={{ uri: imageUrl }} style={styles.gridPostImage} />
+                        <View style={styles.gridAffiliateBadge}>
+                          <Text style={styles.gridAffiliateText}>10% Commission</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                ) : (
+                  // Fallback collabs affiliate lookbook grid
+                  [
+                    { id: "fc1", rate: "10% Commission", img: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=400" },
+                    { id: "fc2", rate: "12% Commission", img: "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=400" },
+                    { id: "fc3", rate: "8% Commission", img: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=400" }
+                  ].map((collab) => (
+                    <TouchableOpacity
+                      key={collab.id}
+                      style={styles.gridImageContainer}
+                      onPress={() => triggerHaptic("medium")}
+                    >
+                      <Image source={{ uri: collab.img }} style={styles.gridPostImage} />
+                      <View style={styles.gridAffiliateBadge}>
+                        <Text style={styles.gridAffiliateText}>{collab.rate}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                )
               )}
             </View>
 
@@ -1260,7 +1469,7 @@ export default function AccountScreen() {
         >
           <View style={styles.switcherPanel}>
             <View style={styles.switcherHandle} />
-            <Text style={styles.switcherTitle}>Sovereign Brand profiles</Text>
+            <Text style={styles.switcherTitle}>Switch Identity Profile</Text>
             
             <ScrollView style={styles.switcherList} showsVerticalScrollIndicator={false}>
               {availableMaisons.map((m) => {
@@ -1277,8 +1486,10 @@ export default function AccountScreen() {
                       <Text style={styles.switcherAvatarText}>{initials}</Text>
                     </View>
                     <View style={styles.switcherInfo}>
-                      <Text style={styles.switcherMaisonId}>{m.id}</Text>
-                      <Text style={styles.switcherMaisonName}>{m.name || "AURA Maison"}</Text>
+                      <Text style={styles.switcherMaisonId}>@{m.id}</Text>
+                      <Text style={styles.switcherMaisonName}>
+                        {m.name || "AURA Profile"} • <Text style={{ color: "#00f5ff", fontSize: 10.5 }}>{m.designType || "Personal"}</Text>
+                      </Text>
                     </View>
                     {isActive && (
                       <View style={styles.switcherCheck}>
@@ -1399,59 +1610,78 @@ export default function AccountScreen() {
               <TouchableOpacity onPress={() => setShowPostModal(false)}>
                 <Text style={styles.editModalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <Text style={styles.editModalTitle}>Curate Artifact</Text>
+              <Text style={styles.editModalTitle}>{category === "Personal Profile" ? "New Look Post" : "Curate Artifact"}</Text>
               <TouchableOpacity onPress={handlePublishPost}>
                 <Text style={styles.editModalDoneText}>Publish</Text>
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.editModalScroll} showsVerticalScrollIndicator={false}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Product Title</Text>
-                <TextInput
-                  style={styles.inputField}
-                  value={postTitle}
-                  onChangeText={setPostTitle}
-                  placeholder="e.g. Atelier Silk Drape Vestment"
-                  placeholderTextColor="#8e8e8e"
-                />
-              </View>
+              {category === "Personal Profile" ? (
+                // 👥 Personal Look/Post inputs
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Caption / Description</Text>
+                  <TextInput
+                    style={[styles.inputField, { height: 80, textAlignVertical: "top" }]}
+                    value={postTitle}
+                    onChangeText={setPostTitle}
+                    multiline
+                    numberOfLines={3}
+                    placeholder="Write a caption for your aesthetic look..."
+                    placeholderTextColor="#8e8e8e"
+                  />
+                </View>
+              ) : (
+                // 🏛️ Brand Boutique Product inputs
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Product Title</Text>
+                    <TextInput
+                      style={styles.inputField}
+                      value={postTitle}
+                      onChangeText={setPostTitle}
+                      placeholder="e.g. Atelier Silk Drape Vestment"
+                      placeholderTextColor="#8e8e8e"
+                    />
+                  </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Retail Price (INR)</Text>
-                <TextInput
-                  style={styles.inputField}
-                  value={postPrice}
-                  onChangeText={postPrice => setPostPrice(postPrice.replace(/[^0-9]/g, ""))}
-                  keyboardType="numeric"
-                  placeholder="e.g. 185000"
-                  placeholderTextColor="#8e8e8e"
-                />
-              </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Retail Price (INR)</Text>
+                    <TextInput
+                      style={styles.inputField}
+                      value={postPrice}
+                      onChangeText={postPrice => setPostPrice(postPrice.replace(/[^0-9]/g, ""))}
+                      keyboardType="numeric"
+                      placeholder="e.g. 185000"
+                      placeholderTextColor="#8e8e8e"
+                    />
+                  </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Aesthetic / Vibe Profile</Text>
-                <TextInput
-                  style={styles.inputField}
-                  value={postVibe}
-                  onChangeText={setPostVibe}
-                  placeholder="e.g. Cyberpunk, Brutalist, Quiet Luxury"
-                  placeholderTextColor="#8e8e8e"
-                />
-              </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Aesthetic / Vibe Profile</Text>
+                    <TextInput
+                      style={styles.inputField}
+                      value={postVibe}
+                      onChangeText={setPostVibe}
+                      placeholder="e.g. Cyberpunk, Brutalist, Quiet Luxury"
+                      placeholderTextColor="#8e8e8e"
+                    />
+                  </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Description / Curation Notes</Text>
-                <TextInput
-                  style={[styles.inputField, { height: 70, textAlignVertical: "top" }]}
-                  value={postDescription}
-                  onChangeText={setPostDescription}
-                  multiline
-                  numberOfLines={3}
-                  placeholder="Bespoke luxury drape fabric elements..."
-                  placeholderTextColor="#8e8e8e"
-                />
-              </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Description / Curation Notes</Text>
+                    <TextInput
+                      style={[styles.inputField, { height: 70, textAlignVertical: "top" }]}
+                      value={postDescription}
+                      onChangeText={setPostDescription}
+                      multiline
+                      numberOfLines={3}
+                      placeholder="Bespoke luxury drape fabric elements..."
+                      placeholderTextColor="#8e8e8e"
+                    />
+                  </View>
+                </>
+              )}
 
               <Text style={[styles.inputLabel, { marginTop: 10, marginBottom: 12 }]}>Select Design Texture Image</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 40 }}>
@@ -1932,7 +2162,7 @@ export default function AccountScreen() {
                   style={{ width: "100%", backgroundColor: "#00f5ff", paddingVertical: 12, borderRadius: 8, alignItems: "center" }}
                   onPress={() => {
                     triggerHaptic("success");
-                    Linking.openURL("https://duhpj-106-219-122-49.run.pinggy-free.link/discover/onboarding");
+                    Linking.openURL("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/discover/onboarding");
                   }}
                 >
                   <Text style={{ color: "#000000", fontSize: 11, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1.5 }}>Commence Onboarding</Text>
@@ -2088,6 +2318,218 @@ export default function AccountScreen() {
         </View>
       </Modal>
 
+      {/* 📤 PREMIUM INSTAGRAM-STYLE SHARE PROFILE BOTTOM SHEET MODAL */}
+      {showShareProfileSheet && (
+        <Modal
+          visible={showShareProfileSheet}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowShareProfileSheet(false)}
+        >
+          <TouchableOpacity 
+            style={styles.bottomSheetBackdrop} 
+            activeOpacity={1} 
+            onPress={() => setShowShareProfileSheet(false)}
+          >
+            <View style={styles.shareSheetContent} onStartShouldSetResponder={() => true}>
+              {/* Drag Handle */}
+              <View style={styles.bottomSheetDragHandle} />
+              
+              {/* Search Bar Row */}
+              <View style={styles.shareSearchRow}>
+                <View style={styles.shareSearchBox}>
+                  <Lucide name="search-outline" size={20} color="rgba(255,255,255,0.4)" />
+                  <TextInput
+                    style={styles.shareSearchInput}
+                    placeholder="Search"
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    keyboardAppearance="dark"
+                    value={shareSearch}
+                    onChangeText={setShareSearch}
+                  />
+                </View>
+                <TouchableOpacity style={styles.shareAddFriendBtn} onPress={() => { triggerHaptic("light"); Alert.alert("Contacts Synced", "Your dynamic contact nodes have been successfully synchronized."); }}>
+                  <Lucide name="person-add-outline" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Direct Message Contacts Grid */}
+              <View style={styles.shareContactsContainer}>
+                {(() => {
+                  const allContacts = [
+                    { id: "c1", name: "Kiran Soni", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150" },
+                    { id: "c2", name: "S U R A J", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150" },
+                    { id: "c3", name: "Dr. Rashneet ✨", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150" },
+                    { id: "c4", name: "Rhythm Bhatia", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150" },
+                    { id: "c5", name: "the.priyas...", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150" },
+                    { id: "c6", name: "Mandy", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=150" },
+                  ];
+                  const filtered = allContacts.filter(c => 
+                    c.name.toLowerCase().includes(shareSearch.toLowerCase())
+                  );
+                  
+                  // Chunk into groups of 3
+                  const rows = [];
+                  for (let i = 0; i < filtered.length; i += 3) {
+                    rows.push(filtered.slice(i, i + 3));
+                  }
+                  
+                  if (filtered.length === 0) {
+                    return (
+                      <View style={{ alignItems: "center", paddingVertical: 20 }}>
+                        <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>No contacts found</Text>
+                      </View>
+                    );
+                  }
+                  
+                  return rows.map((rowContacts, rowIndex) => (
+                    <View key={`row_${rowIndex}`} style={[styles.shareContactsRow, rowIndex > 0 && { marginTop: 20 }]}>
+                      {rowContacts.map((contact) => (
+                        <TouchableOpacity 
+                          key={contact.id} 
+                          style={styles.shareContactCard} 
+                          onPress={() => {
+                            triggerHaptic("success");
+                            setShowShareProfileSheet(false);
+                            Alert.alert("Sent", `AURA profile shared successfully with ${contact.name}!`);
+                          }}
+                        >
+                          <Image source={{ uri: contact.avatar }} style={styles.shareContactAvatar} />
+                          <Text style={styles.shareContactName} numberOfLines={1}>{contact.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                      {/* Placeholders if row has < 3 elements to maintain space-between layout alignments */}
+                      {rowContacts.length < 3 && Array.from({ length: 3 - rowContacts.length }).map((_, placeholderIdx) => (
+                        <View key={`placeholder_${placeholderIdx}`} style={{ width: 90 }} />
+                      ))}
+                    </View>
+                  ));
+                })()}
+              </View>
+
+              <View style={styles.shareHorizontalDivider} />
+
+              {/* Bottom Row of Action Shortcuts */}
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                contentContainerStyle={styles.shareActionsScroll}
+              >
+                {/* 🔗 COPY LINK */}
+                <TouchableOpacity style={styles.shareActionBtn} onPress={async () => {
+                  triggerHaptic("success");
+                  setShowShareProfileSheet(false);
+                  const profileUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                  try {
+                    await Clipboard.setStringAsync(profileUrl);
+                    Alert.alert("Link Copied", "Instant match! The luxury profile coordinates have been copied to your clipboard.");
+                  } catch (e) {
+                    console.warn("Clipboard copy failed:", e);
+                    Alert.alert("Link Copied", `Coordinate: ${profileUrl}`);
+                  }
+                }}>
+                  <View style={styles.shareActionCircle}>
+                    <Lucide name="link-outline" size={22} color="#fff" />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Copy link</Text>
+                </TouchableOpacity>
+
+                {/* ➕ ADD TO STORY */}
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
+                  triggerHaptic("success");
+                  setShowShareProfileSheet(false);
+                  
+                  const newSlide = {
+                    id: `ys_${Date.now()}`,
+                    url: logo || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400",
+                    caption: `Check out my official AURA profile coordinates ✨: "${profileName}" (@${username})`,
+                    isVideo: false,
+                    artifact: null
+                  };
+
+                  addInstaStorySlide(newSlide);
+                  Alert.alert("Story Shared", "Profile shared successfully to your Stories feed! View it at the top of your home screen.");
+                }}>
+                  <View style={styles.shareActionCircle}>
+                    <Lucide name="add-circle-outline" size={22} color="#fff" />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Add to story</Text>
+                </TouchableOpacity>
+
+                {/* 💬 WHATSAPP */}
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
+                  triggerHaptic("success");
+                  setShowShareProfileSheet(false);
+                  const profileUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                  const text = `Connect with me on AURA: "${profileName}" (@${username}) ✨\n\nLink: ${profileUrl}`;
+                  const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(text)}`;
+                  Linking.openURL(whatsappUrl).catch(() => {
+                    Linking.openURL(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`);
+                  });
+                }}>
+                  <View style={[styles.shareActionCircle, { backgroundColor: "#25d366" }]}>
+                    <Lucide name="logo-whatsapp" size={22} color="#fff" />
+                  </View>
+                  <Text style={styles.shareActionLabel}>WhatsApp</Text>
+                </TouchableOpacity>
+
+                {/* 📸 INSTAGRAM */}
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
+                  triggerHaptic("success");
+                  setShowShareProfileSheet(false);
+                  Linking.openURL("instagram://camera").catch(() => {
+                    Linking.openURL("https://instagram.com");
+                  });
+                }}>
+                  <View style={[styles.shareActionCircle, { backgroundColor: "#e1306c" }]}>
+                    <Lucide name="logo-instagram" size={22} color="#fff" />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Instagram</Text>
+                </TouchableOpacity>
+
+                {/* ✈️ TELEGRAM */}
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
+                  triggerHaptic("success");
+                  setShowShareProfileSheet(false);
+                  const profileUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                  const text = `Connect with me on AURA: "${profileName}" (@${username}) ✨\n\nLink: ${profileUrl}`;
+                  const telegramUrl = `tg://msg?text=${encodeURIComponent(text)}`;
+                  Linking.openURL(telegramUrl).catch(() => {
+                    Linking.openURL(`https://t.me/share/url?url=${encodeURIComponent(profileUrl)}&text=${encodeURIComponent(text)}`);
+                  });
+                }}>
+                  <View style={[styles.shareActionCircle, { backgroundColor: "#0088cc" }]}>
+                    <Lucide name="paper-plane-outline" size={22} color="#fff" />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Telegram</Text>
+                </TouchableOpacity>
+
+                {/* 📤 NATIVE SYSTEM SHARE ("MORE") */}
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
+                  triggerHaptic("success");
+                  setShowShareProfileSheet(false);
+                  const profileUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                  const text = `Connect with me on AURA: "${profileName}" (@${username}) ✨`;
+                  Share.share({
+                    message: `${text}\n\nLink: ${profileUrl}`,
+                    url: profileUrl,
+                    title: "AURA Profile coordinates"
+                  }).catch(err => {
+                    console.warn("Native share failed:", err);
+                  });
+                }}>
+                  <View style={styles.shareActionCircle}>
+                    <Lucide name="share-social-outline" size={22} color="#fff" />
+                  </View>
+                  <Text style={styles.shareActionLabel}>More</Text>
+                </TouchableOpacity>
+              </ScrollView>
+
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
       {/* 🏠 GLOBAL BOTTOM NAVIGATION BAR (AURA THEME MATCHING FEED STYLING) */}
       <View style={[styles.instagramBottomBar, { height: 52 + insets.bottom, paddingBottom: insets.bottom }]}>
         <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/"); }}>
@@ -2151,27 +2593,27 @@ const styles = StyleSheet.create({
     textTransform: "uppercase", 
     letterSpacing: 1.5
   },
-  // Header bar
-  headerBar: {
+  // Immersive Canvas Header
+  canvasHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: "#080415",
-    borderBottomWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    paddingTop: 16,
+    paddingBottom: 10,
+    backgroundColor: "transparent",
   },
-  headerDropdown: {
+  canvasHeaderDropdown: {
     flexDirection: "row",
     alignItems: "center",
   },
-  headerUsername: {
+  canvasHeaderUsername: {
     color: "#ffffff",
     fontSize: 21,
-    fontWeight: "bold",
+    fontWeight: "900",
+    letterSpacing: -0.5,
   },
-  headerRightIcons: {
+  canvasHeaderRightIcons: {
     flexDirection: "row",
     alignItems: "center",
   },
@@ -2188,20 +2630,50 @@ const styles = StyleSheet.create({
   },
   avatarGroup: {
     position: "relative",
-    width: 86,
-    height: 86,
+    width: 88,
+    height: 88,
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarCircle: {
+  avatarRingOuter: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 1.5,
+    borderColor: "#d946ef", // Vibrant Magenta/Pink from fluid image
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  avatarMiddleRing: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 1.5,
+    borderColor: "#8b5cf6", // Deep Purple/Violet from fluid image
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  avatarInnerRing: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: "#0b071e",
+    borderWidth: 1.5,
+    borderColor: "#00f5ff", // Vibrant Cyan/Sky Blue from fluid image
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "transparent",
+  },
+  avatarCircle: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    backgroundColor: "#080415",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2.5,
+    borderColor: "#080415", // Premium Instagram black gap
   },
   avatarInitial: {
     color: "#ffffff",
@@ -2347,12 +2819,12 @@ const styles = StyleSheet.create({
 
   // Professional Dashboard
   dashboardCard: {
-    backgroundColor: "#0b071e",
-    borderWidth: 1,
+    backgroundColor: "rgba(255,255,255,0.035)", // High-end translucent glass card
+    borderWidth: 0.5,
     borderColor: "rgba(255,255,255,0.06)",
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     marginHorizontal: 16,
     marginTop: 18,
     flexDirection: "row",
@@ -2385,17 +2857,16 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 6,
-    paddingVertical: 8,
+    backgroundColor: "rgba(255,255,255,0.07)", // Translucent premium grey
+    borderRadius: 10, // Modern rounded corners
+    height: 34,
+    justifyContent: "center",
     alignItems: "center",
   },
   actionBtnText: {
     color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "bold",
+    fontSize: 13.5,
+    fontWeight: "600",
   },
 
   // Highlights Row
@@ -2607,9 +3078,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-around",
     alignItems: "center",
-    backgroundColor: "#080415",
-    borderTopWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(8,4,21,0.88)", // Premium glassmorphic background
+    borderTopWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.05)",
   },
   tabBtn: {
     padding: 8,
@@ -2818,5 +3289,227 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
     paddingVertical: 4,
+  },
+  // 📤 Share Profile bottom sheet styles
+  bottomSheetBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  bottomSheetDragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignSelf: "center",
+    marginVertical: 12,
+  },
+  shareSheetContent: {
+    backgroundColor: "#0d0a21",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingVertical: 8,
+    paddingBottom: 32,
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  shareSearchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginTop: 10,
+    gap: 12,
+  },
+  shareSearchBox: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 40,
+    gap: 8,
+  },
+  shareSearchInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 14,
+  },
+  shareAddFriendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shareContactsContainer: {
+    paddingHorizontal: 20,
+    marginTop: 20,
+    gap: 20,
+  },
+  shareContactsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  shareContactCard: {
+    alignItems: "center",
+    width: 90,
+  },
+  shareContactAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  shareContactName: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 8,
+    textAlign: "center",
+  },
+  shareHorizontalDivider: {
+    height: 0.5,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    marginVertical: 20,
+  },
+  shareActionsScroll: {
+    paddingHorizontal: 20,
+    gap: 20,
+  },
+  shareActionBtn: {
+    alignItems: "center",
+    width: 76,
+    gap: 6,
+  },
+  shareActionCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shareActionLabel: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 10,
+    textAlign: "center",
+    fontWeight: "500",
+  },
+
+  // Creator Influence Card
+  creatorBannerCard: {
+    backgroundColor: "rgba(0,245,255,0.04)", // Light neon cyan glass background
+    borderWidth: 0.5,
+    borderColor: "rgba(0,245,255,0.15)",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginHorizontal: 16,
+    marginTop: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  auraBadgeCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#00f5ff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  auraBadgeText: {
+    color: "#080415",
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  creatorBannerTitle: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+  creatorBannerScore: {
+    color: "#00f5ff",
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  creatorBadgeBtn: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  creatorBadgeBtnText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "bold",
+  },
+
+  // Grid affiliate curations
+  gridAffiliateBadge: {
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    backgroundColor: "rgba(0,245,255,0.85)", // Vibrant cyan badge
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  gridAffiliateText: {
+    color: "#080415",
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  
+  // Threads & Social Proof elements exactly mirroring Instagram screenshots
+  threadsPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 10,
+    paddingVertical: 5.5,
+    borderRadius: 30,
+    alignSelf: "flex-start",
+    marginTop: 12,
+  },
+  threadsIcon: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "bold",
+    marginRight: 4,
+  },
+  threadsPillText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  socialProofRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 14,
+    gap: 8,
+  },
+  socialProofAvatars: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: 50,
+  },
+  socialProofAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#080415",
+  },
+  socialProofText: {
+    color: "#fff",
+    fontSize: 13,
+  },
+  socialProofBold: {
+    fontWeight: "bold",
   },
 });

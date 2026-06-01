@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import * as Haptics from "expo-haptics";
 
-const API_BASE = "https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile";
+const API_BASE = "https://0899c02eaa066565-106-219-120-232.serveousercontent.com/api/mobile";
 
 interface StoreState {
   products: any[];
@@ -80,6 +80,22 @@ interface StoreState {
   fetchProfiles: (userId: string) => Promise<void>;
   createNewProfile: (payload: any) => Promise<{ success: boolean; error?: string }>;
   switchActiveProfile: (profileId: string) => Promise<{ success: boolean; error?: string }>;
+  instaStories: any[];
+  addInstaStorySlide: (slide: any) => void;
+
+  notifications: any[];
+  loadingNotifications: boolean;
+  fetchNotifications: (profileId: string) => Promise<void>;
+  markNotificationsRead: (profileId: string) => Promise<void>;
+
+  // View Other User Profile
+  viewingProfile: any | null;
+  viewingProducts: any[];
+  viewingHighlights: any[];
+  loadingViewProfile: boolean;
+  fetchViewProfile: (username: string, viewerProfileId?: string) => Promise<void>;
+  clearViewProfile: () => void;
+  followProfile: (followerProfileId: string, followingProfileId: string) => Promise<{ success: boolean; isFollowing?: boolean }>;
 }
 
 const MOCK_PRODUCTS = [
@@ -149,6 +165,46 @@ export const useStore = create<StoreState>((set, get) => ({
   activeMaisonId: "aloksingh",
   setActiveMaisonId: (id) => set({ activeMaisonId: id }),
 
+  instaStories: [
+    { 
+      id: "ys", 
+      username: "Your story", 
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150", 
+      isYourStory: true,
+      slides: [
+        { id: "ys_1", url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400", caption: "Securing next-gen luxury blueprints..." }
+      ]
+    },
+    { 
+      id: "g1", 
+      username: "garimahuja05", 
+      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150", 
+      active: true,
+      slides: [
+        { id: "g1_1", url: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=400", caption: "Atelier Paris Spring Showcase" },
+        { id: "g1_2", url: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400", caption: "Bespoke fabrics, pure sovereign details" }
+      ]
+    },
+    { 
+      id: "m1", 
+      username: "mahima.unfilter...", 
+      avatar: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150", 
+      active: true,
+      slides: [
+        { id: "m1_1", url: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=400", caption: "Milan high-fidelity runways." }
+      ]
+    },
+    { 
+      id: "i1", 
+      username: "_._issue", 
+      avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150", 
+      active: true,
+      slides: [
+        { id: "i1_1", url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=400", caption: "Atelier Street coordinates" }
+      ]
+    }
+  ],
+
   loadingProducts: false,
   loadingFeed: false,
   loadingWarehouses: false,
@@ -157,6 +213,8 @@ export const useStore = create<StoreState>((set, get) => ({
   loadingRepricer: false,
   loadingWMS: false,
   loadingLoyalty: false,
+  notifications: [],
+  loadingNotifications: false,
 
   fetchProducts: async () => {
     if (get().products.length === MOCK_PRODUCTS.length) {
@@ -677,8 +735,120 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
+  addInstaStorySlide: (slide) => {
+    set(state => {
+      const updated = state.instaStories.map(story => {
+        if (story.isYourStory) {
+          return {
+            ...story,
+            slides: [slide, ...(story.slides || [])]
+          };
+        }
+        return story;
+      });
+      return { instaStories: updated };
+    });
+  },
+
+  fetchNotifications: async (profileId) => {
+    set({ loadingNotifications: true });
+    try {
+      const res = await fetch(`${API_BASE}/notifications?profileId=${profileId}`);
+      const data = await res.json();
+      if (data.success) {
+        set({ notifications: data.notifications });
+      }
+    } catch (e) {
+      console.warn("Could not fetch notifications from local host.", e);
+    } finally {
+      set({ loadingNotifications: false });
+    }
+  },
+
+  markNotificationsRead: async (profileId) => {
+    try {
+      const res = await fetch(`${API_BASE}/notifications`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        get().triggerHaptic("light");
+        set(state => ({
+          notifications: state.notifications.map(n => ({ ...n, read: true }))
+        }));
+      }
+    } catch (e) {
+      console.warn("Could not mark notifications as read.", e);
+    }
+  },
+
   authLogOut: () => {
     get().triggerHaptic("medium");
-    set({ currentUser: null, activeProfile: null, userProfiles: [], activeMaisonId: "aloksingh" });
+    set({ currentUser: null, activeProfile: null, userProfiles: [], activeMaisonId: "aloksingh", notifications: [], viewingProfile: null, viewingProducts: [], viewingHighlights: [] });
+  },
+
+  // View Other User's Profile
+  viewingProfile: null,
+  viewingProducts: [],
+  viewingHighlights: [],
+  loadingViewProfile: false,
+
+  fetchViewProfile: async (username, viewerProfileId) => {
+    set({ loadingViewProfile: true, viewingProfile: null, viewingProducts: [], viewingHighlights: [] });
+    try {
+      const query = viewerProfileId
+        ? `${API_BASE}/profile/view?username=${username}&viewerProfileId=${viewerProfileId}`
+        : `${API_BASE}/profile/view?username=${username}`;
+      const res = await fetch(query);
+      const data = await res.json();
+      if (data.success) {
+        set({
+          viewingProfile: data.profile,
+          viewingProducts: data.products || [],
+          viewingHighlights: data.highlights || []
+        });
+      }
+    } catch (e) {
+      console.warn("Could not fetch profile view.", e);
+    } finally {
+      set({ loadingViewProfile: false });
+    }
+  },
+
+  clearViewProfile: () => {
+    set({ viewingProfile: null, viewingProducts: [], viewingHighlights: [] });
+  },
+
+  followProfile: async (followerProfileId, followingProfileId) => {
+    try {
+      get().triggerHaptic("medium");
+      const res = await fetch(`${API_BASE}/profile/follow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ followerProfileId, followingProfileId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Optimistically update the viewing profile follow state and counts
+        const vp = get().viewingProfile;
+        if (vp && vp.profileId === followingProfileId) {
+          set({
+            viewingProfile: {
+              ...vp,
+              isFollowing: data.isFollowing,
+              followersCount: data.followersCount
+            }
+          });
+        }
+        get().triggerHaptic(data.isFollowing ? "success" : "light");
+        return { success: true, isFollowing: data.isFollowing };
+      }
+      return { success: false };
+    } catch (e) {
+      console.warn("Follow toggle failed.", e);
+      return { success: false };
+    }
   }
 }));

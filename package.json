@@ -1,5 +1,5 @@
 {
-  "name": "aura-mobile",
+  "name": "flipogram-mobile",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
@@ -27,6 +27,7 @@
     "expo-image": "~3.0.11",
     "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.11",
+    "expo-linear-gradient": "^56.0.4",
     "expo-linking": "~8.0.12",
     "expo-router": "~6.0.23",
     "expo-splash-screen": "~31.0.13",

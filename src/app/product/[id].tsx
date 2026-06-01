@@ -148,7 +148,7 @@ export default function ProductDetailScreen() {
                 <Lucide name="sparkles" size={14} color="#00f5ff" style={styles.vibeSparkle} />
                 <Text style={styles.vibeText}>Neural Vibe: {product.vibe}</Text>
               </View>
-              <Text style={styles.serialText}>Serial: {product.id.substring(0, 8).toUpperCase()}-AURA</Text>
+              <Text style={styles.serialText}>Serial: {product.id.substring(0, 8).toUpperCase()}-AURAGRAM</Text>
             </View>
 
             {/* Store & Title */}
@@ -171,17 +171,17 @@ export default function ProductDetailScreen() {
               </View>
             </View>
 
-            {/* Price & Aura score matrices */}
+            {/* Price & AuraGram score matrices */}
             <View style={styles.matricesRow}>
               <View style={styles.matrixCell}>
                 <Text style={styles.matrixLabel}>Acquisition Price</Text>
                 <Text style={styles.matrixVal}>₹{product.price?.toLocaleString()}</Text>
               </View>
               <View style={styles.matrixCell}>
-                <Text style={styles.matrixLabel}>Aura Score</Text>
-                <View style={styles.auraBox}>
+                <Text style={styles.matrixLabel}>AuraGram Score</Text>
+                <View style={styles.auragramBox}>
                   <Lucide name="flash" size={19} color="#00f5ff" />
-                  <Text style={styles.auraVal}>9.8</Text>
+                  <Text style={styles.auragramVal}>9.8</Text>
                 </View>
               </View>
             </View>
@@ -242,13 +242,13 @@ export default function ProductDetailScreen() {
             <View style={styles.trustGrid}>
               <View style={styles.trustCard}>
                 <Lucide name="checkmark-circle" size={23} color="#00f5ff" />
-                <Text style={styles.trustTitle}>Sovereign Authenticity</Text>
-                <Text style={styles.trustDesc}>Verified by AURA Neural Ledger. Certificate included.</Text>
+                <Text style={styles.trustTitle}>Verified Authenticity</Text>
+                <Text style={styles.trustDesc}>Verified by AURAGRAM Neural Ledger. Certificate included.</Text>
               </View>
               <View style={styles.trustCard}>
                 <Lucide name="globe" size={23} color="#00f5ff" />
                 <Text style={styles.trustTitle}>Global Escrow</Text>
-                <Text style={styles.trustDesc}>Funds held in secure AURA portal until artifact arrival.</Text>
+                <Text style={styles.trustDesc}>Funds held in secure AURAGRAM portal until artifact arrival.</Text>
               </View>
             </View>
 
@@ -483,13 +483,13 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
     marginTop: 4,
   },
-  auraBox: {
+  auragramBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     marginTop: 4,
   },
-  auraVal: {
+  auragramVal: {
     color: "#00f5ff",
     fontSize: 24,
     fontWeight: "bold",

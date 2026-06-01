@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Video, ResizeMode, Audio, InterruptionModeIOS, InterruptionModeAndroid } from "expo-av";
+import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
@@ -252,7 +253,7 @@ interface FloatingHeart {
 }
 
 export default function ReelsScreen() {
-  const { products, stories, loadingFeed, fetchFeed, fetchProducts, triggerHaptic, activeMaisonId, currentUser, authOnboard, setCurrentUser, activeProfile, userProfiles, createNewProfile, switchActiveProfile, fetchProfiles } = useStore();
+  const { products, stories, loadingFeed, fetchFeed, fetchProducts, triggerHaptic, activeMaisonId, currentUser, authOnboard, setCurrentUser, activeProfile, userProfiles, createNewProfile, switchActiveProfile, fetchProfiles, notifications, loadingNotifications, fetchNotifications, markNotificationsRead } = useStore();
   const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
   const params = useLocalSearchParams<{ openDMs?: string; openSearch?: string; activeTab?: string; openCamera?: string }>();
   const insets = useSafeAreaInsets();
@@ -305,6 +306,18 @@ export default function ReelsScreen() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [activeChat, setActiveChat] = useState<any>(null);
   const [loadingChats, setLoadingChats] = useState(false);
+
+  // 🔔 ACTIVITY DRAWER & NOTIFICATIONS REAL-TIME POLLING
+  const [showActivityDrawer, setShowActivityDrawer] = useState(false);
+  useEffect(() => {
+    if (activeProfile?.id) {
+      fetchNotifications(activeProfile.id);
+      const pollInterval = setInterval(() => {
+        fetchNotifications(activeProfile.id);
+      }, 10000);
+      return () => clearInterval(pollInterval);
+    }
+  }, [activeProfile?.id]);
   const [chatReplyText, setChatReplyText] = useState("");
   const [showExploreGrid, setShowExploreGrid] = useState(false);
   const [selectedMediaUri, setSelectedMediaUri] = useState<string | null>(null);
@@ -392,7 +405,7 @@ export default function ReelsScreen() {
 
   // Advanced Reels Creator & Affiliate Tagging States
   const [localReels, setLocalReels] = useState<any[]>([]);
-  const [activeInstaStories, setActiveInstaStories] = useState<any[]>(INSTA_STORIES);
+  const { instaStories: activeInstaStories, addInstaStorySlide } = useStore();
   const [selectedAudio, setSelectedAudio] = useState<any>({
     title: "Phoolon Ka Taron Ka (Bespoke Mix)",
     artist: "Vedang Raina x A.R. Rahman",
@@ -598,11 +611,29 @@ export default function ReelsScreen() {
     setShowCommentsModal(true);
   };
 
-  const handleMaisonProfilePress = (item: any) => {
+  const navigateToUserProfile = (username: string) => {
     triggerHaptic("medium");
+    setShowCommentsModal(false);
+    setShowActivityDrawer(false);
+    
+    // Normalize format to lowercase with underscores
+    const cleanUsername = username.toLowerCase().replace(/\s+/g, "_").replace(/['']/g, "");
+    
+    const isOwnProfile = 
+      (activeProfile && activeProfile.username?.toLowerCase() === cleanUsername) ||
+      (activeMaisonId && activeMaisonId.toLowerCase() === cleanUsername) ||
+      (userProfiles && userProfiles.some((p: any) => p.username?.toLowerCase() === cleanUsername));
+
+    if (isOwnProfile) {
+      router.push("/account");
+    } else {
+      router.push(`/profile/${cleanUsername}` as any);
+    }
+  };
+
+  const handleMaisonProfilePress = (item: any) => {
     const creatorName = item.user?.name || "Alok Maison";
-    const formattedId = creatorName.toLowerCase().replace(/\s+/g, "-").replace(/['']/g, "");
-    router.push(`/maison/${formattedId}` as any);
+    navigateToUserProfile(creatorName);
   };
 
   const handleThreeDotsPress = (item: any) => {
@@ -636,7 +667,7 @@ export default function ReelsScreen() {
   const fetchChats = async () => {
     setLoadingChats(true);
     try {
-      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/chat?userId=user_2pk5xskr&maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/chat?userId=user_2pk5xskr&maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.conversations.length > 0) {
         const mapped = data.conversations.map((c: any, index: number) => {
@@ -664,7 +695,7 @@ export default function ReelsScreen() {
   // ── Business Hub API fetchers ──
   const fetchBusinessStats = async () => {
     try {
-      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/business-stats?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/business-stats?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.stats) {
         setLiveBusinessStats([
@@ -682,7 +713,7 @@ export default function ReelsScreen() {
   const fetchPromotions = async () => {
     setLoadingPromos(true);
     try {
-      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/promotions?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/promotions?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.promos?.length > 0) {
         setLivePromos(data.promos);
@@ -696,7 +727,7 @@ export default function ReelsScreen() {
 
   const fetchBroadcasts = async () => {
     try {
-      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/broadcast?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/broadcast?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success) setLiveBroadcasts(data.broadcasts || []);
     } catch { /* fallback */ }
@@ -704,7 +735,7 @@ export default function ReelsScreen() {
 
   const fetchAds = async () => {
     try {
-      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/ads?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/ads?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.metrics?.bids?.length > 0) {
         setLiveAds(data.metrics.bids.map((b: any) => ({
@@ -720,7 +751,7 @@ export default function ReelsScreen() {
 
   const sendBroadcast = async (title: string, content: string) => {
     try {
-      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/broadcast", {
+      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/broadcast", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ maisonId: activeMaisonId, title, content, audience: "ALL", type: "TEXT" }),
@@ -732,7 +763,7 @@ export default function ReelsScreen() {
 
   const createPromo = async (code: string, discount: number, type: string) => {
     try {
-      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/promotions", {
+      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/promotions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ maisonId: activeMaisonId, code, discount, type }),
@@ -755,7 +786,7 @@ export default function ReelsScreen() {
   const fetchAutoReply = async () => {
     setLoadingAutoReply(true);
     try {
-      const res = await fetch(`https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/auto-reply?maisonId=${activeMaisonId}`);
+      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/auto-reply?maisonId=${activeMaisonId}`);
       const data = await res.json();
       if (data.success && data.config) {
         setAutoReplyEnabled(data.config.enabled);
@@ -770,7 +801,7 @@ export default function ReelsScreen() {
 
   const saveAutoReply = async () => {
     try {
-      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/auto-reply", {
+      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/auto-reply", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -831,7 +862,7 @@ export default function ReelsScreen() {
     triggerHaptic("success");
 
     try {
-      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/feed", {
+      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/feed", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -925,7 +956,7 @@ export default function ReelsScreen() {
     } : c));
 
     try {
-      const res = await fetch("https://duhpj-106-219-122-49.run.pinggy-free.link/api/mobile/chat", {
+      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1389,31 +1420,56 @@ export default function ReelsScreen() {
     // Persistent header - disabled collapsing to prevent layout shifts during scroll
   };
 
-  return (
-    <View style={styles.container}>
-      <SafeAreaView style={styles.safeAreaContainer} edges={["top"]}>
-        
-        {/* 🏔️ TOP HEADER ROW */}
-        {!(isReelsFullScreen && activeFeedTab === "reels") && (
-          <View style={styles.instaHeader}>
-            <TouchableOpacity onPress={handleSelectMedia}>
-              <Lucide name="add-outline" size={28} color="#fff" />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              onPress={() => { triggerHaptic("medium"); setShowProfileSwitcher(true); }}
-              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
-            >
-              <Text style={styles.instaLogoText}>
-                {activeProfile ? `@${activeProfile.username}`.toUpperCase() : "A U R A"}
-              </Text>
-              <Lucide name="chevron-down" size={14} color="#00f5ff" style={{ marginTop: 2 }} />
-            </TouchableOpacity>
+    const unreadNotificationsCount = notifications ? notifications.filter((n: any) => !n.read).length : 0;
 
-            <View style={styles.headerRightIcons}>
-              <TouchableOpacity onPress={() => triggerHaptic("light")}>
-                <Lucide name="heart-outline" size={26} color="#fff" style={styles.headerIcon} />
+    return (
+      <View style={styles.container}>
+        <SafeAreaView style={styles.safeAreaContainer} edges={["top"]}>
+          
+          {/* 🏔️ TOP HEADER ROW */}
+          {!(isReelsFullScreen && activeFeedTab === "reels") && (
+            <View style={styles.instaHeader}>
+              <TouchableOpacity onPress={handleSelectMedia}>
+                <Lucide name="add-outline" size={28} color="#fff" />
               </TouchableOpacity>
+              
+              <TouchableOpacity 
+                onPress={() => { triggerHaptic("medium"); setShowProfileSwitcher(true); }}
+                style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+              >
+                <Text style={styles.instaLogoText}>
+                  {activeProfile ? `@${activeProfile.username}`.toUpperCase() : "A U R A"}
+                </Text>
+                <Lucide name="chevron-down" size={14} color="#00f5ff" style={{ marginTop: 2 }} />
+              </TouchableOpacity>
+  
+              <View style={styles.headerRightIcons}>
+                <TouchableOpacity 
+                  onPress={() => { 
+                    triggerHaptic("medium"); 
+                    setShowActivityDrawer(true); 
+                    if (activeProfile?.id) {
+                      markNotificationsRead(activeProfile.id);
+                    }
+                  }}
+                >
+                  <View style={{ position: "relative" }}>
+                    <Lucide name="heart-outline" size={26} color="#fff" style={styles.headerIcon} />
+                    {unreadNotificationsCount > 0 && (
+                      <View style={{
+                        position: "absolute",
+                        top: -2,
+                        right: -2,
+                        width: 10,
+                        height: 10,
+                        borderRadius: 5,
+                        backgroundColor: "#00f5ff",
+                        borderWidth: 1.5,
+                        borderColor: "#080415"
+                      }} />
+                    )}
+                  </View>
+                </TouchableOpacity>
               <TouchableOpacity onPress={() => { triggerHaptic("medium"); router.push("/cart"); }}>
                 <View style={styles.dmIconWrapper}>
                   <Lucide name="cart-outline" size={26} color="#fff" />
@@ -1439,18 +1495,35 @@ export default function ReelsScreen() {
                     setStoryProgress(0);
                   }}
                 >
-                  <View style={[
-                    styles.avatarWrapper, 
-                    story.active && styles.activeAvatarWrapper,
-                    story.isYourStory && styles.yourStoryAvatarWrapper
-                  ]}>
-                    <Image source={{ uri: story.avatar }} style={styles.storyAvatarImg} />
-                    {story.isYourStory && (
-                      <View style={styles.yourStoryPlusBadge}>
-                        <Lucide name="add-circle" size={19} color="#0095f6" />
+                  {story.active ? (
+                    <LinearGradient
+                      colors={["#fb923c", "#d946ef", "#8b5cf6"]}
+                      start={{ x: 0, y: 1 }}
+                      end={{ x: 1, y: 0 }}
+                      style={{
+                        width: 66, height: 66, borderRadius: 33,
+                        justifyContent: "center", alignItems: "center",
+                      }}
+                    >
+                      <View style={{
+                        width: 60, height: 60, borderRadius: 30,
+                        backgroundColor: "#080415",
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}>
+                        <Image source={{ uri: story.avatar }} style={{ width: 54, height: 54, borderRadius: 27 }} />
                       </View>
-                    )}
-                  </View>
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.avatarWrapper}>
+                      <Image source={{ uri: story.avatar }} style={styles.storyAvatarImg} />
+                      {story.isYourStory && (
+                        <View style={styles.yourStoryPlusBadge}>
+                          <Lucide name="add-circle" size={19} color="#00f5ff" />
+                        </View>
+                      )}
+                    </View>
+                  )}
                   <Text style={styles.storyUsername} numberOfLines={1}>{story.username}</Text>
                 </TouchableOpacity>
               ))}
@@ -1667,27 +1740,50 @@ export default function ReelsScreen() {
                         }}
                         activeOpacity={0.75}
                       >
-                        <View style={{
-                          width: 58, height: 58, borderRadius: 29,
-                          borderWidth: story.active ? 2 : story.isYourStory ? 1.5 : 0,
-                          borderColor: story.active ? "#00f5ff" : "rgba(255,255,255,0.25)",
-                          padding: 2,
-                          backgroundColor: "#080415",
-                          position: "relative",
-                        }}>
-                          <Image source={{ uri: story.avatar }} style={{ width: 50, height: 50, borderRadius: 25 }} />
-                          {story.isYourStory && (
+                        {story.active ? (
+                          <LinearGradient
+                            colors={["#fb923c", "#d946ef", "#8b5cf6"]}
+                            start={{ x: 0, y: 1 }}
+                            end={{ x: 1, y: 0 }}
+                            style={{
+                              width: 60, height: 60, borderRadius: 30,
+                              justifyContent: "center", alignItems: "center",
+                            }}
+                          >
                             <View style={{
-                              position: "absolute", bottom: -1, right: -1,
-                              width: 18, height: 18, borderRadius: 9,
-                              backgroundColor: "#0095f6",
-                              alignItems: "center", justifyContent: "center",
-                              borderWidth: 1.5, borderColor: "#080415",
+                              width: 54, height: 54, borderRadius: 27,
+                              backgroundColor: "#080415",
+                              justifyContent: "center",
+                              alignItems: "center",
                             }}>
-                              <Lucide name="add" size={14} color="#fff" />
+                              <Image source={{ uri: story.avatar }} style={{ width: 48, height: 48, borderRadius: 24 }} />
                             </View>
-                          )}
-                        </View>
+                          </LinearGradient>
+                        ) : (
+                          <View style={{
+                            width: 58, height: 58, borderRadius: 29,
+                            borderWidth: story.isYourStory ? 1.5 : 1,
+                            borderColor: story.isYourStory ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.15)",
+                            padding: 2,
+                            backgroundColor: "#080415",
+                            position: "relative",
+                            justifyContent: "center",
+                            alignItems: "center"
+                          }}>
+                            <Image source={{ uri: story.avatar }} style={{ width: 50, height: 50, borderRadius: 25 }} />
+                            {story.isYourStory && (
+                              <View style={{
+                                position: "absolute", bottom: -1, right: -1,
+                                width: 18, height: 18, borderRadius: 9,
+                                backgroundColor: "#00f5ff",
+                                alignItems: "center", justifyContent: "center",
+                                borderWidth: 1.5, borderColor: "#080415",
+                              }}>
+                                <Lucide name="add" size={12} color="#000" />
+                              </View>
+                            )}
+                          </View>
+                        )}
                         <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, maxWidth: 58, textAlign: "center" }} numberOfLines={1}>
                           {story.isYourStory ? "Your story" : story.username}
                         </Text>
@@ -2938,11 +3034,19 @@ export default function ReelsScreen() {
 
               {/* Story Header */}
               <View style={styles.storyModalHeader}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity 
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                  onPress={() => {
+                    const groupUsername = selectedStoriesGroup.username;
+                    setSelectedStoriesGroup(null);
+                    navigateToUserProfile(groupUsername);
+                  }}
+                  activeOpacity={0.85}
+                >
                   <Image source={{ uri: selectedStoriesGroup.avatar }} style={styles.storyHeaderAvatar} />
                   <Text style={styles.storyHeaderUsername}>{selectedStoriesGroup.username}</Text>
                   <Text style={styles.storyHeaderTime}>12h</Text>
-                </View>
+                </TouchableOpacity>
                 <TouchableOpacity onPress={() => { triggerHaptic("light"); setSelectedStoriesGroup(null); }}>
                   <Lucide name="close" size={26} color="#fff" />
                 </TouchableOpacity>
@@ -4073,10 +4177,11 @@ export default function ReelsScreen() {
                 showsHorizontalScrollIndicator={false} 
                 contentContainerStyle={styles.shareActionsScroll}
               >
+                {/* 🔗 COPY LINK */}
                 <TouchableOpacity style={styles.shareActionBtn} onPress={async () => {
                   triggerHaptic("success");
                   setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `https://aura.luxury/reel/${shareTargetPost?.id || "s1"}`;
+                  const postUrl = shareTargetPost?.url || `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/reel/${shareTargetPost?.id || "s1"}`;
                   try {
                     await Clipboard.setStringAsync(postUrl);
                     Alert.alert("Link Copied", "Instant match! The luxury curation link has been copied to your clipboard.");
@@ -4091,6 +4196,7 @@ export default function ReelsScreen() {
                   <Text style={styles.shareActionLabel}>Copy link</Text>
                 </TouchableOpacity>
 
+                {/* ➕ ADD TO STORY */}
                 <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
                   triggerHaptic("success");
                   setShowShareSheet(false);
@@ -4104,18 +4210,7 @@ export default function ReelsScreen() {
                     artifact: shareTargetPost.artifact || null
                   };
 
-                  setActiveInstaStories(prev => {
-                    return prev.map(story => {
-                      if (story.isYourStory) {
-                        return {
-                          ...story,
-                          slides: [newSlide, ...(story.slides || [])]
-                        };
-                      }
-                      return story;
-                    });
-                  });
-
+                  addInstaStorySlide(newSlide);
                   Alert.alert("Story Shared", "Shared successfully to your Stories feed! View it at the top of your home screen.");
                 }}>
                   <View style={styles.shareActionCircle}>
@@ -4124,10 +4219,11 @@ export default function ReelsScreen() {
                   <Text style={styles.shareActionLabel}>Add to story</Text>
                 </TouchableOpacity>
 
+                {/* 💬 WHATSAPP */}
                 <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
                   triggerHaptic("success");
                   setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `https://aura.luxury/reel/${shareTargetPost?.id || "s1"}`;
+                  const postUrl = shareTargetPost?.url || `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/reel/${shareTargetPost?.id || "s1"}`;
                   const caption = shareTargetPost?.caption || "Check out this luxury curation!";
                   const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"\n\nLink: ${postUrl}`;
                   const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(text)}`;
@@ -4141,14 +4237,47 @@ export default function ReelsScreen() {
                   <Text style={styles.shareActionLabel}>WhatsApp</Text>
                 </TouchableOpacity>
 
+                {/* 📸 INSTAGRAM */}
                 <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
                   triggerHaptic("success");
                   setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `https://aura.luxury/reel/${shareTargetPost?.id || "s1"}`;
+                  Linking.openURL("instagram://camera").catch(() => {
+                    Linking.openURL("https://instagram.com");
+                  });
+                }}>
+                  <View style={[styles.shareActionCircle, { backgroundColor: "#e1306c" }]}>
+                    <Lucide name="logo-instagram" size={22} color="#fff" />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Instagram</Text>
+                </TouchableOpacity>
+
+                {/* ✈️ TELEGRAM */}
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
+                  triggerHaptic("success");
+                  setShowShareSheet(false);
+                  const postUrl = shareTargetPost?.url || `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/reel/${shareTargetPost?.id || "s1"}`;
                   const caption = shareTargetPost?.caption || "Check out this luxury curation!";
                   const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"\n\nLink: ${postUrl}`;
+                  const telegramUrl = `tg://msg?text=${encodeURIComponent(text)}`;
+                  Linking.openURL(telegramUrl).catch(() => {
+                    Linking.openURL(`https://t.me/share/url?url=${encodeURIComponent(postUrl)}&text=${encodeURIComponent(text)}`);
+                  });
+                }}>
+                  <View style={[styles.shareActionCircle, { backgroundColor: "#0088cc" }]}>
+                    <Lucide name="paper-plane-outline" size={22} color="#fff" />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Telegram</Text>
+                </TouchableOpacity>
+
+                {/* 📤 NATIVE SYSTEM SHARE ("MORE") */}
+                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
+                  triggerHaptic("success");
+                  setShowShareSheet(false);
+                  const postUrl = shareTargetPost?.url || `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/reel/${shareTargetPost?.id || "s1"}`;
+                  const caption = shareTargetPost?.caption || "Check out this luxury curation!";
+                  const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"`;
                   Share.share({
-                    message: text,
+                    message: `${text}\n\nLink: ${postUrl}`,
                     url: postUrl,
                     title: "AURA Luxury Curation"
                   }).catch(err => {
@@ -4158,24 +4287,7 @@ export default function ReelsScreen() {
                   <View style={styles.shareActionCircle}>
                     <Lucide name="share-social-outline" size={22} color="#fff" />
                   </View>
-                  <Text style={styles.shareActionLabel}>Share to...</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
-                  triggerHaptic("success");
-                  setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `https://aura.luxury/reel/${shareTargetPost?.id || "s1"}`;
-                  const caption = shareTargetPost?.caption || "Check out this luxury curation!";
-                  const text = `My luxury style of the day from AURA ✨: "${caption}"\n\nLink: ${postUrl}`;
-                  const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(text)}`;
-                  Linking.openURL(whatsappUrl).catch(() => {
-                    Linking.openURL(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`);
-                  });
-                }}>
-                  <View style={[styles.shareActionCircle, { backgroundColor: "#25d366" }]}>
-                    <Lucide name="logo-whatsapp" size={22} color="#fff" />
-                  </View>
-                  <Text style={styles.shareActionLabel}>WhatsApp Status</Text>
+                  <Text style={styles.shareActionLabel}>More</Text>
                 </TouchableOpacity>
               </ScrollView>
 
@@ -4348,15 +4460,31 @@ export default function ReelsScreen() {
               >
                 {/* Author original post caption as the pinned first comment */}
                 <View style={styles.commentRow}>
-                  <View style={styles.commentAvatar}>
-                    <Text style={styles.commentAvatarText}>
-                      {commentsTargetPost.user?.name?.[0]?.toUpperCase() || "S"}
-                    </Text>
-                  </View>
+                  <TouchableOpacity 
+                    onPress={() => {
+                      const authorName = commentsTargetPost.user?.name || "gucci";
+                      navigateToUserProfile(authorName);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.commentAvatar}>
+                      <Text style={styles.commentAvatarText}>
+                        {commentsTargetPost.user?.name?.[0]?.toUpperCase() || "S"}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.commentUsername}>
-                      {commentsTargetPost.user?.name?.toLowerCase().replace(/\s+/g, "") || "gucci"} <Text style={styles.commentBadge}>Author</Text>
-                    </Text>
+                    <TouchableOpacity 
+                      onPress={() => {
+                        const authorName = commentsTargetPost.user?.name || "gucci";
+                        navigateToUserProfile(authorName);
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.commentUsername}>
+                        {commentsTargetPost.user?.name?.toLowerCase().replace(/\s+/g, "") || "gucci"} <Text style={styles.commentBadge}>Author</Text>
+                      </Text>
+                    </TouchableOpacity>
                     <Text style={styles.commentTextContent}>
                       {commentsTargetPost.caption || "Atelier Masterpiece Collection."}
                     </Text>
@@ -4369,13 +4497,23 @@ export default function ReelsScreen() {
                 {/* Additional user comments */}
                 {(postComments[commentsTargetPost.id] || []).map((comm: any) => (
                   <View key={comm.id} style={styles.commentRow}>
-                    <View style={[styles.commentAvatar, { backgroundColor: "#fb923c" }]}>
-                      <Text style={styles.commentAvatarText}>
-                        {comm.username[0]?.toUpperCase()}
-                      </Text>
-                    </View>
+                    <TouchableOpacity 
+                      onPress={() => navigateToUserProfile(comm.username)}
+                      activeOpacity={0.85}
+                    >
+                      <View style={[styles.commentAvatar, { backgroundColor: "#fb923c" }]}>
+                        <Text style={styles.commentAvatarText}>
+                          {comm.username[0]?.toUpperCase()}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.commentUsername}>{comm.username}</Text>
+                      <TouchableOpacity 
+                        onPress={() => navigateToUserProfile(comm.username)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.commentUsername}>{comm.username}</Text>
+                      </TouchableOpacity>
                       <Text style={styles.commentTextContent}>{comm.text}</Text>
                       <Text style={styles.commentTime}>{comm.time || "now"}</Text>
                     </View>
@@ -4818,6 +4956,227 @@ export default function ReelsScreen() {
         </View>
       </Modal>
 
+      {/* 🔔 HIGH-FIDELITY GLASSMORPHIC ACTIVITY NOTIFICATION DRAWER */}
+      <Modal
+        visible={showActivityDrawer}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowActivityDrawer(false)}
+      >
+        <View style={activityStyles.overlay}>
+          <TouchableOpacity 
+            style={activityStyles.dismissTouchable} 
+            onPress={() => setShowActivityDrawer(false)} 
+          />
+          <View style={activityStyles.panel}>
+            {/* Header notch indicator */}
+            <View style={activityStyles.notch} />
+            
+            <View style={activityStyles.header}>
+              <TouchableOpacity onPress={() => setShowActivityDrawer(false)} style={activityStyles.backBtn}>
+                <Lucide name="chevron-back" size={24} color="#fff" />
+              </TouchableOpacity>
+              
+              <View style={activityStyles.headerTitleWrapper}>
+                <Text style={activityStyles.headerTitle}>
+                  {activeProfile ? activeProfile.username : "activity"}
+                </Text>
+                <Lucide name="chevron-down" size={12} color="#00f5ff" style={{ marginLeft: 3, marginTop: 2 }} />
+                {/* Red dot notification */}
+                <View style={activityStyles.headerRedDot} />
+              </View>
+
+              <TouchableOpacity onPress={() => setShowActivityDrawer(false)}>
+                <Lucide name="close-circle" size={24} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
+            </View>
+
+            {/* 📈 DYNAMIC PROFESSIONAL ADS PROMOTIONS BANNER */}
+            {(activeProfile?.type === "BUSINESS" || activeProfile?.type === "INFLUENCER") && (
+              <TouchableOpacity 
+                style={activityStyles.adsBanner}
+                onPress={() => {
+                  triggerHaptic("medium");
+                  Alert.alert(
+                    "Ad Campaign Hub",
+                    "Recent Activity from your ads:\n• Reach: 24.8K (+12% this week)\n• Auction Wins: 94.2%\n• Total Spent: 14,250 INR",
+                    [{ text: "View Dashboard", onPress: () => router.push("/dashboard") }, { text: "Dismiss", style: "cancel" }]
+                  );
+                }}
+              >
+                <View style={activityStyles.adsIconContainer}>
+                  <Lucide name="trending-up" size={20} color="#fff" />
+                </View>
+                <View style={activityStyles.adsTextContainer}>
+                  <Text style={activityStyles.adsTitle}>Ads</Text>
+                  <Text style={activityStyles.adsSubtitle}>Recent activity from your ads.</Text>
+                </View>
+                <Lucide name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
+            )}
+
+            <ScrollView contentContainerStyle={activityStyles.notificationList} showsVerticalScrollIndicator={false}>
+              {loadingNotifications ? (
+                <View style={activityStyles.loadingContainer}>
+                  <ActivityIndicator size="small" color="#00f5ff" />
+                  <Text style={activityStyles.loadingText}>Fetching activity pulse...</Text>
+                </View>
+              ) : notifications.length === 0 ? (
+                <View style={activityStyles.emptyContainer}>
+                  <View style={activityStyles.emptyIconCircle}>
+                    <Lucide name="heart-outline" size={40} color="rgba(255,255,255,0.2)" />
+                  </View>
+                  <Text style={activityStyles.emptyTitle}>No Activity Yet</Text>
+                  <Text style={activityStyles.emptySubtitle}>When other users follow you, comment, or send brand offers, they'll pulse here!</Text>
+                </View>
+              ) : (() => {
+                // Calculate chronological slices
+                const nowMs = Date.now();
+                const highlights: any[] = [];
+                const last7Days: any[] = [];
+                const last30Days: any[] = [];
+
+                notifications.forEach((item: any) => {
+                  const elapsedMs = nowMs - new Date(item.createdAt).getTime();
+                  const elapsedDays = elapsedMs / (1000 * 60 * 60 * 24);
+
+                  if (item.type === "BRAND_DEAL" && !item.read) {
+                    highlights.push(item);
+                  } else if (elapsedDays <= 7) {
+                    last7Days.push(item);
+                  } else {
+                    last30Days.push(item);
+                  }
+                });
+
+                const renderCard = (item: any) => {
+                  let badgeColor = "#8b5cf6"; // Purple default
+                  let badgeIcon = "notifications-outline";
+                  if (item.type === "FOLLOW") {
+                    badgeColor = "#fb923c"; // Orange
+                    badgeIcon = "person-add-outline";
+                  } else if (item.type === "BRAND_DEAL") {
+                    badgeColor = "#00f5ff"; // Cyan
+                    badgeIcon = "sparkles-outline";
+                  } else if (item.type === "LIKE") {
+                    badgeColor = "#d946ef"; // Magenta
+                    badgeIcon = "heart";
+                  } else if (item.type === "COMMENT") {
+                    badgeColor = "#3b82f6"; // Blue
+                    badgeIcon = "chatbubble-outline";
+                  }
+
+                  const formattedTime = () => {
+                    const elapsedMs = Date.now() - new Date(item.createdAt).getTime();
+                    const minutes = Math.floor(elapsedMs / (1000 * 60));
+                    const hours = Math.floor(minutes / 60);
+                    const days = Math.floor(hours / 24);
+                    if (days > 0) return `${days}d`;
+                    if (hours > 0) return `${hours}h`;
+                    if (minutes > 0) return `${minutes}m`;
+                    return "now";
+                  };
+
+                  return (
+                    <View key={item.id} style={[activityStyles.card, !item.read && activityStyles.cardUnread]}>
+                      <TouchableOpacity 
+                        onPress={() => navigateToUserProfile(item.senderUsername)}
+                        activeOpacity={0.85}
+                      >
+                        <View style={activityStyles.avatarWrapper}>
+                          <Image source={{ uri: item.senderLogo }} style={activityStyles.avatar} />
+                          <View style={[activityStyles.badgeDot, { backgroundColor: badgeColor }]}>
+                            <Lucide name={badgeIcon as any} size={8} color="#fff" />
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                      
+                      <View style={activityStyles.contentBlock}>
+                        <Text style={activityStyles.messageText}>
+                          <Text 
+                            style={activityStyles.senderUsername}
+                            onPress={() => navigateToUserProfile(item.senderUsername)}
+                          >
+                            @{item.senderUsername}{" "}
+                          </Text>
+                          {item.message}
+                          <Text style={activityStyles.timeText}>  {formattedTime()}</Text>
+                        </Text>
+                      </View>
+                      
+                      {item.type === "FOLLOW" && (
+                        <TouchableOpacity 
+                          style={activityStyles.actionButton}
+                          onPress={() => {
+                            triggerHaptic("medium");
+                            Alert.alert("Network Node Sync", `Following back @${item.senderUsername} dynamically.`);
+                          }}
+                        >
+                          <Text style={activityStyles.actionButtonText}>Follow back</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {item.type === "BRAND_DEAL" && (
+                        <TouchableOpacity 
+                          style={[activityStyles.actionButton, { backgroundColor: "#00f5ff" }]}
+                          onPress={() => {
+                            triggerHaptic("success");
+                            Alert.alert(
+                              "Brand Deal Offer", 
+                              `Review terms: "Bespoke look promotion for 320,000 INR."`,
+                              [
+                                { text: "Accept Offer", onPress: () => Alert.alert("Success", "Offer accepted and escrow locked!") },
+                                { text: "Decline", style: "cancel" }
+                              ]
+                            );
+                          }}
+                        >
+                          <Text style={[activityStyles.actionButtonText, { color: "#080415", fontWeight: "bold" }]}>Review</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Thumbnail Preview on absolute right exactly matching Instagram! */}
+                      {item.relatedPostThumbnail && (
+                        <Image source={{ uri: item.relatedPostThumbnail }} style={activityStyles.postThumbnail} />
+                      )}
+                    </View>
+                  );
+                };
+
+                return (
+                  <>
+                    {/* Section 1: Highlights */}
+                    {highlights.length > 0 && (
+                      <View style={activityStyles.sectionBlock}>
+                        <Text style={activityStyles.sectionTitle}>Highlights</Text>
+                        {highlights.map(renderCard)}
+                      </View>
+                    )}
+
+                    {/* Section 2: Last 7 days */}
+                    {last7Days.length > 0 && (
+                      <View style={activityStyles.sectionBlock}>
+                        <Text style={activityStyles.sectionTitle}>Last 7 days</Text>
+                        {last7Days.map(renderCard)}
+                      </View>
+                    )}
+
+                    {/* Section 3: Last 30 days */}
+                    {last30Days.length > 0 && (
+                      <View style={activityStyles.sectionBlock}>
+                        <Text style={activityStyles.sectionTitle}>Last 30 days</Text>
+                        {last30Days.map(renderCard)}
+                      </View>
+                    )}
+                  </>
+                );
+              })()}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+
       {/* ➕ SOVEREIGN MULTI-PATH ADD PROFILE WIZARD MODAL */}
       <Modal
         visible={showAddProfileModal}
@@ -5110,8 +5469,6 @@ const styles = StyleSheet.create({
   storiesBubbleContainer: {
     height: 98,
     backgroundColor: "#080415",
-    borderBottomWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.08)",
   },
   storiesScroll: {
     paddingHorizontal: 8,
@@ -5162,8 +5519,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#0b071e",
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderBottomWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.08)",
   },
   feedSelectorTabBtn: {
     flexDirection: "row",
@@ -5360,9 +5715,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-around",
     alignItems: "center",
     height: 52,
-    backgroundColor: "#080415",
+    backgroundColor: "rgba(8,4,21,0.88)", // Premium glassmorphic background
     borderTopWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.05)",
   },
   tabBtn: {
     padding: 8,
@@ -8422,4 +8777,228 @@ const switcherStyles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)"
   }
 });
+
+const activityStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end"
+  },
+  dismissTouchable: {
+    flex: 1
+  },
+  panel: {
+    backgroundColor: "rgba(13,10,33,0.96)",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    paddingBottom: 40,
+    maxHeight: height * 0.8
+  },
+  notch: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 20
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    marginBottom: 16
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#fff",
+    letterSpacing: 0.5
+  },
+  notificationList: {
+    paddingHorizontal: 20,
+    gap: 12
+  },
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.04)",
+    padding: 12,
+    gap: 12
+  },
+  cardUnread: {
+    borderColor: "rgba(0,245,255,0.15)",
+    backgroundColor: "rgba(0,245,255,0.03)"
+  },
+  avatarWrapper: {
+    position: "relative"
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.05)"
+  },
+  badgeDot: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: "#0d0a21"
+  },
+  contentBlock: {
+    flex: 1,
+    gap: 4
+  },
+  messageText: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.85)",
+    lineHeight: 18
+  },
+  senderUsername: {
+    fontWeight: "bold",
+    color: "#fff"
+  },
+  timeText: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.4)"
+  },
+  tag: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 2
+  },
+  tagText: {
+    fontSize: 9,
+    fontWeight: "bold",
+    letterSpacing: 0.5
+  },
+  actionButton: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10
+  },
+  actionButtonText: {
+    fontSize: 12,
+    color: "#fff",
+    fontWeight: "600"
+  },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    gap: 8
+  },
+  loadingText: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.4)"
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+    gap: 16
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(255,255,255,0.02)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.04)"
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#fff"
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.4)",
+    textAlign: "center",
+    lineHeight: 18
+  },
+  backBtn: {
+    padding: 4
+  },
+  headerTitleWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2
+  },
+  headerRedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#ef4444",
+    marginLeft: 4,
+    marginTop: -4
+  },
+  adsBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 14,
+    gap: 12
+  },
+  adsIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(0,245,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  adsTextContainer: {
+    flex: 1,
+    gap: 2
+  },
+  adsTitle: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "#fff"
+  },
+  adsSubtitle: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.5)"
+  },
+  postThumbnail: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.05)"
+  },
+  sectionBlock: {
+    gap: 8,
+    marginBottom: 16
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "rgba(255,255,255,0.5)",
+    marginBottom: 4
+  }
+});
+
 

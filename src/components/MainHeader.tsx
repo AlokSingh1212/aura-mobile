@@ -29,7 +29,7 @@ export default function MainHeader() {
         onPress={() => handleNav("/")}
         activeOpacity={0.7}
       >
-        <Text style={styles.logoText}>AURA</Text>
+        <Text style={styles.logoText}>AURAGRAM</Text>
       </TouchableOpacity>
 
       {/* Right side actions exact copy of web nav actions */}
@@ -104,8 +104,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 24,
     paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderColor: "rgba(255,255,255,0.04)",
     backgroundColor: "#080415",
   },
   logoBtn: {
