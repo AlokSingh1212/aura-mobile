@@ -24,6 +24,8 @@ import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Clipboard from "expo-clipboard";
 import * as ImageManipulator from "expo-image-manipulator";
+import { API_HOST } from "@/constants/api";
+import { LiveShowroom } from "@/components/LiveShowroom";
 
 const { width } = Dimensions.get("window");
 const GRID_ITEM_SIZE = (width - 2) / 3; // 3 columns with 1px gap
@@ -130,6 +132,23 @@ export default function AccountScreen() {
   const [postImage, setPostImage] = useState("https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=400");
   const [postVibe, setPostVibe] = useState("Quiet Luxury");
 
+  // Custom prompt states
+  const [promptVisible, setPromptVisible] = useState(false);
+  const [promptTitle, setPromptTitle] = useState("");
+  const [promptDesc, setPromptDesc] = useState("");
+  const [promptPlaceholder, setPromptPlaceholder] = useState("");
+  const [promptValue, setPromptValue] = useState("");
+  const [promptOnSubmit, setPromptOnSubmit] = useState<((val: string) => void) | null>(null);
+
+  const showCustomPrompt = (title: string, desc: string, placeholder: string, onSubmit: (val: string) => void) => {
+    setPromptTitle(title);
+    setPromptDesc(desc);
+    setPromptPlaceholder(placeholder);
+    setPromptValue("");
+    setPromptOnSubmit(() => onSubmit);
+    setPromptVisible(true);
+  };
+
   // AI Generation states
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiProgress, setAiProgress] = useState(0);
@@ -176,7 +195,7 @@ export default function AccountScreen() {
     if (!currentUser) return;
     const fetchProfileData = async () => {
       try {
-        const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/profile?maisonId=${activeMaisonId}`);
+        const res = await fetch(`${API_HOST}/api/mobile/profile?maisonId=${activeMaisonId}`);
         const data = await res.json();
         if (data.success) {
           if (data.profile) {
@@ -263,7 +282,7 @@ export default function AccountScreen() {
 
   const handleAddStory = async (url: string) => {
     try {
-      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/feed", {
+      const res = await fetch(`${API_HOST}/api/mobile/feed`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -293,7 +312,7 @@ export default function AccountScreen() {
     try {
       setLogo(url);
       setEditLogo(url);
-      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/profile", {
+      const res = await fetch(`${API_HOST}/api/mobile/profile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -532,7 +551,7 @@ export default function AccountScreen() {
     setShowEditModal(false);
 
     try {
-      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/profile", {
+      const res = await fetch(`${API_HOST}/api/mobile/profile`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -584,28 +603,20 @@ export default function AccountScreen() {
 
   const handleAddHighlight = () => {
     triggerHaptic("medium");
-    Alert.prompt(
+    showCustomPrompt(
       "New Highlight",
       "Enter title for your new AURA highlight folder:",
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Create",
-          onPress: (title?: string) => {
-            if (!title || !title.trim()) return;
-            triggerHaptic("success");
-            const newHighlight = {
-              id: `hl_${Date.now()}`,
-              title: title.trim(),
-              avatar: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=150"
-            };
-            setHighlights(prev => [...prev, newHighlight]);
-          }
-        }
-      ]
+      "e.g. Milan Curation",
+      (title) => {
+        if (!title || !title.trim()) return;
+        triggerHaptic("success");
+        const newHighlight = {
+          id: `hl_${Date.now()}`,
+          title: title.trim(),
+          avatar: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=150"
+        };
+        setHighlights(prev => [...prev, newHighlight]);
+      }
     );
   };
 
@@ -623,75 +634,98 @@ export default function AccountScreen() {
 
   const handleAddBrandProfile = async () => {
     triggerHaptic("medium");
-    Alert.prompt(
+    showCustomPrompt(
       "Create New Brand Profile",
       "Enter unique username / Maison ID for your brand (lowercase, no spaces):",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Create",
-          onPress: async (newId?: string) => {
-            if (!newId || !newId.trim()) return;
-            const formattedId = newId.trim().toLowerCase().replace(/\s+/g, "-");
-            
-            Alert.prompt(
-              "Brand Name",
-              "Enter display name for your brand:",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Register Brand",
-                  onPress: async (name?: string) => {
-                    if (!name || !name.trim()) return;
-                    triggerHaptic("success");
-                    try {
-                      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/profile", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          maisonId: formattedId,
-                          oldMaisonId: null,
-                          profileName: name.trim(),
-                          category: "Clothing (Brand)",
-                          bioText: "Bespoke future luxury engineered with sustainable metrics.",
-                          websiteLink: "aura.luxury",
-                          tags: ["@" + formattedId]
-                        })
-                      });
-                      const data = await res.json();
-                      if (data.success) {
-                        Alert.alert("Brand Hydrated", `Sovereign Maison '${name.trim()}' has been minted in PostgreSQL!`);
-                        setActiveMaisonId(formattedId);
-                        setShowSwitcherModal(false);
-                      } else {
-                        Alert.alert("Minting Rejected", data.message || "Failed to register brand profile.");
-                      }
-                    } catch (e) {
-                      Alert.alert("Network Failure", "Failed to connect to AURA database cluster.");
-                    }
-                  }
-                }
-              ]
-            );
+      "e.g. obsidian-drape",
+      (newId) => {
+        if (!newId || !newId.trim()) return;
+        const formattedId = newId.trim().toLowerCase().replace(/\s+/g, "-");
+        
+        showCustomPrompt(
+          "Brand Display Name",
+          "Enter display name for your new brand:",
+          "e.g. Obsidian Drape",
+          async (name) => {
+            if (!name || !name.trim()) return;
+            triggerHaptic("success");
+            try {
+              const res = await fetch(`${API_HOST}/api/mobile/profile`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  maisonId: formattedId,
+                  oldMaisonId: null,
+                  profileName: name.trim(),
+                  category: "Clothing (Brand)",
+                  bioText: "Bespoke future luxury engineered with sustainable metrics.",
+                  websiteLink: "aura.luxury",
+                  tags: ["@" + formattedId]
+                })
+              });
+              const data = await res.json();
+              if (data.success) {
+                Alert.alert("Brand Hydrated", `Sovereign Maison '${name.trim()}' has been minted in PostgreSQL!`);
+                setActiveMaisonId(formattedId);
+                setShowSwitcherModal(false);
+              } else {
+                Alert.alert("Minting Rejected", data.message || "Failed to register brand profile.");
+              }
+            } catch (e) {
+              Alert.alert("Network Failure", "Failed to connect to AURA database cluster.");
+            }
           }
-        }
-      ]
+        );
+      }
     );
   };
 
   const handleAddPress = () => {
     triggerHaptic("light");
-    Alert.prompt(
+    showCustomPrompt(
       "Add Profile Tag",
       "Enter a custom handle tag (e.g. @rare_raven, ✦ Expert):",
+      "e.g. ✦ Stylist",
+      (tag) => {
+        if (tag && tag.trim()) {
+          triggerHaptic("success");
+          setTags(prev => [...prev, tag.trim()]);
+        }
+      }
+    );
+  };
+
+  const handleRequestVerification = async () => {
+    if (isVerifiedUser) {
+      Alert.alert("Verified Node", "This identity node is already verified via AURA cryptographic keys.");
+      return;
+    }
+    triggerHaptic("medium");
+    Alert.alert(
+      "Request Verification Badge",
+      "Would you like to authorize AURA key verification to claim your blue checkmark badge?",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Add Tag",
-          onPress: (tag?: string) => {
-            if (tag && tag.trim()) {
-              triggerHaptic("success");
-              setTags(prev => [...prev, tag.trim()]);
+          text: "Verify Node",
+          onPress: async () => {
+            setIsUpdating(true);
+            try {
+              const res = await updateProfile({
+                userId: currentUser?.id,
+                isVerified: true
+              });
+              if (res.success) {
+                setIsVerifiedUser(true);
+                triggerHaptic("success");
+                Alert.alert("Verification Minted", "Your identity node is now cryptographic-trust verified!");
+              } else {
+                Alert.alert("Verification Failed", res.error || "Could not complete verification request.");
+              }
+            } catch (e) {
+              Alert.alert("Verification Error", "Database synchronization failed.");
+            } finally {
+              setIsUpdating(false);
             }
           }
         }
@@ -909,6 +943,9 @@ export default function AccountScreen() {
             
             <TouchableOpacity style={styles.canvasHeaderDropdown} onPress={() => { triggerHaptic("medium"); setShowSwitcherModal(true); }}>
               <Text style={styles.canvasHeaderUsername}>{username}</Text>
+              {isVerifiedUser && (
+                <Lucide name="checkmark-circle" size={16} color="#00f5ff" style={{ marginLeft: 4 }} />
+              )}
               <Lucide name="chevron-down-outline" size={14} color="#ffffff" style={{ marginLeft: 3 }} />
             </TouchableOpacity>
 
@@ -925,7 +962,7 @@ export default function AccountScreen() {
                         text: "🕸️ Open Web flagship Store",
                         onPress: () => {
                           triggerHaptic("success");
-                          const webUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                          const webUrl = `${API_HOST}/maison/${username}`;
                           Linking.openURL(webUrl);
                         }
                       },
@@ -1708,106 +1745,14 @@ export default function AccountScreen() {
         </View>
       </Modal>
 
-      {/* 📡 FUNCTIONAL PORTAL 2: LIVE BROADCAST SIMULATOR */}
-      <Modal
+      {/* 📡 FUNCTIONAL PORTAL 2: LIVE BROADCAST ATELIER SHOWROOM */}
+      <LiveShowroom
         visible={showLiveModal}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setShowLiveModal(false)}
-      >
-        <View style={[styles.editModalContainer, { backgroundColor: "#04020a", paddingTop: insets.top }]}>
-          <View style={{ flex: 1 }}>
-            {/* Live Camera View Loop simulated via dark atmospheric overlay */}
-            <Image 
-              source={{ uri: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=600" }} 
-              style={{ position: "absolute", width: "100%", height: "100%", opacity: 0.25 }}
-            />
-            
-            {/* Top Stats HUD */}
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 12 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <View style={{ backgroundColor: "#ff3b30", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
-                  <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1 }}>Live</Text>
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, gap: 4 }}>
-                  <Lucide name="eye-outline" size={13} color="#ffffff" />
-                  <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>{viewerCount}</Text>
-                </View>
-              </View>
-
-              <TouchableOpacity 
-                style={{ backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 4 }}
-                onPress={() => {
-                  triggerHaptic("medium");
-                  setShowLiveModal(false);
-                  setShowLiveStats(true);
-                }}
-              >
-                <Text style={{ color: "#ffffff", fontSize: 11, fontWeight: "bold" }}>End Live</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Network telemetry HUD */}
-            <View style={{ paddingHorizontal: 16, marginTop: 12 }}>
-              <Text style={{ color: "rgba(0,245,255,0.8)", fontSize: 10, fontFamily: "monospace", letterSpacing: 0.5 }}>LATENCY: 12ms | FPS: 60fps | RES: 4K HDR</Text>
-              <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "monospace", letterSpacing: 0.5 }}>ACTIVE MESH NODE: aloksingh@aisastra.com</Text>
-            </View>
-
-            <View style={{ flex: 1 }} />
-
-            {/* Live Chat Overlay */}
-            <View style={{ maxHeight: 200, paddingHorizontal: 16, marginBottom: 20 }}>
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {liveComments.map((c) => (
-                  <View key={c.id} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(0,0,0,0.4)", alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
-                    <Text style={{ color: "#00f5ff", fontSize: 12, fontWeight: "bold" }}>{c.user}:</Text>
-                    <Text style={{ color: "#ffffff", fontSize: 12 }}>{c.text}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        </View>
-
-        {/* Live Broadcast Summary Stats modal */}
-        <Modal
-          visible={showLiveStats}
-          transparent={true}
-          animationType="fade"
-        >
-          <View style={{ flex: 1, backgroundColor: "rgba(8, 4, 21, 0.95)", justifyContent: "center", alignItems: "center", paddingHorizontal: 20 }}>
-            <View style={{ backgroundColor: "#0b071e", borderWidth: 1, borderColor: "rgba(255,255,255,0.06)", borderRadius: 16, padding: 24, width: "100%", alignItems: "center" }}>
-              <Text style={{ color: "#00f5ff", fontSize: 13, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 8 }}>Broadcast Complete</Text>
-              <Text style={{ color: "#ffffff", fontSize: 20, fontWeight: "bold", marginBottom: 20 }}>Stream Analytics Summary</Text>
-              
-              <View style={{ width: "100%", gap: 12, marginBottom: 24 }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderColor: "rgba(255,255,255,0.05)", paddingBottom: 8 }}>
-                  <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 13 }}>Peak Viewers</Text>
-                  <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>24,194 Nodes</Text>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderColor: "rgba(255,255,255,0.05)", paddingBottom: 8 }}>
-                  <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 13 }}>Stream Duration</Text>
-                  <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>14 Min 32 Sec</Text>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderColor: "rgba(255,255,255,0.05)", paddingBottom: 8 }}>
-                  <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 13 }}>Aura Score Earned</Text>
-                  <Text style={{ color: "#00f5ff", fontSize: 13, fontWeight: "bold" }}>+0.42 Points</Text>
-                </View>
-              </View>
-
-              <TouchableOpacity 
-                style={{ backgroundColor: "#00f5ff", width: "100%", paddingVertical: 12, borderRadius: 8, alignItems: "center" }}
-                onPress={() => {
-                  triggerHaptic("medium");
-                  setShowLiveStats(false);
-                }}
-              >
-                <Text style={{ color: "#000000", fontSize: 13, fontWeight: "bold" }}>Back to Profile</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      </Modal>
+        onClose={() => setShowLiveModal(false)}
+        initialMode="broadcaster"
+        maisonId={username}
+        maisonName={profileName}
+      />
 
       {/* 🌌 FUNCTIONAL PORTAL 3: AI GENERATIVE FASHION ARCHITECT */}
       <Modal
@@ -2162,7 +2107,7 @@ export default function AccountScreen() {
                   style={{ width: "100%", backgroundColor: "#00f5ff", paddingVertical: 12, borderRadius: 8, alignItems: "center" }}
                   onPress={() => {
                     triggerHaptic("success");
-                    Linking.openURL("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/discover/onboarding");
+                    Linking.openURL(`${API_HOST}/discover/onboarding`);
                   }}
                 >
                   <Text style={{ color: "#000000", fontSize: 11, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1.5 }}>Commence Onboarding</Text>
@@ -2296,7 +2241,7 @@ export default function AccountScreen() {
 
               {/* Identity Verification Badging status */}
               <Text style={styles.accountsCenterSectionTitle}>Identity Verification Node</Text>
-              <View style={styles.accountsCenterCard}>
+              <TouchableOpacity style={styles.accountsCenterCard} onPress={handleRequestVerification}>
                 <View style={styles.accountsCenterProfileRow}>
                   <View style={styles.accountsCenterIconWrapper}>
                     <Lucide name="shield-checkmark-outline" size={20} color={isVerifiedUser ? "#00f5ff" : "#8e8e8e"} />
@@ -2312,7 +2257,7 @@ export default function AccountScreen() {
                     </Text>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
@@ -2419,7 +2364,7 @@ export default function AccountScreen() {
                 <TouchableOpacity style={styles.shareActionBtn} onPress={async () => {
                   triggerHaptic("success");
                   setShowShareProfileSheet(false);
-                  const profileUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                  const profileUrl = `${API_HOST}/maison/${username}`;
                   try {
                     await Clipboard.setStringAsync(profileUrl);
                     Alert.alert("Link Copied", "Instant match! The luxury profile coordinates have been copied to your clipboard.");
@@ -2460,7 +2405,7 @@ export default function AccountScreen() {
                 <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
                   triggerHaptic("success");
                   setShowShareProfileSheet(false);
-                  const profileUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                  const profileUrl = `${API_HOST}/maison/${username}`;
                   const text = `Connect with me on AURA: "${profileName}" (@${username}) ✨\n\nLink: ${profileUrl}`;
                   const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(text)}`;
                   Linking.openURL(whatsappUrl).catch(() => {
@@ -2491,7 +2436,7 @@ export default function AccountScreen() {
                 <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
                   triggerHaptic("success");
                   setShowShareProfileSheet(false);
-                  const profileUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                  const profileUrl = `${API_HOST}/maison/${username}`;
                   const text = `Connect with me on AURA: "${profileName}" (@${username}) ✨\n\nLink: ${profileUrl}`;
                   const telegramUrl = `tg://msg?text=${encodeURIComponent(text)}`;
                   Linking.openURL(telegramUrl).catch(() => {
@@ -2508,7 +2453,7 @@ export default function AccountScreen() {
                 <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
                   triggerHaptic("success");
                   setShowShareProfileSheet(false);
-                  const profileUrl = `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/maison/${username}`;
+                  const profileUrl = `${API_HOST}/maison/${username}`;
                   const text = `Connect with me on AURA: "${profileName}" (@${username}) ✨`;
                   Share.share({
                     message: `${text}\n\nLink: ${profileUrl}`,
@@ -2564,6 +2509,53 @@ export default function AccountScreen() {
           </View>
         </TouchableOpacity>
       </View>
+
+      {/* ➕ CUSTOM PROMPT MODAL */}
+      <Modal
+        visible={promptVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPromptVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.promptOverlay}
+          activeOpacity={1}
+          onPress={() => setPromptVisible(false)}
+        >
+          <View style={styles.promptContainer} onStartShouldSetResponder={() => true}>
+            <Text style={styles.promptTitle}>{promptTitle}</Text>
+            {promptDesc ? <Text style={styles.promptDesc}>{promptDesc}</Text> : null}
+            <TextInput
+              style={styles.promptInput}
+              placeholder={promptPlaceholder}
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              value={promptValue}
+              onChangeText={setPromptValue}
+              keyboardAppearance="dark"
+              autoFocus
+            />
+            <View style={styles.promptActionRow}>
+              <TouchableOpacity
+                style={[styles.promptButton, styles.promptCancelButton]}
+                onPress={() => setPromptVisible(false)}
+              >
+                <Text style={styles.promptCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.promptButton, styles.promptSubmitButton]}
+                onPress={() => {
+                  setPromptVisible(false);
+                  if (promptOnSubmit) {
+                    promptOnSubmit(promptValue);
+                  }
+                }}
+              >
+                <Text style={styles.promptSubmitButtonText}>Submit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
     </View>
   );
@@ -3505,11 +3497,84 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "#080415",
   },
-  socialProofText: {
+   socialProofText: {
     color: "#fff",
     fontSize: 13,
   },
   socialProofBold: {
+    fontWeight: "bold",
+  },
+  // Custom prompt modal styles
+  promptOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  promptContainer: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: "#0b071e",
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+  },
+  promptTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  promptDesc: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  promptInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 8,
+    color: "#ffffff",
+    fontSize: 14,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 20,
+  },
+  promptActionRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  promptButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  promptCancelButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+  },
+  promptCancelButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  promptSubmitButton: {
+    backgroundColor: "#00f5ff",
+  },
+  promptSubmitButtonText: {
+    color: "#080415",
+    fontSize: 14,
     fontWeight: "bold",
   },
 });

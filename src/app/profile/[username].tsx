@@ -21,6 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
+import { API_HOST } from "@/constants/api";
 
 const { width } = Dimensions.get("window");
 const GRID_ITEM_SIZE = (width - 2) / 3;
@@ -51,6 +52,7 @@ export default function ViewProfileScreen() {
     fetchViewProfile,
     clearViewProfile,
     followProfile,
+    currentUser,
   } = useStore();
 
   const [activeGridTab, setActiveGridTab] = useState<"posts" | "reels" | "products" | "collabs">("posts");
@@ -144,9 +146,37 @@ export default function ViewProfileScreen() {
   };
 
   // Handle message button
-  const handleMessage = () => {
+  const handleMessage = async () => {
     triggerHaptic("medium");
-    setShowMessageSheet(true);
+    try {
+      const userVal = currentUser || activeProfile;
+      const uId = userVal?.id || "user_2pk5xskr";
+      const uName = userVal?.profileName || userVal?.name || "Alok Singh";
+      
+      const res = await fetch(`${API_HOST}/api/mobile/chat/initiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: uId,
+          userName: uName,
+          maisonId: profile?.username || username,
+          maisonName: profile?.profileName || username,
+          initialMessage: "Hey there! 👋"
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.conversation) {
+        router.push({
+          pathname: "/",
+          params: { openDMs: "true", conversationId: data.conversation.id }
+        } as any);
+      } else {
+        Alert.alert("DM Error", data.error || "Could not initiate conversation.");
+      }
+    } catch (e) {
+      console.warn("Could not initiate conversation:", e);
+      Alert.alert("Connection Failure", "Failed to connect to direct message gateway.");
+    }
   };
 
   // Handle share profile

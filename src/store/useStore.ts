@@ -1,7 +1,70 @@
 import { create } from "zustand";
 import * as Haptics from "expo-haptics";
+import { API_BASE } from "@/constants/api";
+import * as Notifications from "expo-notifications";
+import * as Device from "expo-device";
+import Constants from "expo-constants";
+import { Platform } from "react-native";
 
-const API_BASE = "https://0899c02eaa066565-106-219-120-232.serveousercontent.com/api/mobile";
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+async function registerForPushNotificationsAsync() {
+  if (Platform.OS === "web") return null;
+
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("default", {
+      name: "default",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#FF231F7C",
+    });
+  }
+
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== "granted") {
+      console.warn("Failed to get push token for push notification!");
+      return null;
+    }
+    
+    // Resolve projectId dynamically from EAS config
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    return token;
+  } catch (error) {
+    console.warn("Error registering for push notifications:", error);
+    return null;
+  }
+}
+
+async function syncDevicePushToken(userId: string) {
+  try {
+    const token = await registerForPushNotificationsAsync();
+    if (token) {
+      await fetch(`${API_BASE}/notifications/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, pushToken: token })
+      });
+    }
+  } catch (error) {
+    console.warn("Could not sync push token to backend registry:", error);
+  }
+}
+
 
 interface StoreState {
   products: any[];
@@ -33,7 +96,9 @@ interface StoreState {
   
   // Actions
   fetchProducts: () => Promise<void>;
-  fetchFeed: () => Promise<void>;
+  fetchFeed: (reset?: boolean) => Promise<void>;
+  feedCursor: string | null;
+  hasMoreFeed: boolean;
   fetchWarehouses: (maisonId?: string) => Promise<void>;
   fetchOrders: (maisonId?: string) => Promise<void>;
   createWarehouse: (data: any) => Promise<boolean>;
@@ -41,6 +106,9 @@ interface StoreState {
   addToCart: (product: any) => void;
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
+  initiateCheckout: (payload: { userId: string; cartItems: any[]; shippingAddress?: string; couponCode?: string }) => Promise<any>;
+  verifyPayment: (payload: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature?: string }) => Promise<any>;
+  applyCoupon: (payload: { code: string; maisonId?: string }) => Promise<any>;
   triggerHaptic: (type?: "light" | "medium" | "heavy" | "success") => void;
 
   // New Programmatic Campaigns Actions
@@ -215,6 +283,8 @@ export const useStore = create<StoreState>((set, get) => ({
   loadingLoyalty: false,
   notifications: [],
   loadingNotifications: false,
+  feedCursor: null,
+  hasMoreFeed: true,
 
   fetchProducts: async () => {
     if (get().products.length === MOCK_PRODUCTS.length) {
@@ -241,19 +311,46 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  fetchFeed: async () => {
-    if (get().stories.length === 0) {
-      set({ loadingFeed: true });
+  fetchFeed: async (reset = false) => {
+    if (get().loadingFeed) {
+      return;
     }
+
+    if (reset) {
+      set({ stories: [], feedCursor: null, hasMoreFeed: true });
+    }
+
+    if (!get().hasMoreFeed && !reset) {
+      return;
+    }
+
+    set({ loadingFeed: true });
+
     try {
       const user = get().currentUser;
-      const url = user ? `${API_BASE}/feed?userId=${user.id}` : `${API_BASE}/feed`;
+      const cursor = reset ? "" : get().feedCursor;
+      const url = user 
+        ? `${API_BASE}/feed?userId=${user.id}&limit=10${cursor ? "&cursor=" + cursor : ""}` 
+        : `${API_BASE}/feed?limit=10${cursor ? "&cursor=" + cursor : ""}`;
+        
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
-        if (JSON.stringify(data.stories) !== JSON.stringify(get().stories)) {
-          set({ stories: data.stories });
-        }
+        const loadedStories = data.stories || [];
+        const nextCursor = data.nextCursor;
+        
+        set((state) => {
+          const merged = reset ? loadedStories : [...state.stories, ...loadedStories];
+          // deduplicate just in case
+          const unique = merged.filter((item: any, idx: number, self: any[]) => 
+            self.findIndex((t) => t.id === item.id) === idx
+          );
+          return {
+            stories: unique,
+            feedCursor: nextCursor || null,
+            hasMoreFeed: !!nextCursor
+          };
+        });
       }
     } catch (e) {
       console.warn("Could not query visual feed from local host. Using simulated stories fallback.", e);
@@ -673,6 +770,8 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (data.success) {
         set({ userProfiles: data.profiles, activeProfile: data.activeProfile });
+        // Sync push token automatically
+        syncDevicePushToken(userId);
       }
     } catch (e) {
       console.warn("Could not fetch sovereign profiles:", e);
@@ -849,6 +948,54 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch (e) {
       console.warn("Follow toggle failed.", e);
       return { success: false };
+    }
+  },
+
+  initiateCheckout: async (payload) => {
+    try {
+      get().triggerHaptic("medium");
+      const res = await fetch(`${API_BASE}/checkout/create-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      return data;
+    } catch (e) {
+      console.warn("initiateCheckout failed.", e);
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
+  verifyPayment: async (payload) => {
+    try {
+      get().triggerHaptic("success");
+      const res = await fetch(`${API_BASE}/checkout/verify-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      return data;
+    } catch (e) {
+      console.warn("verifyPayment failed.", e);
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
+  applyCoupon: async (payload) => {
+    try {
+      get().triggerHaptic("light");
+      const res = await fetch(`${API_BASE}/checkout/apply-coupon`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      return data;
+    } catch (e) {
+      console.warn("applyCoupon failed.", e);
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
     }
   }
 }));

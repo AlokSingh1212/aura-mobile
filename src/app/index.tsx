@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Animated } from "react-native";
+import { Animated, LogBox } from "react-native";
+
+// Suppress expo-av deprecation warnings
+LogBox.ignoreLogs([
+  "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54",
+  "Video component from `expo-av` is deprecated in favor of `expo-video`"
+]);
+
 import { 
   StyleSheet, 
   Text, 
@@ -11,20 +18,26 @@ import {
   Share,
   Alert,
   TextInput,
-  Image,
   ScrollView,
   Modal,
   Linking
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Video, ResizeMode, Audio, InterruptionModeIOS, InterruptionModeAndroid } from "expo-av";
+import { createAudioPlayer } from "expo-audio";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { CameraView } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
+import { API_HOST } from "@/constants/api";
+import { CameraStudio } from "@/components/CameraStudio";
+import { ChatDrawer } from "@/components/ChatDrawer";
+import { FeedCard } from "@/components/FeedCard";
+import { PostCard } from "@/components/PostCard";
+import { LiveShowroom } from "@/components/LiveShowroom";
 
 const { height, width } = Dimensions.get("window");
 
@@ -193,37 +206,7 @@ const INSTA_STORIES = [
   }
 ];
 
-const CHAT_THREADS = [
-  { id: "c1", name: "Updates 📢", message: "Raghav Juyal sent a reel by vaibha... • 3h", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100", unread: true, category: "Primary" },
-  { id: "c2", name: "Namita Thapar", message: "Sent 7h ago", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100", verified: true, category: "From ads" },
-  { id: "c3", name: "vidmikai", message: "Sent 7h ago", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=100", category: "Requests" },
-  { id: "c4", name: "Advocate Priyanka Singh", message: "Sent a reel by bhukkadesi99 • 2d", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=100", category: "General" },
-  { id: "c5", name: "riyabangia_", message: "Sent Monday", avatar: "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=100", category: "Primary" }
-];
 
-const CUSTOMER_THREADS = [
-  { id: "ct1", name: "Priya Mehta", message: "Is the silk scarf still available?", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100", tag: "Order Enquiry", unread: true },
-  { id: "ct2", name: "Rohan Kapoor", message: "Can I get a custom size for order #4821?", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=100", tag: "Custom Request" },
-  { id: "ct3", name: "Ananya Sharma", message: "Loved the jacket! When does restock happen?", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=100", tag: "Restock", unread: true },
-  { id: "ct4", name: "Vikram Nair", message: "Tracking update for my order?", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100", tag: "Shipping" },
-  { id: "ct5", name: "Meera Joshi", message: "Thank you! The packaging was stunning 🙏", avatar: "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=100", tag: "Feedback" },
-];
-
-const BUSINESS_STATS = [
-  { label: "Orders Today", value: "12", icon: "bag-outline", color: "#00f5ff" },
-  { label: "Revenue", value: "₹48.2K", icon: "cash-outline", color: "#a78bfa" },
-  { label: "Enquiries", value: "7", icon: "chatbubble-outline", color: "#fb923c" },
-  { label: "Store Views", value: "1.4K", icon: "eye-outline", color: "#34d399" },
-];
-
-const BUSINESS_TOOLS = [
-  { id: "broadcast", label: "Broadcast", icon: "megaphone-outline", color: "#00f5ff", desc: "Message all followers" },
-  { id: "promotions", label: "Promotions", icon: "pricetag-outline", color: "#fb923c", desc: "Discounts & offers" },
-  { id: "ads", label: "Ads Manager", icon: "bar-chart-outline", color: "#a78bfa", desc: "Campaigns & spend" },
-  { id: "catalogue", label: "Catalogue", icon: "grid-outline", color: "#34d399", desc: "Your listings" },
-  { id: "autoreply", label: "Auto-Reply", icon: "flash-outline", color: "#f472b6", desc: "Automated messages" },
-  { id: "inbox", label: "Customer Inbox", icon: "people-outline", color: "#fbbf24", desc: "Order enquiries" },
-];
 
 const PLATFORM_USERS = [
   { id: "u1", username: "garimahuja05", name: "Garima Ahuja", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=100&h=100", role: "Seller" },
@@ -253,12 +236,28 @@ interface FloatingHeart {
 }
 
 export default function ReelsScreen() {
-  const { products, stories, loadingFeed, fetchFeed, fetchProducts, triggerHaptic, activeMaisonId, currentUser, authOnboard, setCurrentUser, activeProfile, userProfiles, createNewProfile, switchActiveProfile, fetchProfiles, notifications, loadingNotifications, fetchNotifications, markNotificationsRead } = useStore();
+  const { products, stories, loadingFeed, fetchFeed, fetchProducts, triggerHaptic, activeMaisonId, currentUser, authOnboard, setCurrentUser, activeProfile, userProfiles, createNewProfile, switchActiveProfile, fetchProfiles, notifications, loadingNotifications, fetchNotifications, markNotificationsRead, hasMoreFeed } = useStore();
   const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
-  const params = useLocalSearchParams<{ openDMs?: string; openSearch?: string; activeTab?: string; openCamera?: string }>();
+  const params = useLocalSearchParams<{ openDMs?: string; openSearch?: string; activeTab?: string; openCamera?: string; conversationId?: string }>();
   const insets = useSafeAreaInsets();
+  const [chatConversationId, setChatConversationId] = useState<string | null>(null);
   const bottomBarHeight = 52 + insets.bottom;
   const [activeStoryIndex, setActiveStoryIndex] = useState(0);
+
+  const loadMoreStories = () => {
+    if (hasMoreFeed && !loadingFeed) {
+      fetchFeed();
+    }
+  };
+
+  const renderFeedFooter = () => {
+    if (!loadingFeed) return null;
+    return (
+      <View style={{ paddingVertical: 20, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator size="small" color="#00f5ff" />
+      </View>
+    );
+  };
 
   useEffect(() => {
     if (!currentUser) {
@@ -273,6 +272,10 @@ export default function ReelsScreen() {
     if (params?.openDMs === "true") {
       setShowDMs(true);
     }
+    if (params?.conversationId) {
+      setChatConversationId(params.conversationId);
+      setShowDMs(true);
+    }
     if (params?.openSearch === "true") {
       setShowExploreGrid(true);
     }
@@ -285,27 +288,33 @@ export default function ReelsScreen() {
     }
   }, [params]);
   const [showDMs, setShowDMs] = useState(false);
-  const [dmSearch, setDmSearch] = useState("");
-  const [activeDmFilter, setActiveDmFilter] = useState("Primary");
+  const [showLiveShowroom, setShowLiveShowroom] = useState(false);
+  const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [showroomMode, setShowroomMode] = useState<"lobby" | "viewer">("lobby");
+  const [showroomMaisonId, setShowroomMaisonId] = useState("rare_raven");
+  const [showroomMaisonName, setShowroomMaisonName] = useState("Rare Raven");
+  const [showroomSessionId, setShowroomSessionId] = useState<string | undefined>(undefined);
+
+  const fetchActiveSessions = async () => {
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/live`);
+      const data = await res.json();
+      if (data.success && data.sessions) {
+        setActiveSessions(data.sessions);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch active live sessions:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchActiveSessions();
+    const interval = setInterval(fetchActiveSessions, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
   const [likedReels, setLikedReels] = useState<Record<string, boolean>>({});
   const [isSeller, setIsSeller] = useState(false);
-  const [activeBusinessTool, setActiveBusinessTool] = useState<string | null>(null);
-  const [broadcastText, setBroadcastText] = useState("");
-  const [broadcastSent, setBroadcastSent] = useState(false);
-  const [promoCode, setPromoCode] = useState("");
-  const [autoReplyText, setAutoReplyText] = useState("Thanks for reaching out to Rare Raven! We'll respond within 24 hours.");
-  // Live data from API (fall back to mock constants if unavailable)
-  const [liveBusinessStats, setLiveBusinessStats] = useState(BUSINESS_STATS);
-  const [livePromos, setLivePromos] = useState<any[]>([]);
-  const [liveAds, setLiveAds] = useState<any[]>([]);
-  const [liveBroadcasts, setLiveBroadcasts] = useState<any[]>([]);
-  const [loadingPromos, setLoadingPromos] = useState(false);
-  const [newPromoCode, setNewPromoCode] = useState("");
-  const [newPromoDiscount, setNewPromoDiscount] = useState("");
-  const [showNewPromoForm, setShowNewPromoForm] = useState(false);
-  const [conversations, setConversations] = useState<any[]>([]);
-  const [activeChat, setActiveChat] = useState<any>(null);
-  const [loadingChats, setLoadingChats] = useState(false);
 
   // 🔔 ACTIVITY DRAWER & NOTIFICATIONS REAL-TIME POLLING
   const [showActivityDrawer, setShowActivityDrawer] = useState(false);
@@ -318,7 +327,7 @@ export default function ReelsScreen() {
       return () => clearInterval(pollInterval);
     }
   }, [activeProfile?.id]);
-  const [chatReplyText, setChatReplyText] = useState("");
+
   const [showExploreGrid, setShowExploreGrid] = useState(false);
   const [selectedMediaUri, setSelectedMediaUri] = useState<string | null>(null);
   const [newPostCaption, setNewPostCaption] = useState("");
@@ -342,130 +351,10 @@ export default function ReelsScreen() {
   // Sound states and reels camera overlay states
   const [feedMuted, setFeedMuted] = useState(true);
   const [showReelCamera, setShowReelCamera] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingProgress, setRecordingProgress] = useState(0);
 
-  // Camera permission and audio play handler states
-  const [permission, requestPermission] = useCameraPermissions();
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-
-  const playTrack = async (url: string) => {
-    try {
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-      }
-      if (!url) return;
-      
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: url },
-        { shouldPlay: true, isLooping: true, volume: 1.0 }
-      );
-      
-      soundRef.current = sound;
-      setIsPlayingAudio(true);
-    } catch (e) {
-      console.warn("Error playing audio track:", e);
-    }
-  };
-
-  const stopTrack = async () => {
-    try {
-      if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-      setIsPlayingAudio(false);
-    } catch (e) {
-      console.warn("Error stopping audio track:", e);
-    }
-  };
-
-  useEffect(() => {
-    const setupAudioMode = async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          interruptionModeIOS: InterruptionModeIOS.DuckOthers,
-          shouldDuckAndroid: true,
-          interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (err) {
-        console.warn("Failed to natively configure Audio Mode for CameraView overlay:", err);
-      }
-    };
-    if (showReelCamera) {
-      setupAudioMode();
-    }
-  }, [showReelCamera]);
-
-  // Advanced Reels Creator & Affiliate Tagging States
+  // Reels created locally by the user
   const [localReels, setLocalReels] = useState<any[]>([]);
   const { instaStories: activeInstaStories, addInstaStorySlide } = useStore();
-  const [selectedAudio, setSelectedAudio] = useState<any>({
-    title: "Phoolon Ka Taron Ka (Bespoke Mix)",
-    artist: "Vedang Raina x A.R. Rahman",
-    cover: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=80",
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-    category: "bollywood"
-  });
-  const [audioSearchQuery, setAudioSearchQuery] = useState("");
-  const [activeAudioCategory, setActiveAudioCategory] = useState<"all" | "trending" | "pop" | "bollywood" | "hiphop" | "electronic">("all");
-  const [activeFilter, setActiveFilter] = useState<"none" | "platinum" | "neon" | "obsidian">("none");
-  const [selectedLength, setSelectedLength] = useState<15 | 30 | 60 | 90>(60);
-
-  const [showTeleprompter, setShowTeleprompter] = useState(false);
-  const [teleprompterText, setTeleprompterText] = useState("AURA Obsidian Gold Vestment coordinate sync...\nDesigned in Milano.\nLimited run of 50 pieces active.\n\nCrafted for the discerning few who understand that fashion is not just clothing — it is armour.\n\nAURA. Wear the future.");
-  const teleprompterScrollY = useRef(new Animated.Value(0)).current;
-  const teleprompterAnimRef = useRef<Animated.CompositeAnimation | null>(null);
-
-  // Auto-scroll teleprompter when recording starts, stop when recording ends
-  useEffect(() => {
-    if (isRecording && showTeleprompter) {
-      teleprompterScrollY.setValue(0);
-      teleprompterAnimRef.current = Animated.timing(teleprompterScrollY, {
-        toValue: -400,
-        duration: selectedLength * 1000,
-        useNativeDriver: true,
-      });
-      teleprompterAnimRef.current.start();
-    } else {
-      teleprompterAnimRef.current?.stop();
-      teleprompterScrollY.setValue(0);
-    }
-  }, [isRecording, showTeleprompter]);
-  const [touchUpStrength, setTouchUpStrength] = useState(70);
-  
-  // Sub-drawers in camera
-  const [showAudioDrawer, setShowAudioDrawer] = useState(false);
-  const [showFilterDrawer, setShowFilterDrawer] = useState(false);
-
-  const [showRetouchSlider, setShowRetouchSlider] = useState(false);
-  const [showFlashDrawer, setShowFlashDrawer] = useState(false);
-  
-  // Post-record Share Studio states
-  const [showShareStudio, setShowShareStudio] = useState(false);
-  const [taggedProduct, setTaggedProduct] = useState<any>(null);
-  const [affiliateCommission, setAffiliateCommission] = useState(10); // 10%
-  const [affiliateHandle, setAffiliateHandle] = useState("");
-  const [reelCaption, setReelCaption] = useState("");
-  
-  // 🚀 Hyper-Advanced Instagram Camera Option States
-  const [flashMode, setFlashMode] = useState<"off" | "on" | "auto">("off");
-  const [recordingSpeed, setRecordingSpeed] = useState<0.3 | 0.5 | 1 | 2 | 3>(1);
-  const [showSpeedDrawer, setShowSpeedDrawer] = useState(false);
-  const [countdownDuration, setCountdownDuration] = useState<3 | 10>(3);
-  const [showCountdownDrawer, setShowCountdownDrawer] = useState(false);
-  const [activeCountdown, setActiveCountdown] = useState(0);
-  const [isCountingDown, setIsCountingDown] = useState(false);
-  const [alignGhostActive, setAlignGhostActive] = useState(false);
-  const [cameraFacing, setCameraFacing] = useState<"back" | "front">("back");
-  const [videoLayoutMode, setVideoLayoutMode] = useState<"single" | "split" | "grid" | "triptych">("single");
-  const [showLayoutDrawer, setShowLayoutDrawer] = useState(false);
 
   // Premium collapsible headers & full screen states
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
@@ -664,159 +553,7 @@ export default function ReelsScreen() {
   const [showLiveSettlement, setShowLiveSettlement] = useState(false);
   const [settlementData, setSettlementData] = useState<any>(null);
 
-  const fetchChats = async () => {
-    setLoadingChats(true);
-    try {
-      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/chat?userId=user_2pk5xskr&maisonId=${activeMaisonId}`);
-      const data = await res.json();
-      if (data.success && data.conversations.length > 0) {
-        const mapped = data.conversations.map((c: any, index: number) => {
-          let category = "Primary";
-          if (c.name.toLowerCase().includes("namita") || index % 4 === 1) {
-            category = "From ads";
-          } else if (c.name.toLowerCase().includes("mikai") || index % 4 === 2) {
-            category = "Requests";
-          } else if (index % 4 === 3) {
-            category = "General";
-          }
-          return { ...c, category };
-        });
-        setConversations(mapped);
-      } else {
-        setConversations(CHAT_THREADS);
-      }
-    } catch (e) {
-      setConversations(CHAT_THREADS);
-    } finally {
-      setLoadingChats(false);
-    }
-  };
 
-  // ── Business Hub API fetchers ──
-  const fetchBusinessStats = async () => {
-    try {
-      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/business-stats?maisonId=${activeMaisonId}`);
-      const data = await res.json();
-      if (data.success && data.stats) {
-        setLiveBusinessStats([
-          { label: "Orders Today", value: String(data.stats.ordersToday), icon: "bag-outline", color: "#00f5ff" },
-          { label: "Revenue", value: `₹${(data.stats.revenueToday / 1000).toFixed(1)}K`, icon: "cash-outline", color: "#a78bfa" },
-          { label: "Enquiries", value: String(data.stats.openEnquiries), icon: "chatbubble-outline", color: "#fb923c" },
-          { label: "Store Views", value: data.stats.storeViewsToday >= 1000 ? `${(data.stats.storeViewsToday / 1000).toFixed(1)}K` : String(data.stats.storeViewsToday), icon: "eye-outline", color: "#34d399" },
-        ]);
-      }
-    } catch {
-      // keep BUSINESS_STATS fallback
-    }
-  };
-
-  const fetchPromotions = async () => {
-    setLoadingPromos(true);
-    try {
-      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/promotions?maisonId=${activeMaisonId}`);
-      const data = await res.json();
-      if (data.success && data.promos?.length > 0) {
-        setLivePromos(data.promos);
-      }
-    } catch {
-      // keep mock fallback
-    } finally {
-      setLoadingPromos(false);
-    }
-  };
-
-  const fetchBroadcasts = async () => {
-    try {
-      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/broadcast?maisonId=${activeMaisonId}`);
-      const data = await res.json();
-      if (data.success) setLiveBroadcasts(data.broadcasts || []);
-    } catch { /* fallback */ }
-  };
-
-  const fetchAds = async () => {
-    try {
-      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/ads?maisonId=${activeMaisonId}`);
-      const data = await res.json();
-      if (data.success && data.metrics?.bids?.length > 0) {
-        setLiveAds(data.metrics.bids.map((b: any) => ({
-          name: b.keyword || "Campaign",
-          spend: `₹${Math.round(b.spent).toLocaleString()}`,
-          reach: b.impressions >= 1000 ? `${(b.impressions / 1000).toFixed(1)}K` : String(b.impressions),
-          clicks: b.clicks >= 1000 ? `${(b.clicks / 1000).toFixed(1)}K` : String(b.clicks),
-          status: b.status === "ACTIVE" ? "Live" : "Paused",
-        })));
-      }
-    } catch { /* fallback */ }
-  };
-
-  const sendBroadcast = async (title: string, content: string) => {
-    try {
-      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/broadcast", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maisonId: activeMaisonId, title, content, audience: "ALL", type: "TEXT" }),
-      });
-      const data = await res.json();
-      return data.success;
-    } catch { return false; }
-  };
-
-  const createPromo = async (code: string, discount: number, type: string) => {
-    try {
-      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/promotions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maisonId: activeMaisonId, code, discount, type }),
-      });
-      const data = await res.json();
-      if (data.success) { fetchPromotions(); return true; }
-      return false;
-    } catch { return false; }
-  };
-
-  // ── Auto-Reply API ──
-  const [autoReplyEnabled, setAutoReplyEnabled] = useState(true);
-  const [greetingMessage, setGreetingMessage] = useState("Thanks for reaching out! We'll respond shortly.");
-  const [awayMessage, setAwayMessage] = useState("We're currently away. We'll get back to you within 24 hours.");
-  const [quietHoursStart, setQuietHoursStart] = useState("");
-  const [quietHoursEnd, setQuietHoursEnd] = useState("");
-  const [loadingAutoReply, setLoadingAutoReply] = useState(false);
-  const [autoReplySaved, setAutoReplySaved] = useState(false);
-
-  const fetchAutoReply = async () => {
-    setLoadingAutoReply(true);
-    try {
-      const res = await fetch(`https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/auto-reply?maisonId=${activeMaisonId}`);
-      const data = await res.json();
-      if (data.success && data.config) {
-        setAutoReplyEnabled(data.config.enabled);
-        setGreetingMessage(data.config.greetingMessage);
-        setAwayMessage(data.config.awayMessage);
-        if (data.config.quietHoursStart != null) setQuietHoursStart(String(data.config.quietHoursStart));
-        if (data.config.quietHoursEnd != null) setQuietHoursEnd(String(data.config.quietHoursEnd));
-      }
-    } catch { /* use defaults */ }
-    finally { setLoadingAutoReply(false); }
-  };
-
-  const saveAutoReply = async () => {
-    try {
-      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/auto-reply", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          maisonId: activeMaisonId,
-          enabled: autoReplyEnabled,
-          greetingMessage,
-          awayMessage,
-          quietHoursStart: quietHoursStart ? parseInt(quietHoursStart) : null,
-          quietHoursEnd: quietHoursEnd ? parseInt(quietHoursEnd) : null,
-        }),
-      });
-      const data = await res.json();
-      return data.success;
-    } catch { return false; }
-  };
 
   const handleSelectMedia = async () => {
     triggerHaptic("light");
@@ -862,7 +599,7 @@ export default function ReelsScreen() {
     triggerHaptic("success");
 
     try {
-      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/feed", {
+      const res = await fetch(`${API_HOST}/api/mobile/feed`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -920,66 +657,7 @@ export default function ReelsScreen() {
     }
   };
 
-  useEffect(() => {
-    if (showDMs) {
-      fetchChats();
-    }
-  }, [showDMs]);
 
-  const handleSendChatMessage = async () => {
-    if (!chatReplyText.trim() || !activeChat) return;
-    triggerHaptic("medium");
-    const textToSend = chatReplyText;
-    setChatReplyText("");
-
-    const currentSenderName = isSeller ? (activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()))) : "Alok Singh";
-
-    const tempMessage = {
-      id: `m_${Date.now()}`,
-      content: textToSend,
-      senderId: isSeller ? activeMaisonId : "user_2pk5xskr",
-      senderName: currentSenderName,
-      createdAt: new Date().toISOString(),
-      isAdmin: isSeller
-    };
-
-    setActiveChat((prev: any) => ({
-      ...prev,
-      messages: [...(prev.messages || []), tempMessage],
-      lastMessage: textToSend
-    }));
-
-    setConversations(prev => prev.map(c => c.id === activeChat.id ? {
-      ...c,
-      messages: [...(c.messages || []), tempMessage],
-      lastMessage: textToSend
-    } : c));
-
-    try {
-      const res = await fetch("https://07279b986c9bc954-106-219-121-7.serveousercontent.com/api/mobile/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          conversationId: activeChat.id,
-          senderId: isSeller ? activeMaisonId : "user_2pk5xskr",
-          senderName: currentSenderName,
-          content: textToSend,
-          type: activeChat.type || "MAISON",
-          isAdmin: isSeller
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        const realMsg = data.message;
-        setActiveChat((prev: any) => ({
-          ...prev,
-          messages: prev.messages.map((m: any) => m.id === tempMessage.id ? realMsg : m)
-        }));
-      }
-    } catch (e) {
-      console.warn("Could not sync message to server.", e);
-    }
-  };
 
   // Periodic comments and statistics generator for Simulated Live streams
   useEffect(() => {
@@ -1171,147 +849,24 @@ export default function ReelsScreen() {
   const floatingBottomOffset = isReelsFullScreen ? 65 : 20;
 
   const renderReelItem = ({ item, index }: { item: any; index: number }) => {
-    const isPlayed = index === activeStoryIndex && !showDMs && activeFeedTab === "reels";
-    const mockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4";
-    const videoUrl = item.url && item.url.endsWith(".mp4") ? item.url : mockVideoUrl;
-    const isLiked = likedReels[item.id] || false;
-
     return (
-      <View style={[styles.reelContainer, { height: reelHeight }]}>
-        {/* Fullscreen Video Loops */}
-        <Video
-          source={{ uri: videoUrl }}
-          rate={1.0}
-          volume={1.0}
-          isMuted={feedMuted}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={isPlayed}
-          isLooping
-          style={StyleSheet.absoluteFillObject}
-        />
-
-        {/* DYNAMIC SHADER OVERLAYS SYNCED FROM THE CAMERA STUDIO */}
-        {item.filterApplied === "platinum" && (
-          <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255,255,255,0.08)", zIndex: 1 }]} />
-        )}
-        {item.filterApplied === "neon" && (
-          <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { borderWidth: 3, borderColor: "#00f5ff", backgroundColor: "rgba(0,245,255,0.04)", zIndex: 1 }]} />
-        )}
-        {item.filterApplied === "obsidian" && (
-          <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(8,4,21,0.45)", zIndex: 1 }]} />
-        )}
-
-        {/* Dynamic Touch Up simulated glow overlay */}
-        {item.touchUpApplied > 0 && (
-          <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255,255,255,0.02)", opacity: item.touchUpApplied / 100, zIndex: 1 }]} />
-        )}
-
-        <View style={styles.gradientOverlay} />
-
-        {/* Floating Shoppable Card */}
-        {(() => {
-          const associatedProduct = item.artifact || products.find((p: any) => p.id === item.artifactId);
-          if (!associatedProduct) return null;
-          return (
-            <TouchableOpacity 
-              style={styles.shoppableCard}
-              activeOpacity={0.9}
-              onPress={() => {
-                triggerHaptic("medium");
-                router.push(`/product/${associatedProduct.id}` as any);
-              }}
-            >
-              <View style={styles.shopIconContainer}>
-                <Lucide name="sparkles" size={15} color="#000" />
-              </View>
-              <View style={styles.shopInfo}>
-                <Text style={styles.shopSub}>Shop The Look</Text>
-                <Text style={styles.shopTitle} numberOfLines={1}>{associatedProduct.title}</Text>
-                <Text style={styles.shopPrice}>₹{associatedProduct.price?.toLocaleString()}</Text>
-              </View>
-              <Lucide name="chevron-forward" size={17} color="#00f5ff" />
-            </TouchableOpacity>
-          );
-        })()}
-
-        {/* Creator Metadata Overlay (Bottom Left) */}
-        <View style={[styles.metaContainer, { bottom: floatingBottomOffset }]}>
-          <View style={styles.creatorRow}>
-            <TouchableOpacity onPress={() => handleMaisonProfilePress(item)} activeOpacity={0.85}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarChar}>
-                  {item.user?.name?.[0]?.toUpperCase() || "S"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            <View style={styles.creatorDetails}>
-              <View style={styles.nameFollowRow}>
-                <TouchableOpacity 
-                  style={{ flexDirection: "row", alignItems: "center" }}
-                  onPress={() => handleMaisonProfilePress(item)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.creatorName} numberOfLines={1}>
-                    {item.user?.name?.toLowerCase().replace(/\s+/g, "") || "veen.verma"}
-                  </Text>
-                  <Text style={styles.saptashiText}>and saptashi...</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.followBtn} onPress={() => triggerHaptic("medium")}>
-                  <Text style={styles.followBtnText}>Follow</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.audioTrackText} numberOfLines={1}>
-                ↗ {item.audioTrack ? `${item.audioTrack.title} • ${item.audioTrack.artist}` : (item.location ? `A.R. Rahman, Vedang Raina • ${item.location}` : "AURA Luxury Runway Vol. 4")}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.caption} numberOfLines={2}>
-            {item.caption || "Atelier Masterpiece"}
-          </Text>
-        </View>
-
-        {/* Right Interaction Column (Likes, Comments, Share) */}
-        <View style={[styles.interactionColumn, { bottom: floatingBottomOffset }]}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => handleLikePress(item.id)}>
-            <View style={styles.iconCircle}>
-              <Lucide name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#ff3b30" : "#fff"} />
-            </View>
-            <Text style={styles.iconLabel}>{item.likesCount ? (isLiked ? item.likesCount + 1 : item.likesCount) : 412}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconButton} onPress={() => handleCommentsPress(item)}>
-            <View style={styles.iconCircle}>
-              <Lucide name="chatbubble-outline" size={24} color="#fff" />
-            </View>
-            <Text style={styles.iconLabel}>{item.comments?.length || 18}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconButton} onPress={() => handleShare(item)}>
-            <View style={styles.iconCircle}>
-              <Lucide name="paper-plane-outline" size={24} color="#fff" />
-            </View>
-            <Text style={styles.iconLabel}>Share</Text>
-          </TouchableOpacity>
-
-          {(() => {
-            const isSaved = savedPosts[item.id] || false;
-            return (
-              <TouchableOpacity style={styles.iconButton} onPress={() => handleSavePress(item.id)}>
-                <View style={styles.iconCircle}>
-                  <Lucide name={isSaved ? "bookmark" : "bookmark-outline"} size={24} color={isSaved ? "#00f5ff" : "#fff"} />
-                </View>
-                <Text style={styles.iconLabel}>Save</Text>
-              </TouchableOpacity>
-            );
-          })()}
-
-          <TouchableOpacity style={styles.iconButton} onPress={() => handleThreeDotsPress(item)}>
-            <View style={styles.iconCircle}>
-              <Lucide name="ellipsis-vertical" size={24} color="#fff" />
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <FeedCard
+        item={item}
+        index={index}
+        activeReelIndex={activeStoryIndex}
+        feedMuted={feedMuted}
+        products={products}
+        likedPosts={likedReels}
+        savedPosts={savedPosts}
+        floatingBottomOffset={floatingBottomOffset}
+        reelHeight={reelHeight}
+        handleMaisonProfilePress={handleMaisonProfilePress}
+        handleLikePress={handleLikePress}
+        handleCommentsPress={handleCommentsPress}
+        handleShare={handleShare}
+        handleSavePress={handleSavePress}
+        handleThreeDotsPress={handleThreeDotsPress}
+      />
     );
   };
 
@@ -1368,14 +923,15 @@ export default function ReelsScreen() {
   ];
 
   // Synchronized real-time soundtrack player for active feeds
-  const feedSoundRef = useRef<Audio.Sound | null>(null);
+  const feedSoundRef = useRef<any>(null);
 
   useEffect(() => {
     const syncFeedAudio = async () => {
       try {
         // Unload any existing feed sound
         if (feedSoundRef.current) {
-          await feedSoundRef.current.unloadAsync();
+          feedSoundRef.current.pause();
+          feedSoundRef.current.remove();
           feedSoundRef.current = null;
         }
 
@@ -1388,11 +944,10 @@ export default function ReelsScreen() {
         if (activeFeedTab === "reels" && displayStories.length > activeStoryIndex) {
           const activeItem = displayStories[activeStoryIndex];
           if (activeItem && activeItem.audioTrack && activeItem.audioTrack.url) {
-            const { sound } = await Audio.Sound.createAsync(
-              { uri: activeItem.audioTrack.url },
-              { shouldPlay: true, isLooping: true, volume: 1.0 }
-            );
-            feedSoundRef.current = sound;
+            const player = createAudioPlayer(activeItem.audioTrack.url, { downloadFirst: false });
+            player.loop = true;
+            player.play();
+            feedSoundRef.current = player;
           }
         }
       } catch (error) {
@@ -1404,7 +959,8 @@ export default function ReelsScreen() {
 
     return () => {
       if (feedSoundRef.current) {
-        feedSoundRef.current.unloadAsync();
+        feedSoundRef.current.pause();
+        feedSoundRef.current.remove();
       }
     };
   }, [activeStoryIndex, activeFeedTab, feedMuted, showReelCamera, displayStories]);
@@ -1536,7 +1092,7 @@ export default function ReelsScreen() {
           
           {/* REELS TABS */}
           {activeFeedTab === "reels" ? (
-            loadingFeed ? (
+            (loadingFeed && stories.length === 0) ? (
               <View style={styles.centerContainer}>
                 <ActivityIndicator size="large" color="#00f5ff" />
               </View>
@@ -1552,6 +1108,8 @@ export default function ReelsScreen() {
                   showsVerticalScrollIndicator={false}
                   onViewableItemsChanged={onViewableItemsChanged}
                   viewabilityConfig={{ itemVisiblePercentThreshold: 75 }}
+                  onEndReached={loadMoreStories}
+                  onEndReachedThreshold={0.5}
                 />
 
                 {/* Floating top-left camera button to record a Reel */}
@@ -1573,93 +1131,112 @@ export default function ReelsScreen() {
               keyExtractor={(item) => item.id}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 52 + insets.bottom + 40 }}
-              renderItem={({ item }) => {
-                const img = item.url || item.thumbnail || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400";
-                const isLiked = likedReels[item.id] || false;
-                const mockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4";
-                const videoUrl = item.url && item.url.endsWith(".mp4") ? item.url : mockVideoUrl;
-
-                return (
-                  <View style={styles.photoCard}>
-                    <View style={styles.photoCardHeader}>
-                      <TouchableOpacity 
-                        style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-                        onPress={() => handleMaisonProfilePress(item)}
-                        activeOpacity={0.85}
-                      >
-                        <View style={styles.photoCardAvatar}>
-                          <Text style={{ color: "#000", fontSize: 13, fontWeight: "bold" }}>
-                            {item.user?.name === "Alok Maison" ? currentMaisonName[0]?.toUpperCase() : (item.user?.name?.[0]?.toUpperCase() || "S")}
-                          </Text>
-                        </View>
-                        <View>
-                          <Text style={styles.photoCardAuthor}>
-                            {item.user?.name === "Alok Maison" ? currentMaisonName : (item.user?.name || "Gucci Atelier")}
-                          </Text>
-                          <Text style={styles.photoCardSubtitle}>Quiet Luxury Node</Text>
-                        </View>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleThreeDotsPress(item)}>
-                        <Lucide name="ellipsis-horizontal" size={19} color="rgba(255,255,255,0.4)" />
-                      </TouchableOpacity>
-                    </View>
-
-                    {item.isVideo ? (
-                      <View style={{ position: "relative" }}>
-                        <Video
-                          source={{ uri: videoUrl }}
-                          rate={1.0}
-                          volume={1.0}
-                          isMuted={feedMuted}
-                          resizeMode={ResizeMode.COVER}
-                          shouldPlay={true}
-                          isLooping
-                          style={styles.photoCardImage}
-                        />
-                        <TouchableOpacity 
-                          style={styles.feedVolumeBtn} 
-                          onPress={() => {
-                            triggerHaptic("light");
-                            setFeedMuted(!feedMuted);
-                          }}
-                        >
-                          <Lucide name={feedMuted ? "volume-mute" : "volume-high"} size={19} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <Image source={{ uri: img }} style={styles.photoCardImage} />
-                    )}
-
-                    <View style={styles.photoCardActions}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
-                        <TouchableOpacity onPress={() => handleLikePress(item.id)}>
-                          <Lucide name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#ff3b30" : "#fff"} />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleCommentsPress(item)}>
-                          <Lucide name="chatbubble-outline" size={23} color="#fff" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleShare(item)}>
-                          <Lucide name="paper-plane-outline" size={23} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                      {(() => {
-                        const isSaved = savedPosts[item.id] || false;
+              ListHeaderComponent={
+                <View style={{ marginBottom: 12 }}>
+                  {/* Dynamic Active Streams */}
+                  {activeSessions.length > 0 && (
+                    <View style={{ marginBottom: 16 }}>
+                      <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>
+                        Active Live Showrooms
+                      </Text>
+                      {activeSessions.map((session) => {
+                        const pinnedProductDetails = products.find(p => p.id === session.pinnedProductId);
+                        const coverImg = pinnedProductDetails?.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400";
                         return (
-                          <TouchableOpacity onPress={() => handleSavePress(item.id)}>
-                            <Lucide name={isSaved ? "bookmark" : "bookmark-outline"} size={23} color={isSaved ? "#00f5ff" : "#fff"} />
+                          <TouchableOpacity
+                            key={session.id}
+                            style={styles.showroomCard}
+                            onPress={() => {
+                              triggerHaptic("medium");
+                              setShowroomMode("viewer");
+                              setShowroomMaisonId(session.maisonId);
+                              setShowroomMaisonName(session.maisonName);
+                              setShowroomSessionId(session.id);
+                              setShowLiveShowroom(true);
+                            }}
+                            activeOpacity={0.9}
+                          >
+                            <Image
+                              source={{ uri: coverImg }}
+                              style={styles.showroomImg}
+                            />
+                            <LinearGradient
+                              colors={["rgba(0,0,0,0.1)", "rgba(0,0,0,0.75)"]}
+                              style={StyleSheet.absoluteFillObject}
+                            />
+                            <View style={styles.showroomBadgeRow}>
+                              <View style={styles.showroomLiveBadge}>
+                                <Text style={styles.showroomLiveText}>LIVE</Text>
+                              </View>
+                              <View style={styles.showroomViewerBadge}>
+                                <Lucide name="people" size={12} color="#fff" />
+                                <Text style={styles.showroomViewerText}>{session.viewerCount}</Text>
+                              </View>
+                            </View>
+                            <View style={styles.showroomFooter}>
+                              <Text style={styles.showroomTitle}>{session.title}</Text>
+                              <Text style={styles.showroomHost}>by {session.maisonName}</Text>
+                            </View>
                           </TouchableOpacity>
                         );
-                      })()}
+                      })}
                     </View>
+                  )}
 
-                    <Text style={styles.photoCardLikes}>{item.likesCount ? (isLiked ? item.likesCount + 1 : item.likesCount) : 104} likes</Text>
-                    <Text style={styles.photoCardCaption}>
-                      <Text style={{ fontWeight: "bold" }}>{item.user?.name?.toLowerCase().replace(/\s+/g, "") || "gucci"} </Text>
-                      {item.caption || "Atelier Masterpiece Collection."}
-                    </Text>
+                  {/* Standard Studio Banner */}
+                  <View style={styles.liveBannerContainer}>
+                    <TouchableOpacity
+                      style={styles.liveBannerCard}
+                      onPress={() => {
+                        triggerHaptic("medium");
+                        setShowroomMode("lobby");
+                        setShowroomMaisonId(activeMaisonId);
+                        setShowroomMaisonName(currentMaisonName);
+                        setShowroomSessionId(undefined);
+                        setShowLiveShowroom(true);
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <LinearGradient
+                        colors={["#a78bfa", "#fb923c"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.liveBannerGradient}
+                      >
+                        <View style={styles.liveBannerLeft}>
+                          <View style={styles.liveBannerLiveBadge}>
+                            <Text style={styles.liveBannerLiveText}>LIVE STUDIO</Text>
+                          </View>
+                          <Text style={styles.liveBannerTitle}>Maison Broadcast Studio</Text>
+                          <Text style={styles.liveBannerDesc}>Tap to enter lobby, start a stream or discover coordinate nodes</Text>
+                        </View>
+                        <View style={styles.liveBannerRight}>
+                          <Lucide name="videocam-outline" size={30} color="#fff" />
+                        </View>
+                      </LinearGradient>
+                    </TouchableOpacity>
                   </View>
-                );
-              }}
+                </View>
+              }
+              renderItem={({ item }) => (
+                <PostCard
+                  item={item}
+                  currentMaisonName={currentMaisonName}
+                  feedMuted={feedMuted}
+                  setFeedMuted={setFeedMuted}
+                  likedPosts={likedReels}
+                  savedPosts={savedPosts}
+                  handleMaisonProfilePress={handleMaisonProfilePress}
+                  handleLikePress={handleLikePress}
+                  handleCommentsPress={handleCommentsPress}
+                  handleShare={handleShare}
+                  handleSavePress={handleSavePress}
+                  handleThreeDotsPress={handleThreeDotsPress}
+                />
+              )}
+              onEndReached={loadMoreStories}
+              onEndReachedThreshold={0.5}
+              ListFooterComponent={renderFeedFooter}
             />
           )}
 
@@ -1668,660 +1245,27 @@ export default function ReelsScreen() {
       </SafeAreaView>
 
       {/* 📥 DYNAMIC DIRECT MESSAGES SLIDE-UP MODAL PANEL */}
-      {showDMs && (
-        <View style={[styles.dmSlidePanel, { bottom: bottomBarHeight }]}>
-          <SafeAreaView style={styles.dmSafeArea}>
-            {/* DM Top Bar */}
-            <View style={styles.dmHeaderRow}>
-              <TouchableOpacity onPress={() => setShowDMs(false)}>
-                <Lucide name="chevron-back" size={28} color="#fff" />
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.dmTitleRow} 
-                onPress={() => {
-                  triggerHaptic("light");
-                  const next = !isSeller;
-                  setIsSeller(next);
-                  setActiveBusinessTool(null);
-                  if (next) {
-                    fetchBusinessStats();
-                    fetchPromotions();
-                    fetchAds();
-                    fetchBroadcasts();
-                    fetchAutoReply();
-                  }
-                }}
-              >
-                <Text style={styles.dmTitleText}>{isSeller ? (activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()))) : "Alok Singh"}</Text>
-                <Lucide name="chevron-down" size={17} color="#fff" />
-                <View style={styles.dmTitleRedDot} />
-              </TouchableOpacity>
+      <ChatDrawer
+        visible={showDMs}
+        onClose={() => {
+          setShowDMs(false);
+          setChatConversationId(null);
+        }}
+        bottomBarHeight={bottomBarHeight}
+        activeMaisonId={activeMaisonId}
+        isSeller={isSeller}
+        setIsSeller={setIsSeller}
+        products={products}
+        activeInstaStories={activeInstaStories}
+        onOpenStoryGroup={(story) => {
+          setSelectedStoriesGroup(story);
+          setActiveSlideIndex(0);
+          setStoryProgress(0);
+        }}
+        initialConversationId={chatConversationId}
+      />
 
-              <TouchableOpacity onPress={() => triggerHaptic("medium")}>
-                <Lucide name="create-outline" size={26} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            {/* DM Search input */}
-            <View style={styles.dmSearchContainer}>
-              <Lucide name="search" size={21} color="rgba(255,255,255,0.4)" style={styles.dmSearchIcon} />
-              <TextInput
-                style={styles.dmSearchInput}
-                placeholder="Search"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                value={dmSearch}
-                onChangeText={setDmSearch}
-              />
-            </View>
-
-            {/* ─────────────────────────────────────────────
-                PERSONAL MODE — Stories + Filters + Threads
-            ───────────────────────────────────────────── */}
-            {!isSeller && (
-              <>
-                {/* Stories row */}
-                <View style={{ height: 92, marginBottom: 4 }}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ paddingHorizontal: 14, alignItems: "center", gap: 16 }}
-                    style={{ flex: 1 }}
-                  >
-                    {activeInstaStories.map((story) => (
-                      <TouchableOpacity
-                        key={story.id}
-                        style={{ alignItems: "center", gap: 5 }}
-                        onPress={() => {
-                          triggerHaptic("medium");
-                          setSelectedStoriesGroup(story);
-                          setActiveSlideIndex(0);
-                          setStoryProgress(0);
-                        }}
-                        activeOpacity={0.75}
-                      >
-                        {story.active ? (
-                          <LinearGradient
-                            colors={["#fb923c", "#d946ef", "#8b5cf6"]}
-                            start={{ x: 0, y: 1 }}
-                            end={{ x: 1, y: 0 }}
-                            style={{
-                              width: 60, height: 60, borderRadius: 30,
-                              justifyContent: "center", alignItems: "center",
-                            }}
-                          >
-                            <View style={{
-                              width: 54, height: 54, borderRadius: 27,
-                              backgroundColor: "#080415",
-                              justifyContent: "center",
-                              alignItems: "center",
-                            }}>
-                              <Image source={{ uri: story.avatar }} style={{ width: 48, height: 48, borderRadius: 24 }} />
-                            </View>
-                          </LinearGradient>
-                        ) : (
-                          <View style={{
-                            width: 58, height: 58, borderRadius: 29,
-                            borderWidth: story.isYourStory ? 1.5 : 1,
-                            borderColor: story.isYourStory ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.15)",
-                            padding: 2,
-                            backgroundColor: "#080415",
-                            position: "relative",
-                            justifyContent: "center",
-                            alignItems: "center"
-                          }}>
-                            <Image source={{ uri: story.avatar }} style={{ width: 50, height: 50, borderRadius: 25 }} />
-                            {story.isYourStory && (
-                              <View style={{
-                                position: "absolute", bottom: -1, right: -1,
-                                width: 18, height: 18, borderRadius: 9,
-                                backgroundColor: "#00f5ff",
-                                alignItems: "center", justifyContent: "center",
-                                borderWidth: 1.5, borderColor: "#080415",
-                              }}>
-                                <Lucide name="add" size={12} color="#000" />
-                              </View>
-                            )}
-                          </View>
-                        )}
-                        <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, maxWidth: 58, textAlign: "center" }} numberOfLines={1}>
-                          {story.isYourStory ? "Your story" : story.username}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Filter tabs */}
-                <View style={styles.dmFilterStrip}>
-                  {["Primary", "From ads", "Requests", "General"].map((filt) => {
-                    const isAct = activeDmFilter === filt;
-                    return (
-                      <TouchableOpacity
-                        key={filt}
-                        style={[styles.dmFilterTab, isAct && styles.dmFilterTabActive]}
-                        onPress={() => { triggerHaptic("light"); setActiveDmFilter(filt); }}
-                      >
-                        <Text style={[styles.dmFilterText, isAct && styles.dmFilterTextActive]}>{filt}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Thread list */}
-                {loadingChats ? (
-                  <ActivityIndicator size="small" color="#00f5ff" style={{ marginTop: 24 }} />
-                ) : (
-                  <ScrollView style={styles.dmThreadsScroll} showsVerticalScrollIndicator={false}>
-                    {conversations
-                      .filter(t => t.name.toLowerCase().includes(dmSearch.toLowerCase()))
-                      .filter(t => (t.category || "Primary") === activeDmFilter)
-                      .map((thread) => (
-                      <TouchableOpacity
-                        key={thread.id}
-                        style={styles.threadItemRow}
-                        onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
-                      >
-                        <Image source={{ uri: thread.avatar }} style={styles.threadAvatar} />
-                        <View style={styles.threadDetails}>
-                          <View style={styles.threadNameRow}>
-                            <Text style={styles.threadNameText}>{thread.name}</Text>
-                            {thread.verified && (
-                              <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
-                            )}
-                          </View>
-                          <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
-                            {thread.lastMessage || "Secure direct message sync handshake established."}
-                          </Text>
-                        </View>
-                        <TouchableOpacity style={styles.cameraIconBtn}>
-                          <Lucide name="camera-outline" size={26} color="rgba(255,255,255,0.6)" />
-                        </TouchableOpacity>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                )}
-              </>
-            )}
-
-            {/* ─────────────────────────────────────────────
-                SELLER / MAISON MODE — Business Hub
-            ───────────────────────────────────────────── */}
-            {isSeller && (
-              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-
-                {/* ── Quick Stats Bar ── */}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 14, gap: 12 }}
-                >
-                  {liveBusinessStats.map((stat) => (
-                    <View key={stat.label} style={styles.bizStatCard}>
-                      <Lucide name={stat.icon as any} size={23} color={stat.color} />
-                      <Text style={[styles.bizStatValue, { color: stat.color }]}>{stat.value}</Text>
-                      <Text style={styles.bizStatLabel}>{stat.label}</Text>
-                    </View>
-                  ))}
-                </ScrollView>
-
-                {/* ── Business Tools Grid ── */}
-                {!activeBusinessTool && (
-                  <>
-                    <Text style={styles.bizSectionLabel}>Business Tools</Text>
-                    <View style={styles.bizToolsGrid}>
-                      {BUSINESS_TOOLS.map((tool) => (
-                        <TouchableOpacity
-                          key={tool.id}
-                          style={styles.bizToolCard}
-                          onPress={() => { triggerHaptic("medium"); setActiveBusinessTool(tool.id); setBroadcastSent(false); }}
-                          activeOpacity={0.75}
-                        >
-                          <View style={[styles.bizToolIconWrap, { backgroundColor: tool.color + "22" }]}>
-                            <Lucide name={tool.icon as any} size={26} color={tool.color} />
-                          </View>
-                          <Text style={styles.bizToolName}>{tool.label}</Text>
-                          <Text style={styles.bizToolDesc}>{tool.desc}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {/* ── Customer Enquiries ── */}
-                    <Text style={styles.bizSectionLabel}>Customer Enquiries</Text>
-                    {CUSTOMER_THREADS.filter(t => t.name.toLowerCase().includes(dmSearch.toLowerCase())).map((thread) => (
-                      <TouchableOpacity
-                        key={thread.id}
-                        style={[styles.threadItemRow, { marginHorizontal: 16 }]}
-                        onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
-                        activeOpacity={0.75}
-                      >
-                        <Image source={{ uri: thread.avatar }} style={styles.threadAvatar} />
-                        <View style={styles.threadDetails}>
-                          <View style={styles.threadNameRow}>
-                            <Text style={styles.threadNameText}>{thread.name}</Text>
-                            <View style={[styles.bizTagBadge, { backgroundColor: thread.unread ? "#00f5ff22" : "#ffffff11" }]}>
-                              <Text style={[styles.bizTagText, { color: thread.unread ? "#00f5ff" : "rgba(255,255,255,0.4)" }]}>{thread.tag}</Text>
-                            </View>
-                          </View>
-                          <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
-                            {thread.message}
-                          </Text>
-                        </View>
-                        {thread.unread && <View style={styles.bizUnreadDot} />}
-                      </TouchableOpacity>
-                    ))}
-                    <View style={{ height: 32 }} />
-                  </>
-                )}
-
-                {/* ── Sub-panels ── */}
-
-                {/* BROADCAST */}
-                {activeBusinessTool === "broadcast" && (
-                  <View style={styles.bizSubPanel}>
-                    <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
-                      <Lucide name="chevron-back" size={23} color="#00f5ff" />
-                      <Text style={styles.bizSubBackText}>Back</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.bizSubTitle}>📣 Broadcast Message</Text>
-                    <Text style={styles.bizSubSubtitle}>Send to all your followers at once</Text>
-                    <View style={styles.bizAudiencePill}>
-                      <Lucide name="people" size={17} color="#00f5ff" />
-                      <Text style={{ color: "#00f5ff", fontSize: 14.5, marginLeft: 6 }}>1,432 followers will receive this</Text>
-                    </View>
-                    <TextInput
-                      style={styles.bizBroadcastInput}
-                      placeholder="Write your message..."
-                      placeholderTextColor="rgba(255,255,255,0.3)"
-                      value={broadcastText}
-                      onChangeText={setBroadcastText}
-                      multiline
-                      numberOfLines={5}
-                    />
-                    {broadcastSent ? (
-                      <View style={styles.bizSuccessBanner}>
-                        <Lucide name="checkmark-circle" size={23} color="#34d399" />
-                        <Text style={{ color: "#34d399", marginLeft: 8, fontWeight: "600" }}>Broadcast sent to all followers!</Text>
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        style={[styles.bizSendBtn, !broadcastText && { opacity: 0.4 }]}
-                        disabled={!broadcastText}
-                        onPress={async () => {
-                          triggerHaptic("heavy");
-                          const ok = await sendBroadcast(broadcastText || "Broadcast", broadcastText);
-                          setBroadcastSent(true);
-                          if (ok) fetchBroadcasts();
-                        }}
-                      >
-                        <Lucide name="megaphone" size={19} color="#000" />
-                        <Text style={styles.bizSendBtnText}>Send Broadcast</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
-
-                {/* PROMOTIONS */}
-                {activeBusinessTool === "promotions" && (
-                  <View style={styles.bizSubPanel}>
-                    <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
-                      <Lucide name="chevron-back" size={23} color="#fb923c" />
-                      <Text style={[styles.bizSubBackText, { color: "#fb923c" }]}>Back</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.bizSubTitle}>🏷️ Promotions</Text>
-                    <Text style={styles.bizSubSubtitle}>Active discount codes & campaigns</Text>
-                    {loadingPromos ? (
-                      <ActivityIndicator size="small" color="#fb923c" style={{ marginTop: 16 }} />
-                    ) : (
-                      (livePromos.length > 0 ? livePromos : [
-                        { code: "AURA20", discount: 20, type: "PERCENTAGE", uses: 34, expiresAt: "2026-06-15" },
-                        { code: "NEWCOL10", discount: 10, type: "PERCENTAGE", uses: 12, expiresAt: "2026-06-30" },
-                      ]).map((promo: any) => (
-                        <View key={promo.code} style={styles.bizPromoCard}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ color: "#fb923c", fontWeight: "bold", fontSize: 17.5, letterSpacing: 1 }}>{promo.code}</Text>
-                            <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 14.5, marginTop: 2 }}>
-                              {promo.type === "PERCENTAGE" ? `${promo.discount}% off` : `₹${promo.discount} off`}
-                            </Text>
-                            <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13.5, marginTop: 2 }}>
-                              Used {promo.uses || 0}× {promo.expiresAt ? `· Expires ${new Date(promo.expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""}
-                            </Text>
-                          </View>
-                          <View style={[styles.bizTagBadge, { backgroundColor: "#fb923c22" }]}>
-                            <Text style={{ color: "#fb923c", fontSize: 13.5 }}>{promo.status || "Active"}</Text>
-                          </View>
-                        </View>
-                      ))
-                    )}
-                    {showNewPromoForm ? (
-                      <View style={{ marginBottom: 12 }}>
-                        <TextInput
-                          style={[styles.bizBroadcastInput, { borderColor: "#fb923c44", minHeight: 46 }]}
-                          placeholder="Promo code (e.g. SALE25)"
-                          placeholderTextColor="rgba(255,255,255,0.3)"
-                          value={newPromoCode}
-                          onChangeText={setNewPromoCode}
-                          autoCapitalize="characters"
-                        />
-                        <TextInput
-                          style={[styles.bizBroadcastInput, { borderColor: "#fb923c44", minHeight: 46 }]}
-                          placeholder="Discount % (e.g. 25)"
-                          placeholderTextColor="rgba(255,255,255,0.3)"
-                          value={newPromoDiscount}
-                          onChangeText={setNewPromoDiscount}
-                          keyboardType="numeric"
-                        />
-                        <TouchableOpacity
-                          style={[styles.bizSendBtn, { backgroundColor: "#fb923c" }, (!newPromoCode || !newPromoDiscount) && { opacity: 0.4 }]}
-                          disabled={!newPromoCode || !newPromoDiscount}
-                          onPress={async () => {
-                            triggerHaptic("heavy");
-                            const ok = await createPromo(newPromoCode, parseFloat(newPromoDiscount), "PERCENTAGE");
-                            if (ok) { setNewPromoCode(""); setNewPromoDiscount(""); setShowNewPromoForm(false); }
-                          }}
-                        >
-                          <Lucide name="checkmark" size={19} color="#000" />
-                          <Text style={styles.bizSendBtnText}>Save Promo</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <TouchableOpacity style={[styles.bizSendBtn, { backgroundColor: "#fb923c" }]} onPress={() => setShowNewPromoForm(true)}>
-                        <Lucide name="add" size={19} color="#000" />
-                        <Text style={styles.bizSendBtnText}>Create New Promo</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
-
-                {/* ADS MANAGER */}
-                {activeBusinessTool === "ads" && (
-                  <View style={styles.bizSubPanel}>
-                    <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
-                      <Lucide name="chevron-back" size={23} color="#a78bfa" />
-                      <Text style={[styles.bizSubBackText, { color: "#a78bfa" }]}>Back</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.bizSubTitle}>📊 Ads Manager</Text>
-                    <Text style={styles.bizSubSubtitle}>Active campaigns this month</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 8 }}>
-                      {(liveAds.length > 0 ? liveAds : [
-                        { name: "Spring Drop", spend: "₹12,000", reach: "28K", clicks: "1.2K", status: "Live" },
-                        { name: "Scarf Promo", spend: "₹6,500", reach: "14K", clicks: "640", status: "Paused" },
-                      ]).map((ad: any) => (
-                        <View key={ad.name} style={styles.bizAdCard}>
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                            <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16.5 }}>{ad.name}</Text>
-                            <View style={[styles.bizTagBadge, { backgroundColor: ad.status === "Live" ? "#34d39922" : "#ffffff11" }]}>
-                              <Text style={{ color: ad.status === "Live" ? "#34d399" : "rgba(255,255,255,0.4)", fontSize: 13.5 }}>{ad.status}</Text>
-                            </View>
-                          </View>
-                          {[
-                            { k: "Spend", v: ad.spend },
-                            { k: "Reach", v: ad.reach },
-                            { k: "Clicks", v: ad.clicks },
-                          ].map((row) => (
-                            <View key={row.k} style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                              <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 14.5 }}>{row.k}</Text>
-                              <Text style={{ color: "#a78bfa", fontSize: 14.5, fontWeight: "600" }}>{row.v}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      ))}
-                    </ScrollView>
-                    <TouchableOpacity style={[styles.bizSendBtn, { backgroundColor: "#a78bfa" }]} onPress={() => triggerHaptic("medium")}>
-                      <Lucide name="add" size={19} color="#000" />
-                      <Text style={styles.bizSendBtnText}>Create New Ad</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {/* CATALOGUE */}
-                {activeBusinessTool === "catalogue" && (
-                  <View style={styles.bizSubPanel}>
-                    <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
-                      <Lucide name="chevron-back" size={23} color="#34d399" />
-                      <Text style={[styles.bizSubBackText, { color: "#34d399" }]}>Back</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.bizSubTitle}>🗂️ Catalogue</Text>
-                    <Text style={styles.bizSubSubtitle}>Your active listings</Text>
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
-                      {(products || []).slice(0, 6).map((p: any) => (
-                        <View key={p.id} style={styles.bizCatalogueItem}>
-                          <Image source={{ uri: p.images?.[0] || p.thumbnail }} style={styles.bizCatalogueImg} />
-                          <Text style={styles.bizCatalogueName} numberOfLines={1}>{p.name || p.title}</Text>
-                          <Text style={styles.bizCataloguePrice}>₹{p.price?.toLocaleString()}</Text>
-                        </View>
-                      ))}
-                      {(!products || products.length === 0) && (
-                        <View style={{ alignItems: "center", paddingVertical: 32, width: "100%" }}>
-                          <Lucide name="grid-outline" size={40} color="rgba(255,255,255,0.2)" />
-                          <Text style={{ color: "rgba(255,255,255,0.3)", marginTop: 12, fontSize: 15.5 }}>List products from your web dashboard</Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                )}
-
-                {/* AUTO-REPLY */}
-                {activeBusinessTool === "autoreply" && (
-                  <View style={styles.bizSubPanel}>
-                    <TouchableOpacity style={styles.bizSubBack} onPress={() => { setActiveBusinessTool(null); setAutoReplySaved(false); }}>
-                      <Lucide name="chevron-back" size={23} color="#f472b6" />
-                      <Text style={[styles.bizSubBackText, { color: "#f472b6" }]}>Back</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.bizSubTitle}>⚡ Auto-Reply</Text>
-                    <Text style={styles.bizSubSubtitle}>Auto-sent when you're unavailable</Text>
-
-                    {loadingAutoReply ? (
-                      <ActivityIndicator size="small" color="#f472b6" style={{ marginTop: 24 }} />
-                    ) : (
-                      <>
-                        {/* Enable toggle */}
-                        <TouchableOpacity
-                          style={styles.bizAutoReplyToggleRow}
-                          onPress={() => { triggerHaptic("light"); setAutoReplyEnabled(!autoReplyEnabled); setAutoReplySaved(false); }}
-                          activeOpacity={0.8}
-                        >
-                          <View>
-                            <Text style={{ color: "#fff", fontSize: 16.5, fontWeight: "600" }}>Auto-Reply Enabled</Text>
-                            <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13.5, marginTop: 2 }}>
-                              {autoReplyEnabled ? "Replies sent automatically" : "Currently disabled"}
-                            </Text>
-                          </View>
-                          <View style={[styles.bizToggle, { backgroundColor: autoReplyEnabled ? "#f472b633" : "rgba(255,255,255,0.1)" }]}>
-                            <View style={[
-                              styles.bizToggleThumb,
-                              { backgroundColor: autoReplyEnabled ? "#f472b6" : "rgba(255,255,255,0.3)", marginLeft: autoReplyEnabled ? "auto" : 0 }
-                            ]} />
-                          </View>
-                        </TouchableOpacity>
-
-                        {/* Greeting message */}
-                        <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 13.5, fontWeight: "700", letterSpacing: 0.8, marginBottom: 6, marginTop: 4 }}>GREETING MESSAGE</Text>
-                        <TextInput
-                          style={[styles.bizBroadcastInput, { borderColor: "#f472b633", minHeight: 80 }]}
-                          value={greetingMessage}
-                          onChangeText={(t) => { setGreetingMessage(t); setAutoReplySaved(false); }}
-                          multiline
-                          placeholder="Sent when someone first messages you"
-                          placeholderTextColor="rgba(255,255,255,0.25)"
-                        />
-
-                        {/* Away message */}
-                        <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 13.5, fontWeight: "700", letterSpacing: 0.8, marginBottom: 6 }}>AWAY MESSAGE</Text>
-                        <TextInput
-                          style={[styles.bizBroadcastInput, { borderColor: "#f472b633", minHeight: 80 }]}
-                          value={awayMessage}
-                          onChangeText={(t) => { setAwayMessage(t); setAutoReplySaved(false); }}
-                          multiline
-                          placeholder="Sent during quiet hours or when away"
-                          placeholderTextColor="rgba(255,255,255,0.25)"
-                        />
-
-                        {/* Quiet hours */}
-                        <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 13.5, fontWeight: "700", letterSpacing: 0.8, marginBottom: 6 }}>QUIET HOURS (24h format)</Text>
-                        <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 4 }}>From (hour)</Text>
-                            <TextInput
-                              style={[styles.bizBroadcastInput, { borderColor: "#f472b633", minHeight: 46, paddingVertical: 0 }]}
-                              value={quietHoursStart}
-                              onChangeText={(t) => { setQuietHoursStart(t); setAutoReplySaved(false); }}
-                              keyboardType="numeric"
-                              placeholder="e.g. 22"
-                              placeholderTextColor="rgba(255,255,255,0.25)"
-                              maxLength={2}
-                            />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 4 }}>To (hour)</Text>
-                            <TextInput
-                              style={[styles.bizBroadcastInput, { borderColor: "#f472b633", minHeight: 46, paddingVertical: 0 }]}
-                              value={quietHoursEnd}
-                              onChangeText={(t) => { setQuietHoursEnd(t); setAutoReplySaved(false); }}
-                              keyboardType="numeric"
-                              placeholder="e.g. 8"
-                              placeholderTextColor="rgba(255,255,255,0.25)"
-                              maxLength={2}
-                            />
-                          </View>
-                        </View>
-
-                        {autoReplySaved ? (
-                          <View style={styles.bizSuccessBanner}>
-                            <Lucide name="checkmark-circle" size={23} color="#34d399" />
-                            <Text style={{ color: "#34d399", marginLeft: 8, fontWeight: "600" }}>Auto-Reply saved & synced!</Text>
-                          </View>
-                        ) : (
-                          <TouchableOpacity
-                            style={[styles.bizSendBtn, { backgroundColor: "#f472b6" }]}
-                            onPress={async () => {
-                              triggerHaptic("heavy");
-                              const ok = await saveAutoReply();
-                              setAutoReplySaved(ok);
-                            }}
-                          >
-                            <Lucide name="save-outline" size={19} color="#000" />
-                            <Text style={styles.bizSendBtnText}>Save & Sync Auto-Reply</Text>
-                          </TouchableOpacity>
-                        )}
-                      </>
-                    )}
-                  </View>
-                )}
-
-                {/* CUSTOMER INBOX */}
-                {activeBusinessTool === "inbox" && (
-                  <View style={styles.bizSubPanel}>
-                    <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
-                      <Lucide name="chevron-back" size={23} color="#fbbf24" />
-                      <Text style={[styles.bizSubBackText, { color: "#fbbf24" }]}>Back</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.bizSubTitle}>👥 Customer Inbox</Text>
-                    <Text style={styles.bizSubSubtitle}>Order & product enquiries</Text>
-                    {CUSTOMER_THREADS.map((thread) => (
-                      <TouchableOpacity
-                        key={thread.id}
-                        style={styles.threadItemRow}
-                        onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
-                        activeOpacity={0.75}
-                      >
-                        <Image source={{ uri: thread.avatar }} style={styles.threadAvatar} />
-                        <View style={styles.threadDetails}>
-                          <View style={styles.threadNameRow}>
-                            <Text style={styles.threadNameText}>{thread.name}</Text>
-                            <View style={[styles.bizTagBadge, { backgroundColor: "#fbbf2422" }]}>
-                              <Text style={{ color: "#fbbf24", fontSize: 13.5 }}>{thread.tag}</Text>
-                            </View>
-                          </View>
-                          <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
-                            {thread.message}
-                          </Text>
-                        </View>
-                        {thread.unread && <View style={styles.bizUnreadDot} />}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
-              </ScrollView>
-            )}
-          </SafeAreaView>
-        </View>
-      )}
-
-      {/* 💬 INDIVIDUAL ACTIVE CONVERSATION MESSENGER PANEL */}
-      {showDMs && activeChat && (
-        <View style={[styles.dmSlidePanel, { bottom: bottomBarHeight }]}>
-          <SafeAreaView style={styles.dmSafeArea}>
-            {/* Chat header */}
-            <View style={styles.dmHeaderRow}>
-              <TouchableOpacity onPress={() => setActiveChat(null)}>
-                <Lucide name="chevron-back" size={28} color="#fff" />
-              </TouchableOpacity>
-              
-              <View style={styles.dmTitleRow}>
-                <Text style={styles.dmTitleText}>{activeChat.name}</Text>
-                {activeChat.verified && (
-                  <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
-                )}
-              </View>
-
-              <TouchableOpacity onPress={() => triggerHaptic("medium")}>
-                <Lucide name="information-circle-outline" size={26} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Messages feed list */}
-            <ScrollView 
-              style={styles.chatFeedScroll}
-              contentContainerStyle={styles.chatFeedContent}
-              ref={(ref) => ref?.scrollToEnd({ animated: true })}
-            >
-              <Text style={styles.chatStartText}>
-                Mesh handshake started — secure sovereign credentials synced
-              </Text>
-              
-              {(activeChat.messages || []).map((msg: any) => {
-                const isMine = msg.senderId === (isSeller ? activeMaisonId : "user_2pk5xskr");
-                return (
-                  <View key={msg.id} style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}>
-                    {!isMine && (
-                      <View style={styles.msgAvatar}>
-                        <Text style={styles.msgAvatarText}>{activeChat.name[0]?.toUpperCase()}</Text>
-                      </View>
-                    )}
-                    <View style={[styles.msgBubble, isMine ? styles.msgBubbleRight : styles.msgBubbleLeft]}>
-                      <Text style={[styles.msgText, isMine ? styles.msgTextRight : styles.msgTextLeft]}>{msg.content}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-
-            {/* Input keyboard bar */}
-            <View style={styles.chatInputBar}>
-              <TouchableOpacity style={styles.paperclipBtn}>
-                <Lucide name="image-outline" size={24} color="rgba(255,255,255,0.6)" />
-              </TouchableOpacity>
-              <TextInput
-                style={styles.chatInput}
-                placeholder="Message..."
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                value={chatReplyText}
-                onChangeText={setChatReplyText}
-                onSubmitEditing={handleSendChatMessage}
-              />
-              <TouchableOpacity 
-                style={[styles.chatSendBtn, !chatReplyText.trim() && styles.chatSendBtnDisabled]}
-                onPress={handleSendChatMessage}
-                disabled={!chatReplyText.trim()}
-              >
-                <Text style={styles.chatSendBtnText}>Send</Text>
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
-        </View>
-      )}
+      {/* 💬 Individual conversation is now handled inside ChatDrawer */}
 
       {/* 🏠 GLOBAL PERSISTENT Bottom Navigation tabs replica */}
       <View style={[styles.instagramBottomBar, { height: 52 + insets.bottom, paddingBottom: insets.bottom }]}>
@@ -3149,947 +2093,25 @@ export default function ReelsScreen() {
         </Modal>
       )}
 
-      {/* 📸 HIGH-FIDELITY INSTAGRAM-STYLE REELS CAMERA/RECORDING STUDIO */}
-      {showReelCamera && (
-        <Modal
-          visible={showReelCamera}
-          animationType="slide"
-          transparent={false}
-          onRequestClose={() => {
-            stopTrack();
-            setShowReelCamera(false);
-          }}
-        >
-          <View style={styles.cameraContainer}>
-            {/* CAMERA PERMISSION CHECKER */}
-            {!permission ? (
-              <View style={[styles.cameraContainer, { justifyContent: "center", alignItems: "center" }]}>
-                <ActivityIndicator size="large" color="#00f5ff" />
-              </View>
-            ) : !permission.granted ? (
-              <View style={styles.permissionContainer}>
-                <SafeAreaView style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 }}>
-                  <View style={styles.permissionIconCircle}>
-                    <Lucide name="camera-outline" size={44} color="#00f5ff" />
-                  </View>
-                  <Text style={styles.permissionTitle}>Camera Access Required</Text>
-                  <Text style={styles.permissionText}>
-                    AURA requires active camera lens telemetry to enable direct-in-view curation and live product tagging.
-                  </Text>
-                  <TouchableOpacity 
-                    style={styles.permissionBtn} 
-                    onPress={() => {
-                      triggerHaptic("heavy");
-                      requestPermission();
-                    }}
-                  >
-                    <Text style={styles.permissionBtnText}>Enable Camera</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.permissionCancelBtn} 
-                    onPress={() => {
-                      triggerHaptic("light");
-                      setShowReelCamera(false);
-                    }}
-                  >
-                    <Text style={styles.permissionCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                </SafeAreaView>
-              </View>
-            ) : (
-              <>
-                {/* Real Live CameraView Finder (Full screen viewport) */}
-                <CameraView 
-                  style={styles.cameraViewfinder} 
-                  facing={cameraFacing}
-                />
+      {/* 📸 REELS CAMERA STUDIO — fully self-contained component */}
+      <CameraStudio
+        visible={showReelCamera}
+        onClose={() => setShowReelCamera(false)}
+        insets={insets}
+        products={products}
+        onPostPublished={(reel) => setLocalReels((prev: any[]) => [reel, ...prev])}
+      />
 
-                {/* SIMULATED RING-LIGHT FRONT SCREEN FLASH */}
-                {flashMode === "on" && (
-                  <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { borderWidth: 20, borderColor: "#fffaf0", backgroundColor: "rgba(255,250,240,0.15)", zIndex: 4 }]} />
-                )}
+      {/* 📺 WEBRTC LIVE SHOWROOM OVERLAY */}
+      <LiveShowroom
+        visible={showLiveShowroom}
+        onClose={() => setShowLiveShowroom(false)}
+        initialMode={showroomMode}
+        maisonId={showroomMaisonId}
+        maisonName={showroomMaisonName}
+        sessionId={showroomSessionId}
+      />
 
-                {/* DYNAMIC COLLAGE VIEWFINDER SPLITS */}
-                {videoLayoutMode === "split" && (
-                  <View pointerEvents="none" style={styles.collageSplitOverlay}>
-                    <View style={{ flex: 1, borderBottomWidth: 1.5, borderColor: "rgba(255,255,255,0.4)" }} />
-                    <View style={{ flex: 1 }} />
-                  </View>
-                )}
-                {videoLayoutMode === "grid" && (
-                  <View pointerEvents="none" style={styles.collageGridOverlay}>
-                    <View style={{ flex: 1, flexDirection: "row", borderBottomWidth: 1.5, borderColor: "rgba(255,255,255,0.4)" }}>
-                      <View style={{ flex: 1, borderRightWidth: 1.5, borderColor: "rgba(255,255,255,0.4)" }} />
-                      <View style={{ flex: 1 }} />
-                    </View>
-                    <View style={{ flex: 1, flexDirection: "row" }}>
-                      <View style={{ flex: 1, borderRightWidth: 1.5, borderColor: "rgba(255,255,255,0.4)" }} />
-                      <View style={{ flex: 1 }} />
-                    </View>
-                  </View>
-                )}
-                {videoLayoutMode === "triptych" && (
-                  <View pointerEvents="none" style={{ ...StyleSheet.absoluteFillObject, flexDirection: "row", zIndex: 3 }}>
-                    <View style={{ flex: 1, borderRightWidth: 1.5, borderColor: "rgba(255,255,255,0.4)" }} />
-                    <View style={{ flex: 1, borderRightWidth: 1.5, borderColor: "rgba(255,255,255,0.4)" }} />
-                    <View style={{ flex: 1 }} />
-                  </View>
-                )}
-
-            {/* ALIGN TRANSITION GHOST OVERLAY */}
-            {alignGhostActive && (
-              <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { zIndex: 2 }]}>
-                <Image 
-                  source={{ uri: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=600" }} 
-                  style={[StyleSheet.absoluteFillObject, { opacity: 0.3, tintColor: "#00f5ff" }]}
-                />
-              </View>
-            )}
-
-            {/* HANDS-FREE COUNTDOWN ANIMATION TIMING HUD */}
-            {isCountingDown && (
-              <View style={styles.countdownOverlay}>
-                <Text style={styles.countdownTitle}>Hands-free Recording</Text>
-                <Text style={styles.countdownTimerText}>{activeCountdown}</Text>
-                <Text style={styles.countdownSub}>Position your camera and prepare...</Text>
-              </View>
-            )}
-
-            {/* DYNAMIC FILTER OVERLAY TINTS */}
-            {activeFilter === "platinum" && (
-              <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255,255,255,0.12)", zIndex: 1 }]} />
-            )}
-            {activeFilter === "neon" && (
-              <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { borderWidth: 4, borderColor: "#00f5ff", backgroundColor: "rgba(0,245,255,0.06)", zIndex: 1 }]} />
-            )}
-            {activeFilter === "obsidian" && (
-              <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(8,4,21,0.55)", zIndex: 1 }]} />
-            )}
-
-            {/* Touch Up Retouch simulated glow overlay */}
-            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255,255,255,0.02)", opacity: touchUpStrength / 100, zIndex: 1 }]} />
-
-            {/* View container adapting perfectly to safe area notch and status bar on all mobile screen sizes */}
-            <View style={[styles.cameraSafe, { paddingTop: insets.top + 6, paddingBottom: insets.bottom + 6, zIndex: 10 }]}>
-              
-              {/* TOP ACTIONS ROW */}
-              <View style={styles.cameraTopBar}>
-                <TouchableOpacity 
-                  style={styles.cameraCircleBtn} 
-                  onPress={() => {
-                    triggerHaptic("light");
-                    setShowReelCamera(false);
-                    setShowShareStudio(false);
-                    stopTrack();
-                  }}
-                >
-                  <Lucide name="close" size={26} color="#fff" />
-                </TouchableOpacity>
-
-                <View style={styles.cameraTopRightGroup}>
-                  {/* Flash options dropdown popover selector */}
-                  <TouchableOpacity 
-                    style={[styles.cameraCircleBtn, flashMode !== "off" && { backgroundColor: flashMode === "on" ? "rgba(255,255,255,0.2)" : "rgba(255,223,0,0.2)" }]} 
-                    onPress={() => {
-                      triggerHaptic("medium");
-                      setShowFlashDrawer(true);
-                    }}
-                  >
-                    <Lucide 
-                      name={flashMode === "off" ? "flash-off" : "flash"} 
-                      size={23} 
-                      color={flashMode === "off" ? "#fff" : flashMode === "on" ? "#00f5ff" : "#ffdf00"} 
-                    />
-                  </TouchableOpacity>
-                  
-                  {/* Dynamic Recording speed trigger */}
-                  <TouchableOpacity style={styles.cameraBadgeBtn} onPress={() => { triggerHaptic("medium"); setShowSpeedDrawer(true); }}>
-                    <Text style={styles.cameraBadgeText}>{recordingSpeed}x</Text>
-                  </TouchableOpacity>
-
-                  {/* Dynamic timer selector trigger */}
-                  <TouchableOpacity 
-                    style={[styles.cameraCircleBtn, countdownDuration > 0 && { backgroundColor: "rgba(0,245,255,0.2)" }]} 
-                    onPress={() => { triggerHaptic("medium"); setShowCountdownDrawer(true); }}
-                  >
-                    <Lucide name="time-outline" size={23} color={countdownDuration > 0 ? "#00f5ff" : "#fff"} />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.cameraCircleBtn} onPress={() => { triggerHaptic("light"); alert("Studio configuration synchronized cleanly!"); }}>
-                    <Lucide name="settings-outline" size={23} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* RECORDING PROGRESS BAR */}
-              {isRecording && (
-                <View style={styles.recordingProgressContainer}>
-                  <View style={[styles.recordingProgressBar, { width: `${recordingProgress}%` }]} />
-                </View>
-              )}
-
-              {/* REAL-TIME SOUNDTRACK VISUALIZER OVERLAY */}
-              {isRecording && selectedAudio && (
-                <View style={styles.soundtrackVisualizerOverlay}>
-                  <Image source={{ uri: selectedAudio.cover }} style={styles.soundtrackVisualizerCover} />
-                  <Text style={styles.soundtrackVisualizerText} numberOfLines={1}>
-                    Streaming "{selectedAudio.title}" natively...
-                  </Text>
-                  {/* Little pulsing music wave bars */}
-                  <View style={styles.musicWaveContainer}>
-                    <View style={styles.musicWaveBar} />
-                    <View style={[styles.musicWaveBar, { height: 16 }]} />
-                    <View style={[styles.musicWaveBar, { height: 10 }]} />
-                    <View style={[styles.musicWaveBar, { height: 14 }]} />
-                  </View>
-                </View>
-              )}
-
-              {/* REAL-TIME AUTO-SCROLLING TELEPROMPTER OVERLAY */}
-              {showTeleprompter && (
-                <View style={styles.teleprompterBox}>
-                  <View style={styles.teleprompterHeaderRow}>
-                    <View style={styles.teleprompterLiveDot} />
-                    <Text style={styles.teleprompterHeader}>
-                      {isRecording ? "● LIVE" : "AURA Studio Prompter"}
-                    </Text>
-                    {!isRecording && (
-                      <Text style={styles.teleprompterHint}>Scrolls when recording starts</Text>
-                    )}
-                  </View>
-                  <View style={styles.teleprompterScrollArea}>
-                    <Animated.Text
-                      style={[
-                        styles.teleprompterScrollText,
-                        { transform: [{ translateY: teleprompterScrollY }] }
-                      ]}
-                    >
-                      {teleprompterText}
-                    </Animated.Text>
-                  </View>
-                </View>
-              )}
-
-              {/* CENTER SUGGESTED AUDIO BUBBLE */}
-              <TouchableOpacity 
-                style={styles.suggestedAudioBubble}
-                onPress={() => {
-                  triggerHaptic("medium");
-                  setShowAudioDrawer(true);
-                }}
-              >
-                <Image 
-                  source={{ uri: selectedAudio.cover }} 
-                  style={styles.suggestedAudioArt} 
-                />
-                <View style={styles.suggestedAudioTextWrap}>
-                  <Text style={styles.suggestedAudioTitle} numberOfLines={1}>{selectedAudio.title}</Text>
-                  <Text style={styles.suggestedAudioSub} numberOfLines={1}>{selectedAudio.artist} • Tap to change</Text>
-                </View>
-                <Lucide name="chevron-forward" size={17} color="#fff" />
-              </TouchableOpacity>
-
-              {/* LEFT TOOLBAR COLUMN */}
-              <View style={styles.cameraLeftToolbar}>
-                <TouchableOpacity style={styles.cameraToolItem} onPress={() => { triggerHaptic("light"); setShowAudioDrawer(true); }}>
-                  <View style={styles.cameraToolIconWrap}>
-                    <Lucide name="musical-notes-outline" size={24} color="#fff" />
-                  </View>
-                  <Text style={styles.cameraToolLabel}>Audio</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.cameraToolItem} onPress={() => { triggerHaptic("light"); setShowFilterDrawer(true); }}>
-                  <View style={[styles.cameraToolIconWrap, activeFilter !== "none" && { borderColor: "#00f5ff", borderWidth: 1.5 }]}>
-                    <Lucide name="sparkles-outline" size={24} color="#fff" />
-                  </View>
-                  <Text style={styles.cameraToolLabel}>Effects</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.cameraToolItem} onPress={() => {
-                  triggerHaptic("light");
-                  setSelectedLength((prev) => prev === 15 ? 30 : prev === 30 ? 60 : prev === 60 ? 90 : 15);
-                }}>
-                  <View style={styles.cameraToolIconWrap}>
-                    <View style={styles.cameraLengthCircle}>
-                      <Text style={styles.cameraLengthText}>{selectedLength}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.cameraToolLabel}>Length</Text>
-                </TouchableOpacity>
-
-
-
-                <TouchableOpacity style={styles.cameraToolItem} onPress={() => { triggerHaptic("light"); setShowTeleprompter(!showTeleprompter); }}>
-                  <View style={[styles.cameraToolIconWrap, showTeleprompter && { backgroundColor: "#00f5ff" }]}>
-                    <Lucide name="document-text-outline" size={24} color={showTeleprompter ? "#000" : "#fff"} />
-                    <View style={styles.cameraNewBadge}>
-                      <Text style={styles.cameraNewBadgeText}>NEW</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.cameraToolLabel}>Teleprompter</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.cameraToolItem} onPress={() => { triggerHaptic("light"); setShowRetouchSlider(!showRetouchSlider); }}>
-                  <View style={[styles.cameraToolIconWrap, showRetouchSlider && { backgroundColor: "#00f5ff" }]}>
-                    <Lucide name="color-wand-outline" size={24} color={showRetouchSlider ? "#000" : "#fff"} />
-                    <View style={styles.cameraNewBadge}>
-                      <Text style={styles.cameraNewBadgeText}>NEW</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.cameraToolLabel}>Touch Up</Text>
-                </TouchableOpacity>
-
-                {/* ADVANCED OPTION 7: Collage Grid Layout selector */}
-                <TouchableOpacity style={styles.cameraToolItem} onPress={() => { triggerHaptic("light"); setShowLayoutDrawer(true); }}>
-                  <View style={[styles.cameraToolIconWrap, videoLayoutMode !== "single" && { backgroundColor: "#00f5ff" }]}>
-                    <Lucide name="grid-outline" size={24} color={videoLayoutMode !== "single" ? "#000" : "#fff"} />
-                  </View>
-                  <Text style={styles.cameraToolLabel}>Layout</Text>
-                </TouchableOpacity>
-
-                {/* ADVANCED OPTION 8: Align Cut Transition overlay */}
-                <TouchableOpacity style={styles.cameraToolItem} onPress={() => { triggerHaptic("light"); setAlignGhostActive(!alignGhostActive); }}>
-                  <View style={[styles.cameraToolIconWrap, alignGhostActive && { backgroundColor: "#00f5ff" }]}>
-                    <Lucide name="copy-outline" size={24} color={alignGhostActive ? "#000" : "#fff"} />
-                  </View>
-                  <Text style={styles.cameraToolLabel}>Align</Text>
-                </TouchableOpacity>
-
-
-              </View>
-
-              {/* BOTTOM WRAPPER TO HOLD SHUTTER CONTROLS AND TABS TOGETHER AT THE BOTTOM OF VIEWPORT */}
-              <View style={styles.cameraBottomWrapper}>
-                {/* BOTTOM CONTROLS GRID */}
-                <View style={styles.cameraBottomContainer}>
-                  
-                  {/* GALLERY THUMBNAIL */}
-                  <TouchableOpacity style={styles.cameraGalleryBtn} onPress={() => triggerHaptic("light")}>
-                    <Image 
-                      source={{ uri: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=80" }} 
-                      style={styles.cameraGalleryImg} 
-                    />
-                  </TouchableOpacity>
-
-                  {/* LARGE WHITE RECORD BUTTON */}
-                  <TouchableOpacity 
-                    activeOpacity={0.9}
-                    style={[
-                      styles.cameraRecordOuter,
-                      isRecording && styles.cameraRecordOuterRecording
-                    ]}
-                    onPress={() => {
-                      triggerHaptic("heavy");
-                      if (isRecording) {
-                        setIsRecording(false);
-                        setRecordingProgress(0);
-                        stopTrack(); // Instantly pause/stop music when recording terminates!
-                        setShowShareStudio(true); // Proceed directly to tagging setup!
-                      } else {
-                        // Trigger timer countdown if configured
-                        if (countdownDuration > 0) {
-                          setIsCountingDown(true);
-                          let tick = countdownDuration;
-                          setActiveCountdown(tick);
-                          
-                          const tickTimer = setInterval(() => {
-                            tick--;
-                            triggerHaptic("medium");
-                            if (tick <= 0) {
-                              clearInterval(tickTimer);
-                              setIsCountingDown(false);
-                              // Start actual recording progress
-                              startSimulatedRecording();
-                            } else {
-                              setActiveCountdown(tick);
-                            }
-                          }, 1000);
-                        } else {
-                          startSimulatedRecording();
-                        }
-                      }
-
-                      function startSimulatedRecording() {
-                        setIsRecording(true);
-                        setRecordingProgress(0);
-                        
-                        // 🔊 Play selected soundtrack in real-time during recording!
-                        if (selectedAudio && selectedAudio.url) {
-                          playTrack(selectedAudio.url);
-                        }
-
-                        // Adjust duration synced to recording speed divisor
-                        const durationMs = (selectedLength * 1000) / recordingSpeed;
-                        const intervalMs = 200;
-                        const increments = durationMs / intervalMs;
-                        let currentInc = 0;
-                        const timer = setInterval(() => {
-                          currentInc++;
-                          setRecordingProgress((prev) => {
-                            if (currentInc >= increments) {
-                              clearInterval(timer);
-                              setIsRecording(false);
-                              stopTrack(); // Instantly stop music when recording completes!
-                              setShowShareStudio(true); // Open Product Tagging share screen!
-                              return 0;
-                            }
-                            return (currentInc / increments) * 100;
-                          });
-                        }, intervalMs);
-                      }
-                    }}
-                  >
-                    <View style={[
-                      styles.cameraRecordInner,
-                      isRecording && styles.cameraRecordInnerRecording
-                    ]} />
-                  </TouchableOpacity>
-
-                  {/* CAMERA FLIP BUTTON */}
-                  <TouchableOpacity 
-                    style={styles.cameraFlipBtn} 
-                    onPress={() => {
-                      triggerHaptic("medium");
-                      setCameraFacing(prev => prev === "back" ? "front" : "back");
-                    }}
-                  >
-                    <Lucide name="camera-reverse-outline" size={28} color="#fff" />
-                  </TouchableOpacity>
-
-                </View>
-
-                {/* SWIPER FOOTER */}
-                <View style={styles.cameraSwiperFooter}>
-                  <View style={styles.cameraSwiperOptionActive}>
-                    <Text style={styles.cameraSwiperTextActive}>REEL</Text>
-                    <View style={styles.cameraSwiperDot} />
-                  </View>
-                  <TouchableOpacity onPress={() => triggerHaptic("light")} style={styles.cameraSwiperOption}>
-                    <Text style={styles.cameraSwiperText}>TEMPLATES</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-            </View>
-
-            {/* SLIDING DRAWERS OVERLAYS (Placed direct inside cameraContainer outside safe view to prevent safe padding clipping) */}
-            
-            {/* 1. AUDIO SELECTOR DRAWER */}
-            {showAudioDrawer && (
-              <View style={styles.cameraOverlayDrawer}>
-                <View style={styles.drawerHeader}>
-                  <Text style={styles.drawerTitle}>Select Luxury Curation Soundtrack</Text>
-                  <TouchableOpacity onPress={() => { setShowAudioDrawer(false); stopTrack(); }}>
-                    <Lucide name="close-circle" size={24} color="#00f5ff" />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Interactive Search bar with magnifying glass and clear icons */}
-                <View style={styles.audioSearchContainer}>
-                  <Lucide name="search-outline" size={21} color="#aaa" style={styles.audioSearchIcon} />
-                  <TextInput
-                    style={styles.audioSearchInput}
-                    placeholder="Search real songs, artists, genres..."
-                    placeholderTextColor="#888"
-                    value={audioSearchQuery}
-                    onChangeText={setAudioSearchQuery}
-                    autoCapitalize="none"
-                  />
-                  {audioSearchQuery.length > 0 && (
-                    <TouchableOpacity onPress={() => setAudioSearchQuery("")}>
-                      <Lucide name="close-circle" size={21} color="#aaa" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Category Slider Tabs */}
-                <View style={{ height: 38, marginBottom: 8 }}>
-                  <ScrollView 
-                    horizontal 
-                    showsHorizontalScrollIndicator={false} 
-                    contentContainerStyle={{ paddingHorizontal: 20, gap: 8, alignItems: 'center' }}
-                  >
-                    {[
-                      { key: "all", label: "All Music" },
-                      { key: "trending", label: "🔥 Trending" },
-                      { key: "pop", label: "Pop Hits" },
-                      { key: "bollywood", label: "Bollywood" },
-                      { key: "hiphop", label: "Hip Hop" },
-                      { key: "electronic", label: "Electronic" }
-                    ].map((cat) => (
-                      <TouchableOpacity 
-                        key={cat.key} 
-                        style={[
-                          styles.audioCategoryTab, 
-                          activeAudioCategory === cat.key && styles.audioCategoryTabActive
-                        ]}
-                        onPress={() => {
-                          triggerHaptic("light");
-                          setActiveAudioCategory(cat.key as any);
-                        }}
-                      >
-                        <Text style={[
-                          styles.audioCategoryTabText, 
-                          activeAudioCategory === cat.key && styles.audioCategoryTabTextActive
-                        ]}>{cat.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Playlist mapping with live preview actions */}
-                <ScrollView style={styles.drawerScroll}>
-                  {AUDIO_LIBRARY.filter(track => {
-                    const matchesSearch = track.title.toLowerCase().includes(audioSearchQuery.toLowerCase()) || 
-                                          track.artist.toLowerCase().includes(audioSearchQuery.toLowerCase());
-                    const matchesCategory = activeAudioCategory === "all" || 
-                                            (activeAudioCategory === "trending" && track.isTrending) || 
-                                            track.category === activeAudioCategory;
-                    return matchesSearch && matchesCategory;
-                  }).map((track, i) => {
-                    const isCurrentlySelected = selectedAudio && selectedAudio.title === track.title;
-                    const isThisPlaying = isPlayingAudio && soundRef.current && selectedAudio && selectedAudio.url === track.url;
-                    
-                    return (
-                      <TouchableOpacity 
-                        key={i} 
-                        style={[
-                          styles.drawerItem, 
-                          isCurrentlySelected && styles.drawerItemCurrentlySelected
-                        ]} 
-                        onPress={() => {
-                          triggerHaptic("medium");
-                          setSelectedAudio(track);
-                          stopTrack(); // Silence the audition preview
-                          setShowAudioDrawer(false); // Close drawer to return to quiet camera, matching Instagram!
-                        }}
-                      >
-                        <Image source={{ uri: track.cover }} style={styles.drawerItemArt} />
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                          <Text style={styles.drawerItemText} numberOfLines={1}>{track.title}</Text>
-                          <Text style={styles.drawerItemSub} numberOfLines={1}>{track.artist}</Text>
-                        </View>
-                        
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          {/* Live preview play/pause trigger */}
-                          <TouchableOpacity 
-                            style={styles.audioPreviewBtn}
-                            onPress={(e) => {
-                              e.stopPropagation(); // Avoid triggering row selection when clicking preview button
-                              triggerHaptic("light");
-                              if (isThisPlaying) {
-                                stopTrack();
-                              } else {
-                                setSelectedAudio(track);
-                                playTrack(track.url);
-                              }
-                            }}
-                          >
-                            <Lucide 
-                              name={isThisPlaying ? "pause-circle" : "play-circle"} 
-                              size={24} 
-                              color="#00f5ff" 
-                            />
-                          </TouchableOpacity>
-
-                          {/* Selected checkmark indicator */}
-                          {isCurrentlySelected && (
-                            <Lucide name="checkmark-circle" size={21} color="#39ff14" />
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            )}
-
-            {/* 2. FILTER MATRIX DRAWER */}
-            {showFilterDrawer && (
-              <View style={styles.cameraOverlayDrawer}>
-                <View style={styles.drawerHeader}>
-                  <Text style={styles.drawerTitle}>Visual Effects Matrix</Text>
-                  <TouchableOpacity onPress={() => setShowFilterDrawer(false)}>
-                    <Lucide name="close-circle" size={24} color="#00f5ff" />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.filterGrid}>
-                  {[
-                    { key: "none", label: "No Filter", icon: "ban-outline" },
-                    { key: "platinum", label: "Platinum Glow", icon: "sparkles" },
-                    { key: "neon", label: "Neon Bloom", icon: "color-palette" },
-                    { key: "obsidian", label: "Obsidian Chrome", icon: "moon" }
-                  ].map((f) => (
-                    <TouchableOpacity 
-                      key={f.key} 
-                      style={[styles.filterGridItem, activeFilter === f.key && styles.filterGridItemActive]} 
-                      onPress={() => {
-                        triggerHaptic("light");
-                        setActiveFilter(f.key as any);
-                        setShowFilterDrawer(false);
-                      }}
-                    >
-                      <Lucide name={f.icon as any} size={26} color={activeFilter === f.key ? "#00f5ff" : "#fff"} />
-                      <Text style={[styles.filterGridLabel, activeFilter === f.key && { color: "#00f5ff" }]}>{f.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
-
-
-            {/* 4. TOUCH UP RETOUCH STRENGTH OVERLAY */}
-            {showRetouchSlider && (
-              <View style={styles.cameraOverlayDrawer}>
-                <View style={styles.drawerHeader}>
-                  <Text style={styles.drawerTitle}>Cyber Retouching Strength: {touchUpStrength}%</Text>
-                  <TouchableOpacity onPress={() => setShowRetouchSlider(false)}>
-                    <Lucide name="close-circle" size={24} color="#00f5ff" />
-                  </TouchableOpacity>
-                </View>
-                <View style={{ paddingVertical: 20, paddingHorizontal: 16 }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
-                    <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>Natural (0%)</Text>
-                    <Text style={{ color: "#00f5ff", fontSize: 13, fontWeight: "bold" }}>Maximum Polish (100%)</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
-                    {[0, 25, 50, 70, 90, 100].map((val) => (
-                      <TouchableOpacity 
-                        key={val} 
-                        style={[styles.strengthItemBtn, touchUpStrength === val && styles.strengthItemBtnActive]} 
-                        onPress={() => {
-                          triggerHaptic("light");
-                          setTouchUpStrength(val);
-                        }}
-                      >
-                        <Text style={[styles.strengthItemText, touchUpStrength === val && { color: "#000" }]}>{val}%</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* 8. ACTIVE FLASH MODE SELECTOR DRAWER */}
-            {showFlashDrawer && (
-              <View style={styles.cameraOverlayDrawer}>
-                <View style={styles.drawerHeader}>
-                  <Text style={styles.drawerTitle}>AURA Flash Control Studio</Text>
-                  <TouchableOpacity onPress={() => setShowFlashDrawer(false)}>
-                    <Lucide name="close-circle" size={24} color="#00f5ff" />
-                  </TouchableOpacity>
-                </View>
-                <View style={{ paddingVertical: 20, paddingHorizontal: 16 }}>
-                  <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
-                    {[
-                      { key: "off", label: "Flash Off", icon: "flash-off-outline", desc: "No exposure override." },
-                      { key: "on", label: "Ring Light On", icon: "flash", desc: "Screen glows warm white." },
-                      { key: "auto", label: "Auto Exposure", icon: "flash-outline", desc: "Sensors toggle on shutter." }
-                    ].map((mode) => (
-                      <TouchableOpacity 
-                        key={mode.key} 
-                        style={[styles.filterGridItem, flashMode === mode.key && styles.filterGridItemActive, { width: 105, height: 95 }]} 
-                        onPress={() => {
-                          triggerHaptic("medium");
-                          setFlashMode(mode.key as any);
-                          setShowFlashDrawer(false);
-                          alert(`Flash Mode Sync'd: ${mode.label}. ${mode.desc}`);
-                        }}
-                      >
-                        <Lucide name={mode.icon as any} size={26} color={flashMode === mode.key ? "#000" : "#fff"} />
-                        <Text style={[styles.filterGridLabel, flashMode === mode.key && { color: "#000", fontWeight: "bold" }, { fontSize: 13 }]}>
-                          {mode.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* 5. DYNAMIC RECORDING SPEED MULTIPLIER DRAWER */}
-            {showSpeedDrawer && (
-              <View style={styles.cameraOverlayDrawer}>
-                <View style={styles.drawerHeader}>
-                  <Text style={styles.drawerTitle}>Recording Speed Multiplier</Text>
-                  <TouchableOpacity onPress={() => setShowSpeedDrawer(false)}>
-                    <Lucide name="close-circle" size={24} color="#00f5ff" />
-                  </TouchableOpacity>
-                </View>
-                <View style={{ paddingVertical: 20, paddingHorizontal: 16 }}>
-                  <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-                    {([0.3, 0.5, 1, 2, 3] as const).map((spd) => (
-                      <TouchableOpacity 
-                        key={spd} 
-                        style={[styles.strengthItemBtn, recordingSpeed === spd && styles.strengthItemBtnActive, { width: 85 }]} 
-                        onPress={() => {
-                          triggerHaptic("medium");
-                          setRecordingSpeed(spd);
-                          setShowSpeedDrawer(false);
-                        }}
-                      >
-                        <Text style={[styles.strengthItemText, recordingSpeed === spd && { color: "#000" }]}>
-                          {spd === 1 ? "1.0x (Normal)" : `${spd}x`}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* 6. HANDS-FREE TIMER COUNTDOWN DRAWER */}
-            {showCountdownDrawer && (
-              <View style={styles.cameraOverlayDrawer}>
-                <View style={styles.drawerHeader}>
-                  <Text style={styles.drawerTitle}>Hands-free Countdown Timer</Text>
-                  <TouchableOpacity onPress={() => setShowCountdownDrawer(false)}>
-                    <Lucide name="close-circle" size={24} color="#00f5ff" />
-                  </TouchableOpacity>
-                </View>
-                <View style={{ paddingVertical: 20, paddingHorizontal: 16 }}>
-                  <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
-                    {[
-                      { val: 0, label: "Off (Instant)" },
-                      { val: 3, label: "3 Seconds" },
-                      { val: 10, label: "10 Seconds" }
-                    ].map((t) => (
-                      <TouchableOpacity 
-                        key={t.val} 
-                        style={[styles.strengthItemBtn, countdownDuration === t.val && styles.strengthItemBtnActive, { width: 100 }]} 
-                        onPress={() => {
-                          triggerHaptic("medium");
-                          setCountdownDuration(t.val as any);
-                          setShowCountdownDrawer(false);
-                          alert(t.val === 0 ? "Hands-free countdown disabled." : `Hands-free active: ${t.label} countdown will run before recording starts.`);
-                        }}
-                      >
-                        <Text style={[styles.strengthItemText, countdownDuration === t.val && { color: "#000" }, { fontSize: 13.5 }]}>
-                          {t.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* 7. COLLAGE SPLITS & RUNWAY GRID DRAWER */}
-            {showLayoutDrawer && (
-              <View style={styles.cameraOverlayDrawer}>
-                <View style={styles.drawerHeader}>
-                  <Text style={styles.drawerTitle}>Collage Video Grid Layout</Text>
-                  <TouchableOpacity onPress={() => setShowLayoutDrawer(false)}>
-                    <Lucide name="close-circle" size={24} color="#00f5ff" />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.filterGrid}>
-                  {[
-                    { key: "single", label: "Single Viewfinder", icon: "square-outline" },
-                    { key: "split", label: "Vertical Split Screen", icon: "menu-outline" },
-                    { key: "grid", label: "Quad Grid collage", icon: "grid-outline" },
-                    { key: "triptych", label: "Runway Triptych (3 Panes)", icon: "ellipsis-vertical-outline" }
-                  ].map((lay) => (
-                    <TouchableOpacity 
-                      key={lay.key} 
-                      style={[styles.filterGridItem, videoLayoutMode === lay.key && styles.filterGridItemActive]} 
-                      onPress={() => {
-                        triggerHaptic("medium");
-                        setVideoLayoutMode(lay.key as any);
-                        setShowLayoutDrawer(false);
-                      }}
-                    >
-                      <Lucide name={lay.icon as any} size={26} color={videoLayoutMode === lay.key ? "#00f5ff" : "#fff"} />
-                      <Text style={[styles.filterGridLabel, videoLayoutMode === lay.key && { color: "#00f5ff" }]}>{lay.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* 🏷️ AFFILIATE & PRODUCT TAGGING SHARE STUDIO MODAL PANEL */}
-            {showShareStudio && (
-              <View style={[styles.shareStudioOverlay, { paddingTop: insets.top }]}>
-                <View style={{ flex: 1 }}>
-                  {/* Share Header */}
-                  <View style={styles.shareHeaderRow}>
-                    <TouchableOpacity onPress={() => setShowShareStudio(false)}>
-                      <Lucide name="chevron-back" size={28} color="#fff" />
-                    </TouchableOpacity>
-                    <Text style={styles.shareHeaderTitle}>Tag Affiliate Curation</Text>
-                    <TouchableOpacity 
-                      style={[styles.sharePublishBtn, !taggedProduct && styles.sharePublishBtnDisabled]}
-                      disabled={!taggedProduct}
-                      onPress={() => {
-                        triggerHaptic("heavy");
-                        
-                        // Compile new Reel object prepended to feed with full studio parameters
-                        const newReelItem = {
-                          id: `user_reel_${Date.now()}`,
-                          url: "https://assets.mixkit.co/videos/preview/mixkit-fashion-woman-with-silver-glitter-makeup-40149-large.mp4",
-                          caption: reelCaption.trim() || `Affiliate sync coordinate by @${affiliateHandle || "curator"}. Real-time commission rate set at ${affiliateCommission}%.`,
-                          likesCount: 0,
-                          comments: [],
-                          user: { name: "Alok (You)" },
-                          artifactId: taggedProduct.id,
-                          artifact: taggedProduct,
-                          thumbnail: taggedProduct.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400",
-                          isVideo: true,
-                          affiliateLink: `https://aura.luxury/aff/${affiliateHandle || "curator"}/${taggedProduct.id}`,
-                          filterApplied: activeFilter,
-                          touchUpApplied: touchUpStrength,
-                          audioTrack: selectedAudio,
-
-                          lengthApplied: selectedLength
-                        };
-
-                        setLocalReels([newReelItem, ...localReels]);
-                        setShowReelCamera(false);
-                        setShowShareStudio(false);
-                        setTaggedProduct(null);
-                        setReelCaption("");
-                        
-                        // Reset all advanced camera settings to standard
-                        setActiveFilter("none");
-                        setTouchUpStrength(0);
-
-                        setSelectedLength(15);
-                        setShowTeleprompter(false);
-                        setAffiliateCommission(10);
-                        setAffiliateHandle("");
-
-                        alert(`Reel published successfully! Product Tagged: "${newReelItem.artifact.title}" with ${newReelItem.lengthApplied}s recording, applying ${newReelItem.filterApplied !== "none" ? newReelItem.filterApplied : "no"} filter effects, and ${affiliateCommission}% commission tracking link.`);
-                      }}
-                    >
-                      <Text style={styles.sharePublishText}>Publish Reel</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <ScrollView contentContainerStyle={styles.shareStudioContent}>
-                    
-                    {/* Caption Input */}
-                    <View style={styles.shareCaptionBlock}>
-                      <Image 
-                        source={{ uri: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=150" }} 
-                        style={styles.shareCaptionArt} 
-                      />
-                      <TextInput 
-                        style={styles.shareCaptionInput}
-                        placeholder="Write a caption for your curation..."
-                        placeholderTextColor="rgba(255,255,255,0.4)"
-                        value={reelCaption}
-                        onChangeText={setReelCaption}
-                        multiline
-                      />
-                    </View>
-
-                    <View style={styles.dividerLine} />
-
-                    {/* Tagged Product Box */}
-                    <View style={styles.shareSection}>
-                      <Text style={styles.shareSectionTitle}>🏷️ Tag Product from Boutique</Text>
-                      {taggedProduct ? (
-                        <View style={styles.taggedProductCard}>
-                          <Image source={{ uri: taggedProduct.images?.[0] }} style={styles.taggedProductImg} />
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.taggedProductMaison}>{taggedProduct.maison?.name || "AURA Maison"}</Text>
-                            <Text style={styles.taggedProductTitle}>{taggedProduct.title}</Text>
-                            <Text style={styles.taggedProductPrice}>₹{taggedProduct.price?.toLocaleString()}</Text>
-                          </View>
-                          <TouchableOpacity 
-                            style={styles.taggedProductRemoveBtn}
-                            onPress={() => {
-                              triggerHaptic("light");
-                              setTaggedProduct(null);
-                            }}
-                          >
-                            <Lucide name="trash-outline" size={21} color="#ff3b30" />
-                          </TouchableOpacity>
-                        </View>
-                      ) : (
-                        <Text style={styles.taggedProductPrompt}>No product tagged. Select a coordinate item below to activate shopping links!</Text>
-                      )}
-
-                      {/* Horizontally scrollable select items list */}
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
-                        {products.map((p: any) => (
-                          <TouchableOpacity 
-                            key={p.id} 
-                            style={[
-                              styles.selectProdBtn,
-                              taggedProduct?.id === p.id && styles.selectProdBtnActive
-                            ]}
-                            onPress={() => {
-                              triggerHaptic("medium");
-                              setTaggedProduct(p);
-                            }}
-                          >
-                            <Image source={{ uri: p.images?.[0] }} style={styles.selectProdImg} />
-                            <Text style={styles.selectProdText} numberOfLines={1}>{p.title}</Text>
-                            <Text style={styles.selectProdPrice}>₹{p.price?.toLocaleString()}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-
-                    <View style={styles.dividerLine} />
-
-                    {/* Affiliate Link Config */}
-                    <View style={styles.shareSection}>
-                      <Text style={styles.shareSectionTitle}>💹 Creator Affiliate Commission Link</Text>
-                      <Text style={styles.affiliateSub}>Mint commission telemetry nodes linked directly into checkout payouts.</Text>
-
-                      <View style={{ marginTop: 12 }}>
-                        <Text style={styles.commissionLabel}>Commission Rate: <Text style={{ color: "#00f5ff", fontWeight: "bold" }}>{affiliateCommission}%</Text></Text>
-                        <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-                          {[5, 10, 15, 20].map((rate) => (
-                            <TouchableOpacity 
-                              key={rate} 
-                              style={[
-                                styles.rateBtn,
-                                affiliateCommission === rate && styles.rateBtnActive
-                              ]}
-                              onPress={() => {
-                                triggerHaptic("light");
-                                setAffiliateCommission(rate);
-                              }}
-                            >
-                              <Text style={[styles.rateText, affiliateCommission === rate && { color: "#000" }]}>{rate}%</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
-
-                      <View style={{ marginTop: 16 }}>
-                        <Text style={styles.commissionLabel}>Affiliate Nickname Handle:</Text>
-                        <TextInput 
-                          style={styles.affiliateHandleInput}
-                          placeholder="e.g. alok_curator"
-                          placeholderTextColor="rgba(255,255,255,0.3)"
-                          value={affiliateHandle}
-                          onChangeText={setAffiliateHandle}
-                        />
-                      </View>
-
-                      {/* Glowing preview of live buy link */}
-                      <View style={styles.affLinkPreviewCard}>
-                        <Text style={styles.affLinkPreviewTitle}>Generated Active Purchase link</Text>
-                        <Text style={styles.affLinkPreviewText}>
-                          {`https://aura.luxury/aff/${affiliateHandle.trim() || "curator"}/${taggedProduct?.id || "product_id"}`}
-                        </Text>
-                      </View>
-                    </View>
-
-                  </ScrollView>
-                </View>
-              </View>
-            )}
-            </>
-            )}
-          </View>
-        </Modal>
-      )}
 
       {/* 📤 PREMIUM INSTAGRAM-STYLE SHARE BOTTOM SHEET MODAL */}
       {showShareSheet && (
@@ -4181,7 +2203,7 @@ export default function ReelsScreen() {
                 <TouchableOpacity style={styles.shareActionBtn} onPress={async () => {
                   triggerHaptic("success");
                   setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/reel/${shareTargetPost?.id || "s1"}`;
+                  const postUrl = shareTargetPost?.url || `${API_HOST}/reel/${shareTargetPost?.id || "s1"}`;
                   try {
                     await Clipboard.setStringAsync(postUrl);
                     Alert.alert("Link Copied", "Instant match! The luxury curation link has been copied to your clipboard.");
@@ -4223,7 +2245,7 @@ export default function ReelsScreen() {
                 <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
                   triggerHaptic("success");
                   setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/reel/${shareTargetPost?.id || "s1"}`;
+                  const postUrl = shareTargetPost?.url || `${API_HOST}/reel/${shareTargetPost?.id || "s1"}`;
                   const caption = shareTargetPost?.caption || "Check out this luxury curation!";
                   const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"\n\nLink: ${postUrl}`;
                   const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(text)}`;
@@ -4255,7 +2277,7 @@ export default function ReelsScreen() {
                 <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
                   triggerHaptic("success");
                   setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/reel/${shareTargetPost?.id || "s1"}`;
+                  const postUrl = shareTargetPost?.url || `${API_HOST}/reel/${shareTargetPost?.id || "s1"}`;
                   const caption = shareTargetPost?.caption || "Check out this luxury curation!";
                   const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"\n\nLink: ${postUrl}`;
                   const telegramUrl = `tg://msg?text=${encodeURIComponent(text)}`;
@@ -4273,7 +2295,7 @@ export default function ReelsScreen() {
                 <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
                   triggerHaptic("success");
                   setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `https://07279b986c9bc954-106-219-121-7.serveousercontent.com/reel/${shareTargetPost?.id || "s1"}`;
+                  const postUrl = shareTargetPost?.url || `${API_HOST}/reel/${shareTargetPost?.id || "s1"}`;
                   const caption = shareTargetPost?.caption || "Check out this luxury curation!";
                   const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"`;
                   Share.share({
@@ -5548,6 +3570,53 @@ const styles = StyleSheet.create({
   feedWrapper: {
     flex: 1,
     backgroundColor: "#080415",
+  },
+  liveBannerContainer: {
+    marginBottom: 16,
+    width: "100%",
+  },
+  liveBannerCard: {
+    borderRadius: 20,
+    overflow: "hidden",
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  liveBannerGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+  },
+  liveBannerLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  liveBannerLiveBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#ff3b30",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  liveBannerLiveText: {
+    color: "#fff",
+    fontSize: 9.5,
+    fontWeight: "bold",
+    letterSpacing: 0.5,
+  },
+  liveBannerTitle: {
+    color: "#fff",
+    fontSize: 15.5,
+    fontWeight: "bold",
+  },
+  liveBannerDesc: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 12,
+  },
+  liveBannerRight: {
+    marginLeft: 12,
+    opacity: 0.9,
   },
   centerContainer: {
     flex: 1,

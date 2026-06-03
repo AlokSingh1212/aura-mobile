@@ -1,6 +1,14 @@
 import { Stack } from "expo-router";
 import React from "react";
 import { StatusBar } from "expo-status-bar";
+import { LogBox } from "react-native";
+
+// Suppress expo-av deprecation warnings
+LogBox.ignoreLogs([
+  "[expo-av]: Expo AV has been deprecated and will be removed in SDK 54",
+  "Video component from `expo-av` is deprecated in favor of `expo-video`"
+]);
+
 
 export default function RootLayout() {
   return (

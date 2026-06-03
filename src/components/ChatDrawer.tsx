@@ -1,0 +1,1541 @@
+import React, { useState, useEffect } from "react";
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  ActivityIndicator,
+  ScrollView,
+  TextInput,
+  Dimensions,
+  Alert,
+} from "react-native";
+import { Image } from "expo-image";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import Lucide from "@expo/vector-icons/Ionicons";
+import { useStore } from "@/store/useStore";
+import { API_HOST } from "@/constants/api";
+
+const { width } = Dimensions.get("window");
+
+const CHAT_THREADS = [
+  { id: "c1", name: "Updates 📢", message: "Raghav Juyal sent a reel by vaibha... • 3h", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100", unread: true, category: "Primary" },
+  { id: "c2", name: "Namita Thapar", message: "Sent 7h ago", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100", verified: true, category: "From ads" },
+  { id: "c3", name: "vidmikai", message: "Sent 7h ago", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=100", category: "Requests" },
+  { id: "c4", name: "Advocate Priyanka Singh", message: "Sent a reel by bhukkadesi99 • 2d", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=100", category: "General" },
+  { id: "c5", name: "riyabangia_", message: "Sent Monday", avatar: "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=100", category: "Primary" }
+];
+
+const CUSTOMER_THREADS = [
+  { id: "ct1", name: "Priya Mehta", message: "Is the silk scarf still available?", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100", tag: "Order Enquiry", unread: true },
+  { id: "ct2", name: "Rohan Kapoor", message: "Can I get a custom size for order #4821?", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=100", tag: "Custom Request" },
+  { id: "ct3", name: "Ananya Sharma", message: "Loved the jacket! When does restock happen?", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=100", tag: "Restock", unread: true },
+  { id: "ct4", name: "Vikram Nair", message: "Tracking update for my order?", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100", tag: "Shipping" },
+  { id: "ct5", name: "Meera Joshi", message: "Thank you! The packaging was stunning 🙏", avatar: "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=100", tag: "Feedback" },
+];
+
+const BUSINESS_TOOLS = [
+  { id: "broadcast", label: "Broadcast", icon: "megaphone-outline", color: "#00f5ff", desc: "Message all followers" },
+  { id: "promotions", label: "Promotions", icon: "pricetag-outline", color: "#fb923c", desc: "Discounts & offers" },
+  { id: "ads", label: "Ads Manager", icon: "bar-chart-outline", color: "#a78bfa", desc: "Campaigns & spend" },
+  { id: "catalogue", label: "Catalogue", icon: "grid-outline", color: "#34d399", desc: "Your listings" },
+  { id: "autoreply", label: "Auto-Reply", icon: "flash-outline", color: "#f472b6", desc: "Automated messages" },
+  { id: "inbox", label: "Customer Inbox", icon: "people-outline", color: "#fbbf24", desc: "Order enquiries" },
+];
+
+export interface ChatDrawerProps {
+  visible: boolean;
+  onClose: () => void;
+  bottomBarHeight: number;
+  activeMaisonId: string;
+  isSeller: boolean;
+  setIsSeller: (val: boolean) => void;
+  products?: any[];
+  activeInstaStories?: any[];
+  onOpenStoryGroup?: (story: any) => void;
+  initialConversationId?: string | null;
+}
+
+export const ChatDrawer: React.FC<ChatDrawerProps> = ({
+  visible,
+  onClose,
+  bottomBarHeight,
+  activeMaisonId,
+  isSeller,
+  setIsSeller,
+  products = [],
+  activeInstaStories = [],
+  onOpenStoryGroup,
+  initialConversationId = null,
+}) => {
+  const { triggerHaptic } = useStore();
+
+  // Chat states
+  const [activeChat, setActiveChat] = useState<any>(null);
+  const [loadingChats, setLoadingChats] = useState(false);
+  const [chatReplyText, setChatReplyText] = useState("");
+  const [conversations, setConversations] = useState<any[]>(CHAT_THREADS);
+  const [dmSearch, setDmSearch] = useState("");
+  const [activeDmFilter, setActiveDmFilter] = useState("Primary");
+  const [activeBusinessTool, setActiveBusinessTool] = useState<string | null>(null);
+
+  // Business states
+  const [broadcastText, setBroadcastText] = useState("");
+  const [broadcastSent, setBroadcastSent] = useState(false);
+  const [livePromos, setLivePromos] = useState<any[]>([]);
+  const [loadingPromos, setLoadingPromos] = useState(false);
+  const [showNewPromoForm, setShowNewPromoForm] = useState(false);
+  const [newPromoCode, setNewPromoCode] = useState("");
+  const [newPromoDiscount, setNewPromoDiscount] = useState("");
+  const [liveAds, setLiveAds] = useState<any[]>([]);
+  const [liveBroadcasts, setLiveBroadcasts] = useState<any[]>([]);
+
+  // Auto-Reply states
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(true);
+  const [greetingMessage, setGreetingMessage] = useState("Thanks for reaching out! We'll respond shortly.");
+  const [awayMessage, setAwayMessage] = useState("We're currently away. We'll get back to you within 24 hours.");
+  const [quietHoursStart, setQuietHoursStart] = useState("");
+  const [quietHoursEnd, setQuietHoursEnd] = useState("");
+  const [loadingAutoReply, setLoadingAutoReply] = useState(false);
+  const [autoReplySaved, setAutoReplySaved] = useState(false);
+
+  // Business stats
+  const [liveBusinessStats, setLiveBusinessStats] = useState<any[]>([
+    { label: "Orders Today", value: "12", icon: "bag-outline", color: "#00f5ff" },
+    { label: "Revenue", value: "₹48.2K", icon: "cash-outline", color: "#a78bfa" },
+    { label: "Enquiries", value: "7", icon: "chatbubble-outline", color: "#fb923c" },
+    { label: "Store Views", value: "1.4K", icon: "eye-outline", color: "#34d399" },
+  ]);
+
+  useEffect(() => {
+    if (visible && initialConversationId && conversations.length > 0) {
+      const found = conversations.find(c => c.id === initialConversationId);
+      if (found) {
+        setActiveChat(found);
+      }
+    }
+  }, [initialConversationId, conversations, visible]);
+
+  const fetchChats = async () => {
+    setLoadingChats(true);
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/chat?userId=user_2pk5xskr&maisonId=${activeMaisonId}`);
+      const data = await res.json();
+      if (data.success && data.conversations.length > 0) {
+        const mapped = data.conversations.map((c: any, index: number) => {
+          let category = "Primary";
+          if (c.name.toLowerCase().includes("namita") || index % 4 === 1) {
+            category = "From ads";
+          } else if (c.name.toLowerCase().includes("mikai") || index % 4 === 2) {
+            category = "Requests";
+          } else if (index % 4 === 3) {
+            category = "General";
+          }
+          return { ...c, category };
+        });
+        setConversations(mapped);
+      } else {
+        // Auto-seed a starter conversation if none exist yet
+        try {
+          await fetch(`${API_HOST}/api/mobile/seed-chat`, { method: "POST" });
+          const retryRes = await fetch(`${API_HOST}/api/mobile/chat?userId=user_2pk5xskr&maisonId=${activeMaisonId}`);
+          const retryData = await retryRes.json();
+          if (retryData.success && retryData.conversations.length > 0) {
+            setConversations(retryData.conversations.map((c: any) => ({ ...c, category: "Primary" })));
+          } else {
+            setConversations(CHAT_THREADS);
+          }
+        } catch {
+          setConversations(CHAT_THREADS);
+        }
+      }
+    } catch (e) {
+      setConversations(CHAT_THREADS);
+    } finally {
+      setLoadingChats(false);
+    }
+  };
+
+  const fetchBusinessStats = async () => {
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/business-stats?maisonId=${activeMaisonId}`);
+      const data = await res.json();
+      if (data.success && data.stats) {
+        setLiveBusinessStats([
+          { label: "Orders Today", value: String(data.stats.ordersToday), icon: "bag-outline", color: "#00f5ff" },
+          { label: "Revenue", value: `₹${(data.stats.revenueToday / 1000).toFixed(1)}K`, icon: "cash-outline", color: "#a78bfa" },
+          { label: "Enquiries", value: String(data.stats.openEnquiries), icon: "chatbubble-outline", color: "#fb923c" },
+          { label: "Store Views", value: data.stats.storeViewsToday >= 1000 ? `${(data.stats.storeViewsToday / 1000).toFixed(1)}K` : String(data.stats.storeViewsToday), icon: "eye-outline", color: "#34d399" },
+        ]);
+      }
+    } catch {
+      // keep fallback
+    }
+  };
+
+  const fetchPromotions = async () => {
+    setLoadingPromos(true);
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/promotions?maisonId=${activeMaisonId}`);
+      const data = await res.json();
+      if (data.success && data.promos?.length > 0) {
+        setLivePromos(data.promos);
+      }
+    } catch {
+      // keep fallback
+    } finally {
+      setLoadingPromos(false);
+    }
+  };
+
+  const fetchBroadcasts = async () => {
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/broadcast?maisonId=${activeMaisonId}`);
+      const data = await res.json();
+      if (data.success) setLiveBroadcasts(data.broadcasts || []);
+    } catch { /* fallback */ }
+  };
+
+  const fetchAds = async () => {
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/ads?maisonId=${activeMaisonId}`);
+      const data = await res.json();
+      if (data.success && data.metrics?.bids?.length > 0) {
+        setLiveAds(data.metrics.bids.map((b: any) => ({
+          name: b.keyword || "Campaign",
+          spend: `₹${Math.round(b.spent).toLocaleString()}`,
+          reach: b.impressions >= 1000 ? `${(b.impressions / 1000).toFixed(1)}K` : String(b.impressions),
+          clicks: b.clicks >= 1000 ? `${(b.clicks / 1000).toFixed(1)}K` : String(b.clicks),
+          status: b.status === "ACTIVE" ? "Live" : "Paused",
+        })));
+      }
+    } catch { /* fallback */ }
+  };
+
+  const sendBroadcast = async (title: string, content: string) => {
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/broadcast`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maisonId: activeMaisonId, title, content, audience: "ALL", type: "TEXT" }),
+      });
+      const data = await res.json();
+      return data.success;
+    } catch { return false; }
+  };
+
+  const createPromo = async (code: string, discount: number, type: string) => {
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/promotions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maisonId: activeMaisonId, code, discount, type }),
+      });
+      const data = await res.json();
+      if (data.success) { fetchPromotions(); return true; }
+      return false;
+    } catch { return false; }
+  };
+
+  const fetchAutoReply = async () => {
+    setLoadingAutoReply(true);
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/auto-reply?maisonId=${activeMaisonId}`);
+      const data = await res.json();
+      if (data.success && data.config) {
+        setAutoReplyEnabled(data.config.enabled);
+        setGreetingMessage(data.config.greetingMessage);
+        setAwayMessage(data.config.awayMessage);
+        if (data.config.quietHoursStart != null) setQuietHoursStart(String(data.config.quietHoursStart));
+        if (data.config.quietHoursEnd != null) setQuietHoursEnd(String(data.config.quietHoursEnd));
+      }
+    } catch { /* use defaults */ }
+    finally { setLoadingAutoReply(false); }
+  };
+
+  const saveAutoReply = async () => {
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/auto-reply`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          maisonId: activeMaisonId,
+          enabled: autoReplyEnabled,
+          greetingMessage,
+          awayMessage,
+          quietHoursStart: quietHoursStart ? parseInt(quietHoursStart) : null,
+          quietHoursEnd: quietHoursEnd ? parseInt(quietHoursEnd) : null,
+        }),
+      });
+      const data = await res.json();
+      return data.success;
+    } catch { return false; }
+  };
+
+  useEffect(() => {
+    let xhr: XMLHttpRequest | null = null;
+
+    if (visible) {
+      fetchChats();
+      if (isSeller) {
+        fetchBusinessStats();
+        fetchPromotions();
+        fetchAds();
+        fetchBroadcasts();
+        fetchAutoReply();
+      }
+
+      // Start SSE real-time stream connection
+      try {
+        const url = `${API_HOST}/api/realtime/stream`;
+        const stream = new XMLHttpRequest();
+        xhr = stream;
+        stream.open("GET", url);
+        
+        let offset = 0;
+        stream.onreadystatechange = () => {
+          if (stream.readyState === 3 || stream.readyState === 4) {
+            const chunk = stream.responseText.substring(offset);
+            offset = stream.responseText.length;
+            
+            // Parse Server-Sent Events format block (separated by double newline)
+            const blocks = chunk.split("\n\n");
+            for (const block of blocks) {
+              if (!block.trim()) continue;
+              
+              const eventMatch = block.match(/^event:\s*(.+)$/m);
+              const dataMatch = block.match(/^data:\s*(.+)$/m);
+              
+              if (eventMatch && dataMatch) {
+                const eventName = eventMatch[1].trim();
+                const dataStr = dataMatch[1].trim();
+                
+                if (eventName === "NEW_MESSAGE") {
+                  try {
+                    const eventData = JSON.parse(dataStr);
+                    const msg = {
+                      id: eventData.id,
+                      conversationId: eventData.conversationId,
+                      senderId: eventData.senderId,
+                      senderName: eventData.senderName || "Rare Raven",
+                      content: eventData.content,
+                      createdAt: eventData.createdAt,
+                      isAdmin: eventData.isAdmin || false
+                    };
+                    
+                    const mySenderId = isSeller ? activeMaisonId : "user_2pk5xskr";
+                    if (msg.senderId !== mySenderId) {
+                      // Trigger haptic and play incoming message sound/dot
+                      triggerHaptic("light");
+                      
+                      // 1. Update active chat if open
+                      setActiveChat((prev: any) => {
+                        if (!prev || prev.id !== msg.conversationId) return prev;
+                        const exists = prev.messages?.some((m: any) => m.id === msg.id);
+                        if (exists) return prev;
+                        return {
+                          ...prev,
+                          messages: [...(prev.messages || []), msg],
+                          lastMessage: msg.content
+                        };
+                      });
+                      
+                      // 2. Update conversation list & unread state
+                      setConversations((prevList) => {
+                        const updatedList = prevList.map((convo) => {
+                          if (convo.id === msg.conversationId) {
+                            const exists = convo.messages?.some((m: any) => m.id === msg.id);
+                            const newMsgs = exists ? convo.messages : [...(convo.messages || []), msg];
+                            return {
+                              ...convo,
+                              messages: newMsgs,
+                              lastMessage: msg.content,
+                              unread: activeChat?.id !== msg.conversationId, // Mark unread if not actively open
+                              updatedAt: msg.createdAt || new Date().toISOString()
+                            };
+                          }
+                          return convo;
+                        });
+                        return [...updatedList].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+                      });
+                    }
+                  } catch (err) {
+                    console.warn("[ChatDrawer] Error parsing SSE payload:", err);
+                  }
+                }
+              }
+            }
+          }
+        };
+        
+        stream.send();
+      } catch (err) {
+        console.warn("[ChatDrawer] Could not connect to real-time events gateway:", err);
+      }
+    }
+
+    return () => {
+      if (xhr) {
+        try {
+          xhr.abort();
+        } catch (e) {}
+      }
+    };
+  }, [visible, activeMaisonId, isSeller, activeChat?.id]);
+
+  const handleSendChatMessage = async () => {
+    if (!chatReplyText.trim() || !activeChat) return;
+    triggerHaptic("medium");
+    const textToSend = chatReplyText;
+    setChatReplyText("");
+
+    const currentSenderName = isSeller ? (activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()))) : "Alok Singh";
+
+    const tempMessage = {
+      id: `m_${Date.now()}`,
+      content: textToSend,
+      senderId: isSeller ? activeMaisonId : "user_2pk5xskr",
+      senderName: currentSenderName,
+      createdAt: new Date().toISOString(),
+      isAdmin: isSeller
+    };
+
+    setActiveChat((prev: any) => ({
+      ...prev,
+      messages: [...(prev.messages || []), tempMessage],
+      lastMessage: textToSend
+    }));
+
+    setConversations(prev => prev.map(c => c.id === activeChat.id ? {
+      ...c,
+      messages: [...(c.messages || []), tempMessage],
+      lastMessage: textToSend
+    } : c));
+
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeChat.id,
+          senderId: isSeller ? activeMaisonId : "user_2pk5xskr",
+          senderName: currentSenderName,
+          content: textToSend,
+          type: activeChat.type || "MAISON",
+          isAdmin: isSeller
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const realMsg = data.message;
+        setActiveChat((prev: any) => ({
+          ...prev,
+          messages: prev.messages.map((m: any) => m.id === tempMessage.id ? realMsg : m)
+        }));
+      }
+    } catch (e) {
+      console.warn("Could not sync message to server.", e);
+    }
+  };
+
+  if (!visible) return null;
+
+  return (
+    <>
+      <View style={[styles.dmSlidePanel, { bottom: bottomBarHeight }]}>
+        <SafeAreaView style={styles.dmSafeArea}>
+          {/* DM Top Bar */}
+          <View style={styles.dmHeaderRow}>
+            <TouchableOpacity onPress={onClose}>
+              <Lucide name="chevron-back" size={28} color="#fff" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.dmTitleRow} 
+              onPress={() => {
+                triggerHaptic("light");
+                const next = !isSeller;
+                setIsSeller(next);
+                setActiveBusinessTool(null);
+                if (next) {
+                  fetchBusinessStats();
+                  fetchPromotions();
+                  fetchAds();
+                  fetchBroadcasts();
+                  fetchAutoReply();
+                }
+              }}
+            >
+              <Text style={styles.dmTitleText}>{isSeller ? (activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()))) : "Alok Singh"}</Text>
+              <Lucide name="chevron-down" size={17} color="#fff" />
+              <View style={styles.dmTitleRedDot} />
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => triggerHaptic("medium")}>
+              <Lucide name="create-outline" size={26} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {/* DM Search input */}
+          <View style={styles.dmSearchContainer}>
+            <Lucide name="search" size={21} color="rgba(255,255,255,0.4)" style={styles.dmSearchIcon} />
+            <TextInput
+              style={styles.dmSearchInput}
+              placeholder="Search"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              value={dmSearch}
+              onChangeText={setDmSearch}
+            />
+          </View>
+
+          {/* ─────────────────────────────────────────────
+              PERSONAL MODE — Stories + Filters + Threads
+          ───────────────────────────────────────────── */}
+          {!isSeller && (
+            <>
+              {/* Stories row */}
+              {activeInstaStories.length > 0 && (
+                <View style={{ height: 92, marginBottom: 4 }}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ paddingHorizontal: 14, alignItems: "center", gap: 16 }}
+                    style={{ flex: 1 }}
+                  >
+                    {activeInstaStories.map((story) => (
+                      <TouchableOpacity
+                        key={story.id}
+                        style={{ alignItems: "center", gap: 5 }}
+                        onPress={() => {
+                          triggerHaptic("medium");
+                          if (onOpenStoryGroup) onOpenStoryGroup(story);
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        {story.active ? (
+                          <LinearGradient
+                            colors={["#fb923c", "#d946ef", "#8b5cf6"]}
+                            start={{ x: 0, y: 1 }}
+                            end={{ x: 1, y: 0 }}
+                            style={{
+                              width: 60, height: 60, borderRadius: 30,
+                              justifyContent: "center", alignItems: "center",
+                            }}
+                          >
+                            <View style={{
+                              width: 54, height: 54, borderRadius: 27,
+                              backgroundColor: "#080415",
+                              justifyContent: "center",
+                              alignItems: "center",
+                            }}>
+                              <Image source={{ uri: story.avatar }} style={{ width: 48, height: 48, borderRadius: 24 }} />
+                            </View>
+                          </LinearGradient>
+                        ) : (
+                          <View style={{
+                            width: 58, height: 58, borderRadius: 29,
+                            borderWidth: story.isYourStory ? 1.5 : 1,
+                            borderColor: story.isYourStory ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.15)",
+                            padding: 2,
+                            backgroundColor: "#080415",
+                            position: "relative",
+                            justifyContent: "center",
+                            alignItems: "center"
+                          }}>
+                            <Image source={{ uri: story.avatar }} style={{ width: 50, height: 50, borderRadius: 25 }} />
+                            {story.isYourStory && (
+                              <View style={{
+                                position: "absolute", bottom: -1, right: -1,
+                                width: 18, height: 18, borderRadius: 9,
+                                backgroundColor: "#00f5ff",
+                                alignItems: "center", justifyContent: "center",
+                                borderWidth: 1.5, borderColor: "#080415",
+                              }}>
+                                <Lucide name="add" size={12} color="#000" />
+                              </View>
+                            )}
+                          </View>
+                        )}
+                        <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, maxWidth: 58, textAlign: "center" }} numberOfLines={1}>
+                          {story.isYourStory ? "Your story" : story.username}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Filter tabs */}
+              <View style={styles.dmFilterStrip}>
+                {["Primary", "From ads", "Requests", "General"].map((filt) => {
+                  const isAct = activeDmFilter === filt;
+                  return (
+                    <TouchableOpacity
+                      key={filt}
+                      style={[styles.dmFilterTab, isAct && styles.dmFilterTabActive]}
+                      onPress={() => { triggerHaptic("light"); setActiveDmFilter(filt); }}
+                    >
+                      <Text style={[styles.dmFilterText, isAct && styles.dmFilterTextActive]}>{filt}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Thread list */}
+              {loadingChats ? (
+                <ActivityIndicator size="small" color="#00f5ff" style={{ marginTop: 24 }} />
+              ) : (
+                <ScrollView style={styles.dmThreadsScroll} showsVerticalScrollIndicator={false}>
+                  {conversations
+                    .filter(t => t.name.toLowerCase().includes(dmSearch.toLowerCase()))
+                    .filter(t => (t.category || "Primary") === activeDmFilter)
+                    .map((thread) => (
+                    <TouchableOpacity
+                      key={thread.id}
+                      style={styles.threadItemRow}
+                      onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
+                    >
+                      <Image source={{ uri: thread.avatar }} style={styles.threadAvatar} />
+                      <View style={styles.threadDetails}>
+                        <View style={styles.threadNameRow}>
+                          <Text style={styles.threadNameText}>{thread.name}</Text>
+                          {thread.verified && (
+                            <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
+                          )}
+                        </View>
+                        <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
+                          {thread.lastMessage || "Secure direct message sync handshake established."}
+                        </Text>
+                      </View>
+                      <TouchableOpacity style={styles.cameraIconBtn}>
+                        <Lucide name="camera-outline" size={26} color="rgba(255,255,255,0.6)" />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </>
+          )}
+
+          {/* ─────────────────────────────────────────────
+              SELLER / MAISON MODE — Business Hub
+          ───────────────────────────────────────────── */}
+          {isSeller && (
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+
+              {/* ── Quick Stats Bar ── */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 14, gap: 12 }}
+              >
+                {liveBusinessStats.map((stat) => (
+                  <View key={stat.label} style={styles.bizStatCard}>
+                    <Lucide name={stat.icon as any} size={23} color={stat.color} />
+                    <Text style={[styles.bizStatValue, { color: stat.color }]}>{stat.value}</Text>
+                    <Text style={styles.bizStatLabel}>{stat.label}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+
+              {/* ── Business Tools Grid ── */}
+              {!activeBusinessTool && (
+                <>
+                  <Text style={styles.bizSectionLabel}>Business Tools</Text>
+                  <View style={styles.bizToolsGrid}>
+                    {BUSINESS_TOOLS.map((tool) => (
+                      <TouchableOpacity
+                        key={tool.id}
+                        style={styles.bizToolCard}
+                        onPress={() => { triggerHaptic("medium"); setActiveBusinessTool(tool.id); setBroadcastSent(false); }}
+                        activeOpacity={0.75}
+                      >
+                        <View style={[styles.bizToolIconWrap, { backgroundColor: tool.color + "22" }]}>
+                          <Lucide name={tool.icon as any} size={26} color={tool.color} />
+                        </View>
+                        <Text style={styles.bizToolName}>{tool.label}</Text>
+                        <Text style={styles.bizToolDesc}>{tool.desc}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* ── Customer Enquiries ── */}
+                  <Text style={styles.bizSectionLabel}>Customer Enquiries</Text>
+                  {CUSTOMER_THREADS.filter(t => t.name.toLowerCase().includes(dmSearch.toLowerCase())).map((thread) => (
+                    <TouchableOpacity
+                      key={thread.id}
+                      style={[styles.threadItemRow, { marginHorizontal: 16 }]}
+                      onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
+                      activeOpacity={0.75}
+                    >
+                      <Image source={{ uri: thread.avatar }} style={styles.threadAvatar} />
+                      <View style={styles.threadDetails}>
+                        <View style={styles.threadNameRow}>
+                          <Text style={styles.threadNameText}>{thread.name}</Text>
+                          <View style={[styles.bizTagBadge, { backgroundColor: thread.unread ? "#00f5ff22" : "#ffffff11" }]}>
+                            <Text style={[styles.bizTagText, { color: thread.unread ? "#00f5ff" : "rgba(255,255,255,0.4)" }]}>{thread.tag}</Text>
+                          </View>
+                        </View>
+                        <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
+                          {thread.message}
+                        </Text>
+                      </View>
+                      {thread.unread && <View style={styles.bizUnreadDot} />}
+                    </TouchableOpacity>
+                  ))}
+                  <View style={{ height: 32 }} />
+                </>
+              )}
+
+              {/* ── Sub-panels ── */}
+
+              {/* BROADCAST */}
+              {activeBusinessTool === "broadcast" && (
+                <View style={styles.bizSubPanel}>
+                  <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
+                    <Lucide name="chevron-back" size={23} color="#00f5ff" />
+                    <Text style={styles.bizSubBackText}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.bizSubTitle}>📣 Broadcast Message</Text>
+                  <Text style={styles.bizSubSubtitle}>Send to all your followers at once</Text>
+                  <View style={styles.bizAudiencePill}>
+                    <Lucide name="people" size={17} color="#00f5ff" />
+                    <Text style={{ color: "#00f5ff", fontSize: 14.5, marginLeft: 6 }}>1,432 followers will receive this</Text>
+                  </View>
+                  <TextInput
+                    style={styles.bizBroadcastInput}
+                    placeholder="Write your message..."
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    value={broadcastText}
+                    onChangeText={setBroadcastText}
+                    multiline
+                    numberOfLines={5}
+                  />
+                  {broadcastSent ? (
+                    <View style={styles.bizSuccessBanner}>
+                      <Lucide name="checkmark-circle" size={23} color="#34d399" />
+                      <Text style={{ color: "#34d399", marginLeft: 8, fontWeight: "600" }}>Broadcast sent to all followers!</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.bizSendBtn, !broadcastText && { opacity: 0.4 }]}
+                      disabled={!broadcastText}
+                      onPress={async () => {
+                        triggerHaptic("heavy");
+                        const ok = await sendBroadcast(broadcastText || "Broadcast", broadcastText);
+                        setBroadcastSent(true);
+                        if (ok) fetchBroadcasts();
+                      }}
+                    >
+                      <Lucide name="megaphone" size={19} color="#000" />
+                      <Text style={styles.bizSendBtnText}>Send Broadcast</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* PROMOTIONS */}
+              {activeBusinessTool === "promotions" && (
+                <View style={styles.bizSubPanel}>
+                  <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
+                    <Lucide name="chevron-back" size={23} color="#fb923c" />
+                    <Text style={[styles.bizSubBackText, { color: "#fb923c" }]}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.bizSubTitle}>🏷️ Promotions</Text>
+                  <Text style={styles.bizSubSubtitle}>Active discount codes & campaigns</Text>
+                  {loadingPromos ? (
+                    <ActivityIndicator size="small" color="#fb923c" style={{ marginTop: 16 }} />
+                  ) : (
+                    (livePromos.length > 0 ? livePromos : [
+                      { code: "AURA20", discount: 20, type: "PERCENTAGE", uses: 34, expiresAt: "2026-06-15" },
+                      { code: "NEWCOL10", discount: 10, type: "PERCENTAGE", uses: 12, expiresAt: "2026-06-30" },
+                    ]).map((promo: any) => (
+                      <View key={promo.code} style={styles.bizPromoCard}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: "#fb923c", fontWeight: "bold", fontSize: 17.5, letterSpacing: 1 }}>{promo.code}</Text>
+                          <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 14.5, marginTop: 2 }}>
+                            {promo.type === "PERCENTAGE" ? `${promo.discount}% off` : `₹${promo.discount} off`}
+                          </Text>
+                          <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13.5, marginTop: 2 }}>
+                            Used {promo.uses || 0}× {promo.expiresAt ? `· Expires ${new Date(promo.expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""}
+                          </Text>
+                        </View>
+                        <View style={[styles.bizTagBadge, { backgroundColor: "#fb923c22" }]}>
+                          <Text style={{ color: "#fb923c", fontSize: 13.5 }}>{promo.status || "Active"}</Text>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                  {showNewPromoForm ? (
+                    <View style={{ marginBottom: 12 }}>
+                      <TextInput
+                        style={[styles.bizBroadcastInput, { borderColor: "#fb923c44", minHeight: 46 }]}
+                        placeholder="Promo code (e.g. SALE25)"
+                        placeholderTextColor="rgba(255,255,255,0.3)"
+                        value={newPromoCode}
+                        onChangeText={setNewPromoCode}
+                        autoCapitalize="characters"
+                      />
+                      <TextInput
+                        style={[styles.bizBroadcastInput, { borderColor: "#fb923c44", minHeight: 46 }]}
+                        placeholder="Discount % (e.g. 25)"
+                        placeholderTextColor="rgba(255,255,255,0.3)"
+                        value={newPromoDiscount}
+                        onChangeText={setNewPromoDiscount}
+                        keyboardType="numeric"
+                      />
+                      <TouchableOpacity
+                        style={[styles.bizSendBtn, { backgroundColor: "#fb923c" }, (!newPromoCode || !newPromoDiscount) && { opacity: 0.4 }]}
+                        disabled={!newPromoCode || !newPromoDiscount}
+                        onPress={async () => {
+                          triggerHaptic("heavy");
+                          const ok = await createPromo(newPromoCode, parseFloat(newPromoDiscount), "PERCENTAGE");
+                          if (ok) { setNewPromoCode(""); setNewPromoDiscount(""); setShowNewPromoForm(false); }
+                        }}
+                      >
+                        <Lucide name="checkmark" size={19} color="#000" />
+                        <Text style={styles.bizSendBtnText}>Save Promo</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={[styles.bizSendBtn, { backgroundColor: "#fb923c" }]} onPress={() => setShowNewPromoForm(true)}>
+                      <Lucide name="add" size={19} color="#000" />
+                      <Text style={styles.bizSendBtnText}>Create New Promo</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* ADS MANAGER */}
+              {activeBusinessTool === "ads" && (
+                <View style={styles.bizSubPanel}>
+                  <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
+                    <Lucide name="chevron-back" size={23} color="#a78bfa" />
+                    <Text style={[styles.bizSubBackText, { color: "#a78bfa" }]}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.bizSubTitle}>📊 Ads Manager</Text>
+                  <Text style={styles.bizSubSubtitle}>Active campaigns this month</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 8 }}>
+                    {(liveAds.length > 0 ? liveAds : [
+                      { name: "Spring Drop", spend: "₹12,000", reach: "28K", clicks: "1.2K", status: "Live" },
+                      { name: "Scarf Promo", spend: "₹6,500", reach: "14K", clicks: "640", status: "Paused" },
+                    ]).map((ad: any) => (
+                      <View key={ad.name} style={styles.bizAdCard}>
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                          <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16.5 }}>{ad.name}</Text>
+                          <View style={[styles.bizTagBadge, { backgroundColor: ad.status === "Live" ? "#34d39922" : "#ffffff11" }]}>
+                            <Text style={{ color: ad.status === "Live" ? "#34d399" : "rgba(255,255,255,0.4)", fontSize: 13.5 }}>{ad.status}</Text>
+                          </View>
+                        </View>
+                        {[
+                          { k: "Spend", v: ad.spend },
+                          { k: "Reach", v: ad.reach },
+                          { k: "Clicks", v: ad.clicks },
+                        ].map((row) => (
+                          <View key={row.k} style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                            <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 14.5 }}>{row.k}</Text>
+                            <Text style={{ color: "#a78bfa", fontSize: 14.5, fontWeight: "600" }}>{row.v}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ))}
+                  </ScrollView>
+                  <TouchableOpacity style={[styles.bizSendBtn, { backgroundColor: "#a78bfa" }]} onPress={() => triggerHaptic("medium")}>
+                    <Lucide name="add" size={19} color="#000" />
+                    <Text style={styles.bizSendBtnText}>Create New Ad</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* CATALOGUE */}
+              {activeBusinessTool === "catalogue" && (
+                <View style={styles.bizSubPanel}>
+                  <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
+                    <Lucide name="chevron-back" size={23} color="#34d399" />
+                    <Text style={[styles.bizSubBackText, { color: "#34d399" }]}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.bizSubTitle}>🗂️ Catalogue</Text>
+                  <Text style={styles.bizSubSubtitle}>Your active listings</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
+                    {(products || []).slice(0, 6).map((p: any) => (
+                      <View key={p.id} style={styles.bizCatalogueItem}>
+                        <Image source={{ uri: p.images?.[0] || p.thumbnail }} style={styles.bizCatalogueImg} />
+                        <Text style={styles.bizCatalogueName} numberOfLines={1}>{p.name || p.title}</Text>
+                        <Text style={styles.bizCataloguePrice}>₹{p.price?.toLocaleString()}</Text>
+                      </View>
+                    ))}
+                    {(!products || products.length === 0) && (
+                      <View style={{ alignItems: "center", paddingVertical: 32, width: "100%" }}>
+                        <Lucide name="grid-outline" size={40} color="rgba(255,255,255,0.2)" />
+                        <Text style={{ color: "rgba(255,255,255,0.3)", marginTop: 12, fontSize: 15.5 }}>List products from your web dashboard</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* AUTO-REPLY */}
+              {activeBusinessTool === "autoreply" && (
+                <View style={styles.bizSubPanel}>
+                  <TouchableOpacity style={styles.bizSubBack} onPress={() => { setActiveBusinessTool(null); setAutoReplySaved(false); }}>
+                    <Lucide name="chevron-back" size={23} color="#f472b6" />
+                    <Text style={[styles.bizSubBackText, { color: "#f472b6" }]}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.bizSubTitle}>⚡ Auto-Reply</Text>
+                  <Text style={styles.bizSubSubtitle}>Auto-sent when you're unavailable</Text>
+
+                  {loadingAutoReply ? (
+                    <ActivityIndicator size="small" color="#f472b6" style={{ marginTop: 24 }} />
+                  ) : (
+                    <>
+                      {/* Enable toggle */}
+                      <TouchableOpacity
+                        style={styles.bizAutoReplyToggleRow}
+                        onPress={() => { triggerHaptic("light"); setAutoReplyEnabled(!autoReplyEnabled); setAutoReplySaved(false); }}
+                        activeOpacity={0.8}
+                      >
+                        <View>
+                          <Text style={{ color: "#fff", fontSize: 16.5, fontWeight: "600" }}>Auto-Reply Enabled</Text>
+                          <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13.5, marginTop: 2 }}>
+                            {autoReplyEnabled ? "Replies sent automatically" : "Currently disabled"}
+                          </Text>
+                        </View>
+                        <View style={[styles.bizToggle, { backgroundColor: autoReplyEnabled ? "#f472b633" : "rgba(255,255,255,0.1)" }]}>
+                          <View style={[
+                            styles.bizToggleThumb,
+                            { backgroundColor: autoReplyEnabled ? "#f472b6" : "rgba(255,255,255,0.3)", marginLeft: autoReplyEnabled ? "auto" : 0 }
+                          ]} />
+                        </View>
+                      </TouchableOpacity>
+
+                      {/* Greeting message */}
+                      <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 13.5, fontWeight: "700", letterSpacing: 0.8, marginBottom: 6, marginTop: 4 }}>GREETING MESSAGE</Text>
+                      <TextInput
+                        style={[styles.bizBroadcastInput, { borderColor: "#f472b633", minHeight: 80 }]}
+                        value={greetingMessage}
+                        onChangeText={(t) => { setGreetingMessage(t); setAutoReplySaved(false); }}
+                        multiline
+                        placeholder="Sent when someone first messages you"
+                        placeholderTextColor="rgba(255,255,255,0.25)"
+                      />
+
+                      {/* Away message */}
+                      <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 13.5, fontWeight: "700", letterSpacing: 0.8, marginBottom: 6 }}>AWAY MESSAGE</Text>
+                      <TextInput
+                        style={[styles.bizBroadcastInput, { borderColor: "#f472b633", minHeight: 80 }]}
+                        value={awayMessage}
+                        onChangeText={(t) => { setAwayMessage(t); setAutoReplySaved(false); }}
+                        multiline
+                        placeholder="Sent during quiet hours or when away"
+                        placeholderTextColor="rgba(255,255,255,0.25)"
+                      />
+
+                      {/* Quiet hours */}
+                      <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 13.5, fontWeight: "700", letterSpacing: 0.8, marginBottom: 6 }}>QUIET HOURS (24h format)</Text>
+                      <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 4 }}>From (hour)</Text>
+                          <TextInput
+                            style={[styles.bizBroadcastInput, { borderColor: "#f472b633", minHeight: 46, paddingVertical: 0 }]}
+                            value={quietHoursStart}
+                            onChangeText={(t) => { setQuietHoursStart(t); setAutoReplySaved(false); }}
+                            keyboardType="numeric"
+                            placeholder="e.g. 22"
+                            placeholderTextColor="rgba(255,255,255,0.25)"
+                            maxLength={2}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 4 }}>To (hour)</Text>
+                          <TextInput
+                            style={[styles.bizBroadcastInput, { borderColor: "#f472b633", minHeight: 46, paddingVertical: 0 }]}
+                            value={quietHoursEnd}
+                            onChangeText={(t) => { setQuietHoursEnd(t); setAutoReplySaved(false); }}
+                            keyboardType="numeric"
+                            placeholder="e.g. 8"
+                            placeholderTextColor="rgba(255,255,255,0.25)"
+                            maxLength={2}
+                          />
+                        </View>
+                      </View>
+
+                      {autoReplySaved ? (
+                        <View style={styles.bizSuccessBanner}>
+                          <Lucide name="checkmark-circle" size={23} color="#34d399" />
+                          <Text style={{ color: "#34d399", marginLeft: 8, fontWeight: "600" }}>Auto-Reply saved & synced!</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={[styles.bizSendBtn, { backgroundColor: "#f472b6" }]}
+                          onPress={async () => {
+                            triggerHaptic("heavy");
+                            const ok = await saveAutoReply();
+                            setAutoReplySaved(ok);
+                          }}
+                        >
+                          <Lucide name="save-outline" size={19} color="#000" />
+                          <Text style={styles.bizSendBtnText}>Save & Sync Auto-Reply</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  )}
+                </View>
+              )}
+
+              {/* CUSTOMER INBOX */}
+              {activeBusinessTool === "inbox" && (
+                <View style={styles.bizSubPanel}>
+                  <TouchableOpacity style={styles.bizSubBack} onPress={() => setActiveBusinessTool(null)}>
+                    <Lucide name="chevron-back" size={23} color="#fbbf24" />
+                    <Text style={[styles.bizSubBackText, { color: "#fbbf24" }]}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.bizSubTitle}>👥 Customer Inbox</Text>
+                  <Text style={styles.bizSubSubtitle}>Order & product enquiries</Text>
+                  {CUSTOMER_THREADS.map((thread) => (
+                    <TouchableOpacity
+                      key={thread.id}
+                      style={styles.threadItemRow}
+                      onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
+                      activeOpacity={0.75}
+                    >
+                      <Image source={{ uri: thread.avatar }} style={styles.threadAvatar} />
+                      <View style={styles.threadDetails}>
+                        <View style={styles.threadNameRow}>
+                          <Text style={styles.threadNameText}>{thread.name}</Text>
+                          <View style={[styles.bizTagBadge, { backgroundColor: "#fbbf2422" }]}>
+                            <Text style={{ color: "#fbbf24", fontSize: 13.5 }}>{thread.tag}</Text>
+                          </View>
+                        </View>
+                        <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
+                          {thread.message}
+                        </Text>
+                      </View>
+                      {thread.unread && <View style={styles.bizUnreadDot} />}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </View>
+
+      {/* 💬 INDIVIDUAL ACTIVE CONVERSATION MESSENGER PANEL (SLIDES ON TOP) */}
+      {activeChat && (
+        <View style={[styles.dmSlidePanel, { bottom: bottomBarHeight }]}>
+          <SafeAreaView style={styles.dmSafeArea}>
+            {/* Chat header */}
+            <View style={styles.dmHeaderRow}>
+              <TouchableOpacity onPress={() => setActiveChat(null)}>
+                <Lucide name="chevron-back" size={28} color="#fff" />
+              </TouchableOpacity>
+              
+              <View style={styles.dmTitleRow}>
+                <Text style={styles.dmTitleText}>{activeChat.name}</Text>
+                {activeChat.verified && (
+                  <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
+                )}
+              </View>
+
+              <TouchableOpacity onPress={() => triggerHaptic("medium")}>
+                <Lucide name="information-circle-outline" size={26} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Messages feed list */}
+            <ScrollView 
+              style={styles.chatFeedScroll}
+              contentContainerStyle={styles.chatFeedContent}
+              ref={(ref) => ref?.scrollToEnd({ animated: true })}
+            >
+              <Text style={styles.chatStartText}>
+                Mesh handshake started — secure sovereign credentials synced
+              </Text>
+              
+              {(activeChat.messages || []).map((msg: any) => {
+                const isMine = msg.senderId === (isSeller ? activeMaisonId : "user_2pk5xskr");
+                return (
+                  <View key={msg.id} style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}>
+                    {!isMine && (
+                      <View style={styles.msgAvatar}>
+                        <Text style={styles.msgAvatarText}>{activeChat.name[0]?.toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <View style={[styles.msgBubble, isMine ? styles.msgBubbleRight : styles.msgBubbleLeft]}>
+                      <Text style={[styles.msgText, isMine ? styles.msgTextRight : styles.msgTextLeft]}>{msg.content}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            {/* Input keyboard bar */}
+            <View style={styles.chatInputBar}>
+              <TouchableOpacity style={styles.paperclipBtn}>
+                <Lucide name="image-outline" size={24} color="rgba(255,255,255,0.6)" />
+              </TouchableOpacity>
+              <TextInput
+                style={styles.chatInput}
+                placeholder="Message..."
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={chatReplyText}
+                onChangeText={setChatReplyText}
+                onSubmitEditing={handleSendChatMessage}
+              />
+              <TouchableOpacity 
+                style={[styles.chatSendBtn, !chatReplyText.trim() && styles.chatSendBtnDisabled]}
+                onPress={handleSendChatMessage}
+                disabled={!chatReplyText.trim()}
+              >
+                <Text style={styles.chatSendBtnText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      )}
+    </>
+  );
+};
+
+const styles = StyleSheet.create({
+  dmSlidePanel: {
+    position: "absolute",
+    top: 0,
+    bottom: 52,
+    left: 0,
+    right: 0,
+    backgroundColor: "#080415",
+    zIndex: 2000,
+  },
+  dmSafeArea: {
+    flex: 1,
+    backgroundColor: "#080415",
+  },
+  dmHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    height: 48,
+  },
+  dmTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  dmTitleText: {
+    color: "#fff",
+    fontSize: 18.5,
+    fontWeight: "bold",
+  },
+  dmTitleRedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#ff3b30",
+  },
+  dmSearchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#120d2c",
+    borderRadius: 10,
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingHorizontal: 10,
+    height: 38,
+  },
+  dmSearchIcon: {
+    marginRight: 6,
+  },
+  dmSearchInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 15.5,
+  },
+  dmFilterStrip: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    gap: 8,
+    marginBottom: 12,
+  },
+  bizStatCard: {
+    backgroundColor: "#120d2c",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    minWidth: 90,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  bizStatValue: {
+    fontSize: 20,
+    fontWeight: "800",
+    marginTop: 6,
+  },
+  bizStatLabel: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 13,
+    marginTop: 3,
+    textAlign: "center",
+  },
+  bizSectionLabel: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 13.5,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  bizToolsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 12,
+    gap: 10,
+    marginBottom: 20,
+  },
+  bizToolCard: {
+    backgroundColor: "#120d2c",
+    borderRadius: 16,
+    padding: 16,
+    width: (width - 44) / 2,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  bizToolIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  bizToolName: {
+    color: "#fff",
+    fontSize: 15.5,
+    fontWeight: "700",
+  },
+  bizToolDesc: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 13,
+    marginTop: 3,
+  },
+  bizSubPanel: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 32,
+  },
+  bizSubBack: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  bizSubBackText: {
+    color: "#00f5ff",
+    fontSize: 16.5,
+    marginLeft: 4,
+    fontWeight: "600",
+  },
+  bizSubTitle: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  bizSubSubtitle: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 15.5,
+    marginBottom: 16,
+  },
+  bizAudiencePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#00f5ff15",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    alignSelf: "flex-start",
+    marginBottom: 14,
+  },
+  bizBroadcastInput: {
+    backgroundColor: "#120d2c",
+    borderRadius: 12,
+    color: "#fff",
+    padding: 14,
+    fontSize: 16.5,
+    borderWidth: 1,
+    borderColor: "rgba(0,245,255,0.2)",
+    textAlignVertical: "top",
+    minHeight: 110,
+    marginBottom: 14,
+  },
+  bizSendBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#00f5ff",
+    borderRadius: 12,
+    paddingVertical: 13,
+  },
+  bizSendBtnText: {
+    color: "#000",
+    fontWeight: "800",
+    fontSize: 16.5,
+  },
+  bizSuccessBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#34d39915",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#34d39933",
+  },
+  bizPromoCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#120d2c",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  bizAdCard: {
+    backgroundColor: "#120d2c",
+    borderRadius: 14,
+    padding: 14,
+    width: 200,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  bizTagBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginLeft: 6,
+  },
+  bizTagText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  bizUnreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#00f5ff",
+    marginLeft: 8,
+  },
+  bizAutoReplyToggleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  bizToggle: {
+    width: 46,
+    height: 26,
+    borderRadius: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 3,
+  },
+  bizToggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+  },
+  bizCatalogueItem: {
+    width: (width - 76) / 3,
+    backgroundColor: "#120d2c",
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  bizCatalogueImg: {
+    width: "100%",
+    height: 90,
+  },
+  bizCatalogueName: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+    padding: 6,
+  },
+  bizCataloguePrice: {
+    color: "#00f5ff",
+    fontSize: 13,
+    paddingHorizontal: 6,
+    paddingBottom: 6,
+  },
+  dmFilterTab: {
+    backgroundColor: "#120d2c",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  dmFilterTabActive: {
+    backgroundColor: "#fff",
+  },
+  dmFilterText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 13.5,
+    fontWeight: "bold",
+  },
+  dmFilterTextActive: {
+    color: "#000",
+  },
+  dmThreadsScroll: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  threadItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  threadAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  threadDetails: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  threadNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  threadNameText: {
+    color: "#fff",
+    fontSize: 15.5,
+    fontWeight: "600",
+  },
+  verifiedCheck: {
+    marginLeft: 2,
+  },
+  threadMessageText: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 13.5,
+    marginTop: 2,
+  },
+  threadMessageTextUnread: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
+  cameraIconBtn: {
+    padding: 8,
+  },
+  chatFeedScroll: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  chatFeedContent: {
+    paddingBottom: 24,
+    paddingTop: 16,
+  },
+  chatStartText: {
+    color: "rgba(255,255,255,0.25)",
+    fontSize: 12.5,
+    textAlign: "center",
+    marginBottom: 20,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  msgRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginBottom: 16,
+    gap: 8,
+    maxWidth: "80%",
+  },
+  msgRowLeft: {
+    alignSelf: "flex-start",
+  },
+  msgRowRight: {
+    alignSelf: "flex-end",
+    flexDirection: "row-reverse",
+  },
+  msgAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#00f5ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  msgAvatarText: {
+    color: "#000",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  msgBubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 18,
+  },
+  msgBubbleLeft: {
+    backgroundColor: "#1d173e",
+    borderBottomLeftRadius: 4,
+  },
+  msgBubbleRight: {
+    backgroundColor: "#fff",
+    borderBottomRightRadius: 4,
+  },
+  msgText: {
+    fontSize: 15.5,
+    lineHeight: 18,
+  },
+  msgTextLeft: {
+    color: "#fff",
+  },
+  msgTextRight: {
+    color: "#000",
+    fontWeight: "500",
+  },
+  chatInputBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#120d2c",
+    borderRadius: 24,
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingHorizontal: 12,
+    height: 48,
+  },
+  paperclipBtn: {
+    padding: 6,
+  },
+  chatInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 15.5,
+    paddingHorizontal: 10,
+  },
+  chatSendBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: "#00f5ff",
+  },
+  chatSendBtnDisabled: {
+    opacity: 0.5,
+    backgroundColor: "transparent",
+  },
+  chatSendBtnText: {
+    color: "#000",
+    fontWeight: "bold",
+    fontSize: 15,
+  },
+});
