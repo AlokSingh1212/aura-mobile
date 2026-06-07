@@ -26,6 +26,7 @@ import * as Clipboard from "expo-clipboard";
 import * as ImageManipulator from "expo-image-manipulator";
 import { API_HOST } from "@/constants/api";
 import { LiveShowroom } from "@/components/LiveShowroom";
+import { formatCompactNumber } from "@/constants/format";
 
 const { width } = Dimensions.get("window");
 const GRID_ITEM_SIZE = (width - 2) / 3; // 3 columns with 1px gap
@@ -53,8 +54,19 @@ export default function AccountScreen() {
     currentUser,
     updateProfile,
     authLogOut,
-    addInstaStorySlide
+    addInstaStorySlide,
+    switchActiveProfile,
+    createNewProfile,
+    activeProfile,
+    userProfiles,
+    wishlist,
+    fetchWishlist,
+    toggleWishlist,
+    addToCart
   } = useStore();
+  const personalProfile = userProfiles.find(p => p.type === "PERSONAL") || userProfiles.find(p => p.type !== "BUSINESS") || userProfiles[0];
+  const brandProfiles = userProfiles.filter(p => p.type === "BUSINESS");
+  
   const insets = useSafeAreaInsets();
   const [presetPosts, setPresetPosts] = useState(PRESET_POSTS);
 
@@ -106,6 +118,18 @@ export default function AccountScreen() {
   const [availableMaisons, setAvailableMaisons] = useState<any[]>([]);
   const [showSwitcherModal, setShowSwitcherModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showWishlistModal, setShowWishlistModal] = useState(false);
+
+  // 👥 Followers/Following network list states
+  const [showNetworkModal, setShowNetworkModal] = useState(false);
+  const [networkTab, setNetworkTab] = useState<"followers" | "following">("followers");
+  const [networkUsers, setNetworkUsers] = useState([
+    { id: "n1", username: "studywithjasmeet", name: "Jasmeet Kaur", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=100", followed: false, isFollower: true },
+    { id: "n2", username: "fitwithyashika_", name: "Yashika Sharma", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=100", followed: true, isFollower: true },
+    { id: "n3", username: "curator.alok", name: "Alok Sovereign", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=100", followed: true, isFollower: false },
+    { id: "n4", username: "priya_mehta", name: "Priya Mehta", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=100", followed: false, isFollower: false },
+    { id: "n5", username: "rohan_curator", name: "Rohan Kapoor", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=100", followed: true, isFollower: true }
+  ]);
 
   // ➕ Functional Modals State
   const [showPostModal, setShowPostModal] = useState(false);
@@ -131,6 +155,7 @@ export default function AccountScreen() {
   const [postDescription, setPostDescription] = useState("");
   const [postImage, setPostImage] = useState("https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=400");
   const [postVibe, setPostVibe] = useState("Quiet Luxury");
+  const [isPublishingStoryAndPost, setIsPublishingStoryAndPost] = useState(false);
 
   // Custom prompt states
   const [promptVisible, setPromptVisible] = useState(false);
@@ -188,6 +213,11 @@ export default function AccountScreen() {
     setPersonalEmail(currentUser.email || "");
     setPersonalPhone(currentUser.phone || "");
     setIsVerifiedUser(currentUser.isVerified || false);
+    setBiometricEnabled(currentUser.biometricEnabled ?? true);
+    setTwoFactorEnabled(currentUser.twoFactorEnabled ?? true);
+    setRegionLockEnabled(currentUser.regionLockEnabled ?? false);
+    setAlertsEnabled(currentUser.alertsEnabled ?? true);
+    setFediverseSharing(currentUser.fediverseSharing ?? false);
   }, [currentUser]);
 
   // Synchronize profile details from Next.js Neon PostgreSQL on mount
@@ -261,6 +291,71 @@ export default function AccountScreen() {
     }
   };
 
+  const handleToggleBiometric = async () => {
+    const nextVal = !biometricEnabled;
+    triggerHaptic("light");
+    setBiometricEnabled(nextVal);
+    if (currentUser) {
+      const res = await updateProfile({ userId: currentUser.id, biometricEnabled: nextVal });
+      if (!res.success) {
+        setBiometricEnabled(!nextVal);
+        Alert.alert("Sync Failure", res.error || "Could not save biometric preference.");
+      }
+    }
+  };
+
+  const handleToggleTwoFactor = async () => {
+    const nextVal = !twoFactorEnabled;
+    triggerHaptic("light");
+    setTwoFactorEnabled(nextVal);
+    if (currentUser) {
+      const res = await updateProfile({ userId: currentUser.id, twoFactorEnabled: nextVal });
+      if (!res.success) {
+        setTwoFactorEnabled(!nextVal);
+        Alert.alert("Sync Failure", res.error || "Could not save 2FA preference.");
+      }
+    }
+  };
+
+  const handleToggleRegionLock = async () => {
+    const nextVal = !regionLockEnabled;
+    triggerHaptic("light");
+    setRegionLockEnabled(nextVal);
+    if (currentUser) {
+      const res = await updateProfile({ userId: currentUser.id, regionLockEnabled: nextVal });
+      if (!res.success) {
+        setRegionLockEnabled(!nextVal);
+        Alert.alert("Sync Failure", res.error || "Could not save node lock preference.");
+      }
+    }
+  };
+
+  const handleToggleAlerts = async () => {
+    const nextVal = !alertsEnabled;
+    triggerHaptic("light");
+    setAlertsEnabled(nextVal);
+    if (currentUser) {
+      const res = await updateProfile({ userId: currentUser.id, alertsEnabled: nextVal });
+      if (!res.success) {
+        setAlertsEnabled(!nextVal);
+        Alert.alert("Sync Failure", res.error || "Could not save alert preference.");
+      }
+    }
+  };
+
+  const handleToggleFediverse = async () => {
+    const nextVal = !fediverseSharing;
+    triggerHaptic("light");
+    setFediverseSharing(nextVal);
+    if (currentUser) {
+      const res = await updateProfile({ userId: currentUser.id, fediverseSharing: nextVal });
+      if (!res.success) {
+        setFediverseSharing(!nextVal);
+        Alert.alert("Sync Failure", res.error || "Could not save Fediverse preference.");
+      }
+    }
+  };
+
   // Filter actual products curations from AURA database that belong to this brand!
   const maisonProducts = products.filter(
     p => p.maisonId === username || p.maison?.id === username || (username === "rare_raven" && (p.maisonId === "rare_raven" || p.maison?.id === "rare_raven" || !p.maisonId))
@@ -280,25 +375,44 @@ export default function AccountScreen() {
     setShowEditModal(true);
   };
 
-  const handleAddStory = async (url: string) => {
+  const handleOpenWishlist = () => {
+    const uid = currentUser?.id || activeProfile?.userId;
+    if (uid && uid !== "patron_guest_sim") {
+      fetchWishlist(uid);
+    }
+    triggerHaptic("medium");
+    setShowWishlistModal(true);
+  };
+
+  const handleAddStory = async (url: string, storyOnly: boolean = false, customCaption?: string) => {
+    const storyCaption = customCaption || `✨ ${activeProfile?.name || profileName || "Your"} Design Story uploaded dynamically!`;
     try {
       const res = await fetch(`${API_HOST}/api/mobile/feed`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: "cmpctrlqn000004ktfuqga0td", // Alok Singh user ID
+          userId: currentUser?.id || "cmpctrlqn000004ktfuqga0td",
+          profileId: activeProfile?.id || null,
           url: url,
           thumbnail: url,
-          caption: "✨ Sovereign Design Story uploaded dynamically!",
+          caption: storyCaption,
           location: "Atelier Flagship",
-          music: "Cinematic Luxury Waves"
+          music: storyOnly ? "STORY_ONLY" : "Cinematic Luxury Waves"
         })
       });
       const data = await res.json();
       if (data.success) {
-        Alert.alert("Story Added", "Your sustainable visual story has been synchronized to the PostgreSQL ledger!");
+        // Add the story slide to the "Your story" bubble so it appears in the story ring immediately
+        addInstaStorySlide({
+          id: `story_${Date.now()}`,
+          url: url,
+          caption: storyCaption,
+          isVideo: false
+        });
+
+        Alert.alert("Story Added", "Your visual story has been published to your profile!");
         // Refresh the visual feed
-        useStore.getState().fetchFeed();
+        useStore.getState().fetchFeed(true);
       } else {
         Alert.alert("Story Denied", "Failed to register story inside the database.");
       }
@@ -458,7 +572,35 @@ export default function AccountScreen() {
         const compressedUri = await compressAndTranscodeImage(selectedUri, mode);
 
         if (mode === "story") {
-          await handleAddStory(compressedUri);
+          Alert.alert(
+            "Publishing Destination",
+            "Would you like to publish this to your Feed as a Post as well, or upload as a Story only?",
+            [
+              {
+                text: "Story Only",
+                onPress: async () => {
+                  triggerHaptic("medium");
+                  await handleAddStory(compressedUri, true);
+                }
+              },
+              {
+                text: "Both (Story + Post)",
+                onPress: () => {
+                  triggerHaptic("medium");
+                  setPostImage(compressedUri);
+                  setIsPublishingStoryAndPost(true);
+                  setPostTitle("");
+                  setPostPrice("");
+                  setPostDescription("");
+                  setShowPostModal(true);
+                }
+              },
+              {
+                text: "Cancel",
+                style: "cancel"
+              }
+            ]
+          );
         } else {
           await handleUpdateLogo(compressedUri);
         }
@@ -626,10 +768,17 @@ export default function AccountScreen() {
     setShowShareProfileSheet(true);
   };
 
-  const handleSwitchMaison = async (id: string) => {
+  const handleSwitchMaison = async (profileId: string) => {
     triggerHaptic("success");
     setShowSwitcherModal(false);
-    setActiveMaisonId(id);
+    try {
+      const res = await switchActiveProfile(profileId);
+      if (!res.success) {
+        Alert.alert("Switch Failed", res.error || "Failed to switch profiles.");
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to switch profiles.");
+    }
   };
 
   const handleAddBrandProfile = async () => {
@@ -650,29 +799,22 @@ export default function AccountScreen() {
             if (!name || !name.trim()) return;
             triggerHaptic("success");
             try {
-              const res = await fetch(`${API_HOST}/api/mobile/profile`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  maisonId: formattedId,
-                  oldMaisonId: null,
-                  profileName: name.trim(),
-                  category: "Clothing (Brand)",
-                  bioText: "Bespoke future luxury engineered with sustainable metrics.",
-                  websiteLink: "aura.luxury",
-                  tags: ["@" + formattedId]
-                })
+              const res = await createNewProfile({
+                userId: currentUser?.id,
+                type: "BUSINESS",
+                name: name.trim(),
+                username: formattedId,
+                category: "Clothing (Brand)",
+                website: "aura.luxury"
               });
-              const data = await res.json();
-              if (data.success) {
+              if (res.success) {
                 Alert.alert("Brand Hydrated", `Sovereign Maison '${name.trim()}' has been minted in PostgreSQL!`);
-                setActiveMaisonId(formattedId);
                 setShowSwitcherModal(false);
               } else {
-                Alert.alert("Minting Rejected", data.message || "Failed to register brand profile.");
+                Alert.alert("Minting Rejected", res.error || "Failed to register brand profile.");
               }
-            } catch (e) {
-              Alert.alert("Network Failure", "Failed to connect to AURA database cluster.");
+            } catch (e: any) {
+              Alert.alert("Network Failure", e.message || "Failed to connect to AURA database cluster.");
             }
           }
         );
@@ -752,6 +894,11 @@ export default function AccountScreen() {
       setPresetPosts(prev => [newPost, ...prev]);
       setPostsCount(prev => prev + 1);
       
+      if (isPublishingStoryAndPost) {
+        await handleAddStory(postImage, false, postTitle);
+        setIsPublishingStoryAndPost(false);
+      }
+
       Alert.alert(
         "Look Posted",
         "Your new aesthetic look has been published to your personal lookbook grid!"
@@ -799,6 +946,11 @@ export default function AccountScreen() {
     // In offline fallback mode, still append to local memory to keep user experience responsive
     useStore.setState((state) => ({ products: [newProduct, ...state.products] }));
     setPostsCount(prev => prev + 1);
+
+    if (isPublishingStoryAndPost) {
+      await handleAddStory(postImage, false, `${postTitle} - ₹${parsedPrice.toLocaleString()}`);
+      setIsPublishingStoryAndPost(false);
+    }
 
     Alert.alert(
       "Artifact Curated",
@@ -952,6 +1104,12 @@ export default function AccountScreen() {
             <View style={styles.canvasHeaderRightIcons}>
               <TouchableOpacity 
                 style={{ marginRight: 16 }} 
+                onPress={handleOpenWishlist}
+              >
+                <Lucide name="heart-outline" size={26} color="#ffffff" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={{ marginRight: 16 }} 
                 onPress={() => { 
                   triggerHaptic("light"); 
                   Alert.alert(
@@ -1053,17 +1211,31 @@ export default function AccountScreen() {
                 {/* Stats Columns */}
                 <View style={styles.statsRow}>
                   <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{postsCount}</Text>
+                    <Text style={styles.statNumber}>{formatCompactNumber(postsCount)}</Text>
                     <Text style={styles.statLabel}>posts</Text>
                   </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{followersCount}</Text>
+                  <TouchableOpacity 
+                    style={styles.statItem} 
+                    onPress={() => {
+                      triggerHaptic("light");
+                      setNetworkTab("followers");
+                      setShowNetworkModal(true);
+                    }}
+                  >
+                    <Text style={styles.statNumber}>{formatCompactNumber(followersCount)}</Text>
                     <Text style={styles.statLabel}>followers</Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>{followingCount}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.statItem} 
+                    onPress={() => {
+                      triggerHaptic("light");
+                      setNetworkTab("following");
+                      setShowNetworkModal(true);
+                    }}
+                  >
+                    <Text style={styles.statNumber}>{formatCompactNumber(followingCount)}</Text>
                     <Text style={styles.statLabel}>following</Text>
-                  </View>
+                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -1358,6 +1530,81 @@ export default function AccountScreen() {
 
       </SafeAreaView>
 
+      {/* 👥 FOLLOWERS / FOLLOWING NETWORK LIST MODAL */}
+      <Modal
+        visible={showNetworkModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowNetworkModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.networkModalContainer}>
+            <View style={styles.modalHeaderBar}>
+              <View style={styles.modalIndicator} />
+            </View>
+            
+            {/* Tab selector */}
+            <View style={styles.networkTabContainer}>
+              <TouchableOpacity 
+                style={[styles.networkTabItem, networkTab === "followers" && styles.networkTabItemActive]} 
+                onPress={() => { triggerHaptic("light"); setNetworkTab("followers"); }}
+              >
+                <Text style={[styles.networkTabText, networkTab === "followers" && styles.networkTabTextActive]}>
+                  {formatCompactNumber(followersCount)} Followers
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.networkTabItem, networkTab === "following" && styles.networkTabItemActive]} 
+                onPress={() => { triggerHaptic("light"); setNetworkTab("following"); }}
+              >
+                <Text style={[styles.networkTabText, networkTab === "following" && styles.networkTabTextActive]}>
+                  {formatCompactNumber(followingCount)} Following
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={networkUsers.filter(u => networkTab === "followers" ? u.isFollower : !u.isFollower)}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 40 }}
+              renderItem={({ item }) => (
+                <View style={styles.networkUserRow}>
+                  <View style={styles.networkUserLeft}>
+                    <Image source={{ uri: item.avatar }} style={styles.networkUserAvatar} />
+                    <View>
+                      <Text style={styles.networkUserName}>{item.name}</Text>
+                      <Text style={styles.networkUserHandle}>@{item.username}</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.networkFollowBtn,
+                      item.followed ? styles.networkFollowBtnOutline : styles.networkFollowBtnPrimary
+                    ]}
+                    onPress={() => {
+                      triggerHaptic("medium");
+                      setNetworkUsers(prev => prev.map(u => u.id === item.id ? { ...u, followed: !u.followed } : u));
+                    }}
+                  >
+                    <Text style={[styles.networkFollowBtnText, item.followed && { color: "#fff" }]}>
+                      {item.followed ? "Following" : "Follow"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+            
+            <TouchableOpacity 
+              style={styles.modalCloseButton} 
+              onPress={() => { triggerHaptic("light"); setShowNetworkModal(false); }}
+            >
+              <Text style={styles.modalCloseButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* 🔴 FULLY FUNCTIONAL PROFILE EDITING MODAL */}
       <Modal
         visible={showEditModal}
@@ -1509,9 +1756,9 @@ export default function AccountScreen() {
             <Text style={styles.switcherTitle}>Switch Identity Profile</Text>
             
             <ScrollView style={styles.switcherList} showsVerticalScrollIndicator={false}>
-              {availableMaisons.map((m) => {
-                const isActive = m.id === activeMaisonId;
-                const initials = m.name ? m.name.substring(0, 2).toUpperCase() : m.id.substring(0, 2).toUpperCase();
+              {userProfiles.map((m) => {
+                const isActive = m.id === activeProfile?.id;
+                const initials = m.name ? m.name.substring(0, 2).toUpperCase() : (m.username || "").substring(0, 2).toUpperCase();
                 
                 return (
                   <TouchableOpacity 
@@ -1523,9 +1770,9 @@ export default function AccountScreen() {
                       <Text style={styles.switcherAvatarText}>{initials}</Text>
                     </View>
                     <View style={styles.switcherInfo}>
-                      <Text style={styles.switcherMaisonId}>@{m.id}</Text>
+                      <Text style={styles.switcherMaisonId}>@{m.username}</Text>
                       <Text style={styles.switcherMaisonName}>
-                        {m.name || "AURA Profile"} • <Text style={{ color: "#00f5ff", fontSize: 10.5 }}>{m.designType || "Personal"}</Text>
+                        {m.name || "AURA Profile"} • <Text style={{ color: "#00f5ff", fontSize: 10.5 }}>{m.category || "Personal"}</Text>
                       </Text>
                     </View>
                     {isActive && (
@@ -1902,40 +2149,42 @@ export default function AccountScreen() {
               <Text style={styles.accountsCenterSectionTitle}>Profiles Mesh</Text>
               <View style={styles.accountsCenterCard}>
                 {/* Personal Profile */}
-                <TouchableOpacity 
-                  style={styles.accountsCenterProfileRow}
-                  onPress={() => {
-                    triggerHaptic("medium");
-                    setActiveMaisonId("aloksingh");
-                    setShowAccountsCenter(false);
-                  }}
-                >
-                  <View style={[styles.profileTabCircle, { borderWidth: activeMaisonId === "aloksingh" ? 1.5 : 0, borderColor: "#00f5ff", width: 40, height: 40, borderRadius: 20, overflow: "hidden", marginRight: 12, padding: 0 }]}>
-                    <Image 
-                      source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150" }} 
-                      style={{ width: "100%", height: "100%" }} 
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: "#ffffff", fontSize: 14, fontWeight: "bold" }}>Alok Singh</Text>
-                    <Text style={{ color: "#8e8e8e", fontSize: 11 }}>Personal Creator Profile (@aloksingh)</Text>
-                  </View>
-                  {activeMaisonId === "aloksingh" && (
-                    <Lucide name="checkmark-circle" size={20} color="#00f5ff" />
-                  )}
-                </TouchableOpacity>
+                {personalProfile && (
+                  <TouchableOpacity 
+                    style={styles.accountsCenterProfileRow}
+                    onPress={() => {
+                      triggerHaptic("medium");
+                      handleSwitchMaison(personalProfile.id);
+                      setShowAccountsCenter(false);
+                    }}
+                  >
+                    <View style={[styles.profileTabCircle, { borderWidth: (activeProfile?.id === personalProfile.id) ? 1.5 : 0, borderColor: "#00f5ff", width: 40, height: 40, borderRadius: 20, overflow: "hidden", marginRight: 12, padding: 0 }]}>
+                      <Image 
+                        source={{ uri: personalProfile.logo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150" }} 
+                        style={{ width: "100%", height: "100%" }} 
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: "#ffffff", fontSize: 14, fontWeight: "bold" }}>{personalProfile.name || currentUser?.name || "Curator"}</Text>
+                      <Text style={{ color: "#8e8e8e", fontSize: 11 }}>Personal Creator Profile (@{personalProfile.username})</Text>
+                    </View>
+                    {activeProfile?.id === personalProfile.id && (
+                      <Lucide name="checkmark-circle" size={20} color="#00f5ff" />
+                    )}
+                  </TouchableOpacity>
+                )}
 
                 {/* Available Brand profiles */}
-                {availableMaisons.filter(m => m.id !== "aloksingh").map((m, idx) => {
-                  const isActive = m.id === activeMaisonId;
+                {brandProfiles.map((m, idx) => {
+                  const isActive = m.id === activeProfile?.id;
                   const initials = m.name[0]?.toUpperCase() || "R";
                   return (
                     <TouchableOpacity 
-                      key={idx}
+                      key={m.id || idx}
                       style={[styles.accountsCenterProfileRow, { borderTopWidth: 1, borderColor: "rgba(255,255,255,0.06)", paddingTop: 12, marginTop: 12 }]}
                       onPress={() => {
                         triggerHaptic("medium");
-                        setActiveMaisonId(m.id);
+                        handleSwitchMaison(m.id);
                         setShowAccountsCenter(false);
                       }}
                     >
@@ -1944,7 +2193,7 @@ export default function AccountScreen() {
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={{ color: "#ffffff", fontSize: 14, fontWeight: "bold" }}>{m.name}</Text>
-                        <Text style={{ color: "#8e8e8e", fontSize: 11 }}>Sovereign Brand Maison (@{m.id})</Text>
+                        <Text style={{ color: "#8e8e8e", fontSize: 11 }}>Sovereign Brand Maison (@{m.username})</Text>
                       </View>
                       {isActive && (
                         <Lucide name="checkmark-circle" size={20} color="#00f5ff" />
@@ -2018,7 +2267,7 @@ export default function AccountScreen() {
                     <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>Fediverse Sharing (ActivityPub)</Text>
                     <Text style={{ color: "#8e8e8e", fontSize: 10, marginTop: 2 }}>Federate and auto-broadcast your e-commerce artifacts to Mastodon & open platforms.</Text>
                   </View>
-                  <TouchableOpacity onPress={() => { triggerHaptic("light"); setFediverseSharing(!fediverseSharing); }}>
+                  <TouchableOpacity onPress={handleToggleFediverse}>
                     <Lucide name={fediverseSharing ? "toggle" : "toggle-outline"} size={36} color={fediverseSharing ? "#00f5ff" : "#8e8e8e"} />
                   </TouchableOpacity>
                 </View>
@@ -2031,7 +2280,7 @@ export default function AccountScreen() {
                     <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>Web Autoshare Crossovers</Text>
                     <Text style={{ color: "#8e8e8e", fontSize: 10, marginTop: 2 }}>Automatically mirror visual stories published in-app directly to the Next.js storefront.</Text>
                   </View>
-                  <TouchableOpacity onPress={() => { triggerHaptic("light"); setAlertsEnabled(!alertsEnabled); }}>
+                  <TouchableOpacity onPress={handleToggleAlerts}>
                     <Lucide name={alertsEnabled ? "toggle" : "toggle-outline"} size={36} color={alertsEnabled ? "#00f5ff" : "#8e8e8e"} />
                   </TouchableOpacity>
                 </View>
@@ -2048,7 +2297,7 @@ export default function AccountScreen() {
                     <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>Biometric Identification</Text>
                     <Text style={{ color: "#8e8e8e", fontSize: 10, marginTop: 2 }}>Use FaceID or TouchID for executing high-value ledger acquisitions.</Text>
                   </View>
-                  <TouchableOpacity onPress={() => { triggerHaptic("light"); setBiometricEnabled(!biometricEnabled); }}>
+                  <TouchableOpacity onPress={handleToggleBiometric}>
                     <Lucide name={biometricEnabled ? "toggle" : "toggle-outline"} size={36} color={biometricEnabled ? "#00f5ff" : "#8e8e8e"} />
                   </TouchableOpacity>
                 </View>
@@ -2061,8 +2310,21 @@ export default function AccountScreen() {
                     <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>Sovereign 2FA</Text>
                     <Text style={{ color: "#8e8e8e", fontSize: 10, marginTop: 2 }}>Direct hardware tokens required to commit critical parameter adjustments.</Text>
                   </View>
-                  <TouchableOpacity onPress={() => { triggerHaptic("light"); setTwoFactorEnabled(!twoFactorEnabled); }}>
+                  <TouchableOpacity onPress={handleToggleTwoFactor}>
                     <Lucide name={twoFactorEnabled ? "toggle" : "toggle-outline"} size={36} color={twoFactorEnabled ? "#00f5ff" : "#8e8e8e"} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.accountsCenterProfileRow, { borderTopWidth: 1, borderColor: "rgba(255,255,255,0.06)", paddingTop: 12, marginTop: 12 }]}>
+                  <View style={styles.accountsCenterIconWrapper}>
+                    <Lucide name="shield-checkmark-outline" size={20} color="#00f5ff" />
+                  </View>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>Geographic Node Lock</Text>
+                    <Text style={{ color: "#8e8e8e", fontSize: 10, marginTop: 2 }}>Restrict profile operations to your current geographic coordinates.</Text>
+                  </View>
+                  <TouchableOpacity onPress={handleToggleRegionLock}>
+                    <Lucide name={regionLockEnabled ? "toggle" : "toggle-outline"} size={36} color={regionLockEnabled ? "#00f5ff" : "#8e8e8e"} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -2555,6 +2817,106 @@ export default function AccountScreen() {
             </View>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* 💖 WISHLIST MODAL OVERLAY */}
+      <Modal
+        visible={showWishlistModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowWishlistModal(false)}
+      >
+        <View style={styles.wishlistOverlay}>
+          <View style={styles.wishlistContainer}>
+            <View style={styles.wishlistHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Lucide name="heart" size={22} color="#00f5ff" />
+                <Text style={styles.wishlistTitle}>SAVED ARTIFACTS</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowWishlistModal(false)}>
+                <Lucide name="close" size={24} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
+            </View>
+
+            {wishlist && wishlist.length > 0 ? (
+              <FlatList
+                data={wishlist}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.wishlistListContent}
+                renderItem={({ item }) => {
+                  const imageUrl = item.images?.[0] || "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600";
+                  return (
+                    <View style={styles.wishlistItemCard}>
+                      <TouchableOpacity 
+                        style={styles.wishlistItemMain} 
+                        onPress={() => {
+                          setShowWishlistModal(false);
+                          router.push(`/product/${item.id}`);
+                        }}
+                      >
+                        <Image source={{ uri: imageUrl }} style={styles.wishlistItemImg} />
+                        <View style={styles.wishlistItemInfo}>
+                          <Text style={styles.wishlistItemMaison} numberOfLines={1}>
+                            {item.maison?.name || "AURAGRAM Maison"}
+                          </Text>
+                          <Text style={styles.wishlistItemTitle} numberOfLines={1}>
+                            {item.title}
+                          </Text>
+                          <Text style={styles.wishlistItemVibe}>
+                            ✦ {item.vibe || "Quiet Luxury"}
+                          </Text>
+                          <Text style={styles.wishlistItemPrice}>
+                            ₹{item.price?.toLocaleString()}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      <View style={styles.wishlistItemActions}>
+                        <TouchableOpacity
+                          style={styles.wishlistAddToCartBtn}
+                          onPress={() => {
+                            addToCart(item);
+                            const uid = currentUser?.id || activeProfile?.userId;
+                            if (uid) {
+                              toggleWishlist(uid, item.id);
+                            }
+                            triggerHaptic("success");
+                            Alert.alert("Artifact Moved", "Added to your checkout casket.");
+                          }}
+                        >
+                          <Lucide name="basket-outline" size={16} color="#000000" />
+                          <Text style={styles.wishlistAddToCartText}>Move to Cart</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.wishlistRemoveBtn}
+                          onPress={() => {
+                            const uid = currentUser?.id || activeProfile?.userId;
+                            if (uid) {
+                              toggleWishlist(uid, item.id);
+                            }
+                            triggerHaptic("light");
+                          }}
+                        >
+                          <Lucide name="trash-outline" size={18} color="rgba(255,255,255,0.4)" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                }}
+              />
+            ) : (
+              <View style={styles.wishlistEmpty}>
+                <Lucide name="heart-dislike-outline" size={48} color="rgba(255,255,255,0.1)" />
+                <Text style={styles.wishlistEmptyTitle}>No saved designs</Text>
+                <Text style={styles.wishlistEmptyDesc}>
+                  Discover premium items from the atelier shop and save them here.
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
       </Modal>
 
     </View>
@@ -3576,5 +3938,247 @@ const styles = StyleSheet.create({
     color: "#080415",
     fontSize: 14,
     fontWeight: "bold",
+  },
+
+  // Modal overlays
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  
+  // Followers/Following Modal list styles
+  networkModalContainer: {
+    height: "65%",
+    backgroundColor: "#0d0920",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    borderBottomWidth: 0,
+  },
+  modalHeaderBar: {
+    width: "100%",
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalIndicator: {
+    width: 36,
+    height: 4.5,
+    borderRadius: 2.5,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  networkTabContainer: {
+    flexDirection: "row",
+    borderBottomWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.06)",
+    height: 44,
+  },
+  networkTabItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  networkTabItemActive: {
+    borderBottomColor: "#00f5ff",
+  },
+  networkTabText: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 13.5,
+    fontWeight: "600",
+  },
+  networkTabTextActive: {
+    color: "#00f5ff",
+    fontWeight: "bold",
+  },
+  networkUserRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.04)",
+  },
+  networkUserLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  networkUserAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  networkUserName: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+  networkUserHandle: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 11.5,
+    marginTop: 1,
+  },
+  networkFollowBtn: {
+    paddingHorizontal: 16,
+    height: 28,
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  networkFollowBtnPrimary: {
+    backgroundColor: "#00f5ff",
+  },
+  networkFollowBtnOutline: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  networkFollowBtnText: {
+    color: "#080415",
+    fontSize: 11.5,
+    fontWeight: "bold",
+  },
+  modalCloseButton: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    height: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    borderTopWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  modalCloseButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  wishlistOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(8, 4, 21, 0.95)",
+    justifyContent: "flex-end",
+  },
+  wishlistContainer: {
+    height: "80%",
+    backgroundColor: "#0b071e",
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    paddingTop: 24,
+    paddingHorizontal: 20,
+  },
+  wishlistHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.05)",
+    paddingBottom: 16,
+  },
+  wishlistTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 2,
+  },
+  wishlistListContent: {
+    paddingBottom: 40,
+    gap: 16,
+  },
+  wishlistItemCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.04)",
+    padding: 12,
+    gap: 12,
+  },
+  wishlistItemMain: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  wishlistItemImg: {
+    width: 80,
+    height: 80,
+    borderRadius: 16,
+    resizeMode: "cover",
+  },
+  wishlistItemInfo: {
+    flex: 1,
+    marginLeft: 16,
+    gap: 2,
+  },
+  wishlistItemMaison: {
+    color: "rgba(255, 255, 255, 0.4)",
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  wishlistItemTitle: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  wishlistItemVibe: {
+    color: "#00f5ff",
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  wishlistItemPrice: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  wishlistItemActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.04)",
+    paddingTop: 10,
+  },
+  wishlistAddToCartBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#00f5ff",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 6,
+  },
+  wishlistAddToCartText: {
+    color: "#000000",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  wishlistRemoveBtn: {
+    padding: 8,
+  },
+  wishlistEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: 60,
+    gap: 12,
+  },
+  wishlistEmptyTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  wishlistEmptyDesc: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 13,
+    textAlign: "center",
+    paddingHorizontal: 32,
+    lineHeight: 18,
   },
 });

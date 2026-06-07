@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
+import { formatCompactNumber } from "@/constants/format";
 
 const { width } = Dimensions.get("window");
 
@@ -25,19 +26,20 @@ export default function LoyaltyVaultScreen() {
     loadingLoyalty,
     fetchLoyaltyInfo,
     redeemPoints,
-    triggerHaptic
+    triggerHaptic,
+    currentUser
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<"earn" | "redeem" | "history">("earn");
   const [selectedBenefit, setSelectedBenefit] = useState<any>(null);
   const [redeeming, setRedeeming] = useState(false);
 
-  // Default User ID
-  const userId = "user_2pk5xskr";
+  // Dynamic User ID linked to session
+  const userId = currentUser?.id || "user_2pk5xskr";
 
   useEffect(() => {
     fetchLoyaltyInfo(userId);
-  }, []);
+  }, [userId]);
 
   const handleRedeem = async (benefit: any) => {
     if (loyaltyPoints < benefit.cost) {
@@ -196,7 +198,7 @@ export default function LoyaltyVaultScreen() {
             </View>
 
             <Text style={styles.pointsLabel}>Curation Balance</Text>
-            <Text style={styles.pointsValue}>{loyaltyPoints.toLocaleString()} <Text style={styles.pointsSuffix}>Credits</Text></Text>
+            <Text style={styles.pointsValue}>{formatCompactNumber(loyaltyPoints)} <Text style={styles.pointsSuffix}>Credits</Text></Text>
 
             {loyaltyElite && loyaltyEliteUntil ? (
               <Text style={styles.tierExpiry}>

@@ -10,6 +10,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
 import { router } from "expo-router";
+import { formatCompactNumber } from "@/constants/format";
 
 const { height, width } = Dimensions.get("window");
 
@@ -145,7 +146,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           <TouchableOpacity onPress={() => handleMaisonProfilePress(item)} activeOpacity={0.85}>
             <View style={styles.avatar}>
               <Text style={styles.avatarChar}>
-                {item.user?.name?.[0]?.toUpperCase() || "S"}
+                {(item.profile?.name || item.user?.name || "A")[0]?.toUpperCase()}
               </Text>
             </View>
           </TouchableOpacity>
@@ -157,7 +158,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                 activeOpacity={0.85}
               >
                 <Text style={styles.creatorName} numberOfLines={1}>
-                  {item.user?.name?.toLowerCase().replace(/\s+/g, "") || "veen.verma"}
+                  {(item.profile?.name || item.user?.name || "aura_curator").toLowerCase().replace(/\s+/g, "")}
                 </Text>
                 <Text style={styles.saptashiText}>and saptashi...</Text>
               </TouchableOpacity>
@@ -181,14 +182,18 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           <View style={styles.iconCircle}>
             <Lucide name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#ff3b30" : "#fff"} />
           </View>
-          <Text style={styles.iconLabel}>{item.likesCount ? (isLiked ? item.likesCount + 1 : item.likesCount) : 412}</Text>
+          <Text style={styles.iconLabel}>
+            {formatCompactNumber(item.likesCount ? (isLiked ? item.likesCount + 1 : item.likesCount) : 412)}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.iconButton} onPress={() => handleCommentsPress(item)}>
           <View style={styles.iconCircle}>
             <Lucide name="chatbubble-outline" size={24} color="#fff" />
           </View>
-          <Text style={styles.iconLabel}>{item.comments?.length || 18}</Text>
+          <Text style={styles.iconLabel}>
+            {formatCompactNumber(item.comments?.length || 18)}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.iconButton} onPress={() => handleShare(item)}>

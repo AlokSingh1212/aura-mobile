@@ -18,7 +18,6 @@ export default function MainHeader() {
   const isHome = pathname === "/";
   const isExplore = pathname === "/explore";
   const isCart = pathname === "/cart";
-  const isVault = pathname === "/dashboard";
   const isAccount = pathname === "/account";
 
   return (
@@ -65,19 +64,6 @@ export default function MainHeader() {
               </View>
             )}
           </View>
-        </TouchableOpacity>
-
-        {/* Vault Dashboard Link */}
-        <TouchableOpacity 
-          style={[styles.actionBtn, isVault && styles.actionBtnActive]} 
-          onPress={() => handleNav("/dashboard")}
-          activeOpacity={0.7}
-        >
-          <Lucide 
-            name="cube" 
-            size={21} 
-            color={isVault ? "#00f5ff" : "rgba(255,255,255,0.6)"} 
-          />
         </TouchableOpacity>
 
         {/* Identity Account Link */}

@@ -164,6 +164,11 @@ interface StoreState {
   fetchViewProfile: (username: string, viewerProfileId?: string) => Promise<void>;
   clearViewProfile: () => void;
   followProfile: (followerProfileId: string, followingProfileId: string) => Promise<{ success: boolean; isFollowing?: boolean }>;
+
+  // Wishlist
+  wishlist: any[];
+  fetchWishlist: (userId: string) => Promise<void>;
+  toggleWishlist: (userId: string, artifactId: string) => Promise<{ success: boolean; wishlisted?: boolean }>;
 }
 
 const MOCK_PRODUCTS = [
@@ -219,6 +224,7 @@ export const useStore = create<StoreState>((set, get) => ({
   cart: [],
   warehouses: [],
   orders: [],
+  wishlist: [],
   
   // Advanced States
   adBids: [],
@@ -788,7 +794,18 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("success");
-        set({ userProfiles: data.profiles, activeProfile: data.activeProfile });
+        const newMaisonId = data.activeProfile.maisonId || data.activeProfile.username;
+        set(state => ({
+          userProfiles: data.profiles,
+          activeProfile: data.activeProfile,
+          activeMaisonId: newMaisonId || state.activeMaisonId,
+          currentUser: state.currentUser ? {
+            ...state.currentUser,
+            activeProfileId: data.activeProfile.id,
+            maisonId: data.activeProfile.type === "BUSINESS" ? newMaisonId : state.currentUser.maisonId,
+            isBusinessAccount: data.activeProfile.type === "BUSINESS"
+          } : null
+        }));
         // Force refresh feed & catalog matching the new profile's vertical
         get().fetchProducts();
         get().fetchFeed();
@@ -996,6 +1013,37 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch (e) {
       console.warn("applyCoupon failed.", e);
       return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
+  fetchWishlist: async (userId) => {
+    try {
+      const res = await fetch(`${API_BASE}/wishlist?userId=${userId}`);
+      const data = await res.json();
+      if (data.success && data.wishlist) {
+        set({ wishlist: data.wishlist });
+      }
+    } catch (e) {
+      console.warn("fetchWishlist failed.", e);
+    }
+  },
+
+  toggleWishlist: async (userId, artifactId) => {
+    try {
+      get().triggerHaptic("medium");
+      const res = await fetch(`${API_BASE}/wishlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, artifactId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await get().fetchWishlist(userId);
+      }
+      return data;
+    } catch (e) {
+      console.warn("toggleWishlist failed.", e);
+      return { success: false, error: String(e) };
     }
   }
 }));

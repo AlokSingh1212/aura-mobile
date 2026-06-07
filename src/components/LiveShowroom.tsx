@@ -17,27 +17,19 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
 import { API_HOST } from "@/constants/api";
+import { formatCompactNumber } from "@/constants/format";
 
 const { width, height } = Dimensions.get("window");
 
 // Try loading Agora safely to prevent application crashes on emulator or unlinked binaries
-let createRtcEngine: any = null;
-let ChannelProfileType: any = null;
-let ClientRoleType: any = null;
-let RtcSurfaceView: any = null;
-let RtcConnection: any = null;
+import {
+  createRtcEngine,
+  ChannelProfileType,
+  ClientRoleType,
+  RtcSurfaceView,
+  RtcConnection,
+} from "./agora";
 
-try {
-  const Agora = require("react-native-agora");
-  createRtcEngine = Agora.createRtcEngine;
-  ChannelProfileType = Agora.ChannelProfileType;
-  ClientRoleType = Agora.ClientRoleType;
-  RtcSurfaceView = Agora.RtcSurfaceView;
-  RtcConnection = Agora.RtcConnection;
-} catch (e) {
-  // Agora native library not fully linked or running in unsupported emulator context
-  console.warn("[LiveShowroom] Agora native SDK not linked. Activating high-fidelity WebRTC sandbox simulation.");
-}
 
 interface FloatingHeart {
   id: string;
@@ -559,7 +551,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
                 </View>
                 <View style={styles.viewerBadge}>
                   <Lucide name="people" size={14} color="#fff" />
-                  <Text style={styles.viewerBadgeText}>{liveViewerCount}</Text>
+                  <Text style={styles.viewerBadgeText}>{formatCompactNumber(liveViewerCount)}</Text>
                 </View>
               </View>
 

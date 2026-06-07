@@ -8,16 +8,44 @@ import {
   TouchableOpacity, 
   Dimensions,
   TextInput,
-  Modal
+  Modal,
+  ScrollView
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "@/store/useStore";
+import { API_HOST } from "@/constants/api";
 import MainHeader from "@/components/MainHeader";
 import Lucide from "@expo/vector-icons/Ionicons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { CheckoutSuccess } from "@/components/CheckoutSuccess";
 
 const { width } = Dimensions.get("window");
+
+const LUXURY_COUNTRIES = [
+  { name: "India", code: "+91", flag: "🇮🇳" },
+  { name: "United States", code: "+1", flag: "🇺🇸" },
+  { name: "United Kingdom", code: "+44", flag: "🇬🇧" },
+  { name: "United Arab Emirates", code: "+971", flag: "🇦🇪" },
+  { name: "France", code: "+33", flag: "🇫🇷" },
+  { name: "Italy", code: "+39", flag: "🇮🇹" },
+  { name: "Japan", code: "+81", flag: "🇯🇵" },
+  { name: "Singapore", code: "+65", flag: "🇸🇬" }
+];
+
+const formatAddressString = (addr: any) => {
+  if (typeof addr === "string") return addr;
+  if (!addr) return "N/A";
+  const namePart = addr.name ? `${addr.name} ` : "";
+  const emailPart = addr.email ? `(${addr.email})\n` : "\n";
+  const contactPart = (addr.countryCode && addr.phone) ? `${addr.countryCode} ${addr.phone}` : (addr.phone || "");
+  const contactLine = contactPart ? `${contactPart}\n` : "";
+  const streetPart = addr.address || "";
+  const cityStateZip = [addr.city, addr.state, addr.postalCode].filter(Boolean).join(", ");
+  const countryPart = addr.country ? `\n${addr.country}` : "";
+  return `${namePart}${emailPart}${contactLine}${streetPart}\n${cityStateZip}${countryPart}`;
+};
+
 
 let RazorpayCheckout: any = null;
 try {
@@ -42,9 +70,20 @@ export default function CartScreen() {
   const insets = useSafeAreaInsets();
 
   // Checkout States
-  const [shippingAddress, setShippingAddress] = useState("Penthouse Suite 8, Aurelia Towers, Mumbai - 400001");
+  const [shippingAddress, setShippingAddress] = useState<any>({
+    name: "Alok Singh",
+    email: "alok@auragram.vip",
+    phone: "9999999999",
+    countryCode: "+91",
+    address: "Penthouse Suite 8, Aurelia Towers",
+    city: "Mumbai",
+    state: "Maharashtra",
+    postalCode: "400001",
+    country: "India"
+  });
   const [isEditingAddress, setIsEditingAddress] = useState(false);
-  const [tempAddress, setTempAddress] = useState(shippingAddress);
+  const [tempAddress, setTempAddress] = useState<any>({ ...shippingAddress });
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<any | null>(null);
   const [couponError, setCouponError] = useState("");
@@ -56,8 +95,36 @@ export default function CartScreen() {
   const [successDetails, setSuccessDetails] = useState({
     orderNumber: "ORD-2026-0001",
     amount: 0,
-    itemCount: 0
+    itemCount: 0,
+    orderId: ""
   });
+
+  const params = useLocalSearchParams<{ payment?: string; orderId?: string; amount?: string; orderNumber?: string; error?: string }>();
+  
+  React.useEffect(() => {
+    if (params.payment === "success") {
+      try {
+        clearCart();
+      } catch (e) {}
+      setSuccessDetails({
+        orderNumber: params.orderNumber || "ORD-2026",
+        amount: Number(params.amount) || 0,
+        itemCount: 1,
+        orderId: params.orderId || ""
+      });
+      setSuccessVisible(true);
+      triggerHaptic("success");
+      
+      // Clean up search params
+      router.setParams({ payment: undefined, orderId: undefined, amount: undefined, orderNumber: undefined });
+    } else if (params.payment === "failed") {
+      alert("Payment Failed: " + (params.error || "Verification failed."));
+      router.setParams({ payment: undefined, error: undefined });
+    } else if (params.payment === "cancelled") {
+      alert("Payment Aborted: Checkout cancelled.");
+      router.setParams({ payment: undefined });
+    }
+  }, [params.payment]);
 
   const handleRemove = (id: string) => {
     triggerHaptic("medium");
@@ -88,6 +155,10 @@ export default function CartScreen() {
   };
 
   const handleSaveAddress = () => {
+    if (!tempAddress.name || !tempAddress.phone || !tempAddress.address || !tempAddress.city || !tempAddress.state || !tempAddress.postalCode) {
+      alert("Please populate all destination parameters.");
+      return;
+    }
     setShippingAddress(tempAddress);
     setIsEditingAddress(false);
     triggerHaptic("light");
@@ -128,7 +199,7 @@ export default function CartScreen() {
       }));
 
       const res = await initiateCheckout({
-        userId: currentUser?.id || activeProfile?.profileId || "patron_guest_sim",
+        userId: currentUser?.id || activeProfile?.userId || "patron_guest_sim",
         cartItems: payloadCartItems,
         shippingAddress: shippingAddress,
         couponCode: appliedCoupon?.code
@@ -156,9 +227,9 @@ export default function CartScreen() {
           name: 'AURAGRAM',
           order_id: res.razorpayOrderId,
           prefill: {
-            email: currentUser?.email || 'luxury@auragram.vip',
-            contact: currentUser?.phone || '9999999999',
-            name: currentUser?.name || activeProfile?.name || 'Elite Patron'
+            email: shippingAddress?.email || currentUser?.email || 'luxury@auragram.vip',
+            contact: shippingAddress?.phone ? `${shippingAddress.countryCode || ''}${shippingAddress.phone}` : (currentUser?.phone || '9999999999'),
+            name: shippingAddress?.name || currentUser?.name || activeProfile?.name || 'Elite Patron'
           },
           theme: {
             color: '#080415'
@@ -177,7 +248,8 @@ export default function CartScreen() {
             setSuccessDetails({
               orderNumber: verifyRes.orderNumber || "ORD-NATIVE-2026",
               amount: verifyRes.amount || calculateTotal(),
-              itemCount: cart.length
+              itemCount: cart.length,
+              orderId: verifyRes.orderId || res.orderId || ""
             });
             clearCart();
             setSuccessVisible(true);
@@ -219,7 +291,8 @@ export default function CartScreen() {
         setSuccessDetails({
           orderNumber: verifyRes.orderNumber || "ORD-SIM-2026",
           amount: verifyRes.amount || calculateTotal(),
-          itemCount: cart.length
+          itemCount: cart.length,
+          orderId: verifyRes.orderId || activeRazorpayOrder.orderId || ""
         });
         clearCart();
         setSuccessVisible(true);
@@ -231,6 +304,24 @@ export default function CartScreen() {
       alert("Verification connection failed.");
     } finally {
       setIsCheckingOut(false);
+    }
+  };
+
+  const handleOpenWebCheckout = async () => {
+    if (!activeRazorpayOrder?.orderId) {
+      alert("Missing order identifier. Please re-initiate checkout.");
+      return;
+    }
+    triggerHaptic("heavy");
+    setPaymentSimVisible(false);
+    
+    // Construct the web payment checkout URL:
+    const paymentUrl = `${API_HOST}/checkout/pay-mobile?orderId=${activeRazorpayOrder.orderId}&returnPath=cart`;
+    
+    try {
+      await WebBrowser.openBrowserAsync(paymentUrl);
+    } catch (err) {
+      alert("Could not launch secure web browser.");
     }
   };
 
@@ -277,18 +368,114 @@ export default function CartScreen() {
                   <View style={styles.sectionHeader}>
                     <Text style={styles.sectionTitle}>Delivery Node Address</Text>
                   </View>
-                  
                   {isEditingAddress ? (
                     <View style={styles.addressEditBox}>
-                      <TextInput
-                        style={styles.addressInput}
-                        value={tempAddress}
-                        onChangeText={setTempAddress}
-                        multiline
-                        numberOfLines={3}
-                        placeholder="Enter delivery node coordinates..."
-                        placeholderTextColor="rgba(255,255,255,0.2)"
-                      />
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Full Name</Text>
+                        <TextInput
+                          style={styles.formInput}
+                          value={tempAddress.name}
+                          onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, name: val }))}
+                          placeholder="Enter your full name"
+                          placeholderTextColor="rgba(255,255,255,0.2)"
+                        />
+                      </View>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Email Address</Text>
+                        <TextInput
+                          style={styles.formInput}
+                          value={tempAddress.email}
+                          onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, email: val }))}
+                          placeholder="luxury@auragram.vip"
+                          placeholderTextColor="rgba(255,255,255,0.2)"
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                        />
+                      </View>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Country / Region</Text>
+                        <TouchableOpacity 
+                          style={styles.countryPickerTrigger}
+                          onPress={() => { setShowCountryPicker(true); triggerHaptic("light"); }}
+                        >
+                          <Text style={styles.countryPickerTriggerText}>
+                            {tempAddress.country ? `${tempAddress.country}` : "Select Country"}
+                          </Text>
+                          <Lucide name="chevron-down" size={16} color="#00f5ff" />
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Mobile Number</Text>
+                        <View style={styles.phoneInputRow}>
+                          <TouchableOpacity 
+                            style={styles.phoneCodeBtn}
+                            onPress={() => { setShowCountryPicker(true); triggerHaptic("light"); }}
+                          >
+                            <Text style={styles.phoneCodeText}>{tempAddress.countryCode || "+91"}</Text>
+                            <Lucide name="chevron-down" size={10} color="rgba(255,255,255,0.4)" />
+                          </TouchableOpacity>
+                          <TextInput
+                            style={styles.phoneNoInput}
+                            value={tempAddress.phone}
+                            onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, phone: val.replace(/[^0-9]/g, "") }))}
+                            placeholder="9999999999"
+                            placeholderTextColor="rgba(255,255,255,0.2)"
+                            keyboardType="phone-pad"
+                          />
+                        </View>
+                      </View>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Street Address</Text>
+                        <TextInput
+                          style={[styles.formInput, { minHeight: 60, textAlignVertical: "top" }]}
+                          value={tempAddress.address}
+                          onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, address: val }))}
+                          placeholder="Penthouse Suite 8, Aurelia Towers"
+                          placeholderTextColor="rgba(255,255,255,0.2)"
+                          multiline
+                          numberOfLines={2}
+                        />
+                      </View>
+
+                      <View style={styles.formRow}>
+                        <View style={[styles.inputGroup, { flex: 1 }]}>
+                          <Text style={styles.inputLabel}>City</Text>
+                          <TextInput
+                            style={styles.formInput}
+                            value={tempAddress.city}
+                            onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, city: val }))}
+                            placeholder="Mumbai"
+                            placeholderTextColor="rgba(255,255,255,0.2)"
+                          />
+                        </View>
+                        <View style={[styles.inputGroup, { flex: 1, marginLeft: 10 }]}>
+                          <Text style={styles.inputLabel}>State</Text>
+                          <TextInput
+                            style={styles.formInput}
+                            value={tempAddress.state}
+                            onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, state: val }))}
+                            placeholder="Maharashtra"
+                            placeholderTextColor="rgba(255,255,255,0.2)"
+                          />
+                        </View>
+                      </View>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Pincode / Postal Code</Text>
+                        <TextInput
+                          style={styles.formInput}
+                          value={tempAddress.postalCode}
+                          onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, postalCode: val }))}
+                          placeholder="400001"
+                          placeholderTextColor="rgba(255,255,255,0.2)"
+                          keyboardType="number-pad"
+                        />
+                      </View>
+
                       <TouchableOpacity style={styles.saveAddressBtn} onPress={handleSaveAddress} activeOpacity={0.8}>
                         <Text style={styles.saveAddressBtnText}>Lock Node</Text>
                       </TouchableOpacity>
@@ -297,13 +484,13 @@ export default function CartScreen() {
                     <View style={styles.addressBox}>
                       <Lucide name="location" size={20} color="#00f5ff" />
                       <View style={styles.addressInfo}>
-                        <Text style={styles.addressText} numberOfLines={2}>
-                          {shippingAddress}
+                        <Text style={styles.addressText}>
+                          {formatAddressString(shippingAddress)}
                         </Text>
                         <TouchableOpacity 
                           onPress={() => { 
                             setIsEditingAddress(true); 
-                            setTempAddress(shippingAddress); 
+                            setTempAddress({ ...shippingAddress }); 
                             triggerHaptic("light"); 
                           }}
                         >
@@ -430,7 +617,7 @@ export default function CartScreen() {
               />
             ) : (
               <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
-                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId[0]?.toUpperCase() || "A"}</Text>
+                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId?.[0]?.toUpperCase() || "A"}</Text>
               </View>
             )}
             <View style={styles.profileActiveIndicator} />
@@ -471,24 +658,34 @@ export default function CartScreen() {
 
             <View style={styles.simInstructions}>
               <Text style={styles.simInstructionText}>
-                You are using the sandbox payment node. To simulate a successful payment and trigger database ledgers, click the button below.
+                Choose whether to confirm via the real Razorpay standard gateway check on web, or bypass instantly using the sandbox simulation.
               </Text>
             </View>
 
             <TouchableOpacity
               style={[styles.simPayBtn, isCheckingOut && styles.simPayBtnDisabled]}
-              onPress={handleSimulateSuccess}
+              onPress={handleOpenWebCheckout}
               disabled={isCheckingOut}
               activeOpacity={0.8}
             >
               {isCheckingOut ? (
-                <Text style={styles.simPayBtnText}>Verifying Ledger...</Text>
+                <Text style={styles.simPayBtnText}>Connecting Gateway...</Text>
               ) : (
                 <>
-                  <Text style={styles.simPayBtnText}>Authorize Sandbox Payment</Text>
-                  <Lucide name="arrow-forward-sharp" size={18} color="#080415" />
+                  <Text style={styles.simPayBtnText}>Open Web Checkout (Real Gateway)</Text>
+                  <Lucide name="card-sharp" size={18} color="#080415" />
                 </>
               )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.simPayBtnSecondary, isCheckingOut && styles.simPayBtnDisabled]}
+              onPress={handleSimulateSuccess}
+              disabled={isCheckingOut}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.simPayBtnTextSecondary}>Sandbox Simulation Bypass</Text>
+              <Lucide name="arrow-forward-sharp" size={16} color="#00f5ff" />
             </TouchableOpacity>
           </View>
         </View>
@@ -500,12 +697,50 @@ export default function CartScreen() {
         onClose={() => setSuccessVisible(false)}
         onTrackOrder={() => {
           setSuccessVisible(false);
-          router.push("/account");
+          if (successDetails.orderId) {
+            router.push(`/account/track/${successDetails.orderId}`);
+          } else {
+            router.push("/account");
+          }
         }}
         orderNumber={successDetails.orderNumber}
         amount={successDetails.amount}
         itemCount={successDetails.itemCount}
       />
+      {/* Country Selector Overlay */}
+      {showCountryPicker && (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "#080415", padding: 24, zIndex: 999 }]}>
+          <SafeAreaView style={{ flex: 1 }}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Select Destination Node</Text>
+              <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
+                <Lucide name="close" size={24} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.pickerList} showsVerticalScrollIndicator={false}>
+              {LUXURY_COUNTRIES.map((c) => (
+                <TouchableOpacity
+                  key={c.name}
+                  style={styles.pickerItem}
+                  onPress={() => {
+                    setTempAddress((prev: any) => ({
+                      ...prev,
+                      country: c.name,
+                      countryCode: c.code
+                    }));
+                    setShowCountryPicker(false);
+                    triggerHaptic("light");
+                  }}
+                >
+                  <Text style={styles.pickerFlag}>{c.flag}</Text>
+                  <Text style={styles.pickerName}>{c.name}</Text>
+                  <Text style={styles.pickerCode}>{c.code}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </SafeAreaView>
+        </View>
+      )}
     </View>
   );
 }
@@ -952,6 +1187,136 @@ const styles = StyleSheet.create({
   },
   simPayBtnText: {
     color: "#080415",
+    fontSize: 13,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  inputGroup: {
+    marginBottom: 12,
+    gap: 4,
+  },
+  inputLabel: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 11,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  formInput: {
+    color: "#fff",
+    fontSize: 13.5,
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  countryPickerTrigger: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  countryPickerTriggerText: {
+    color: "#fff",
+    fontSize: 13.5,
+  },
+  phoneInputRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  phoneCodeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    width: 75,
+    gap: 4,
+  },
+  phoneCodeText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+  phoneNoInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 13.5,
+    backgroundColor: "rgba(255,255,255,0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  formRow: {
+    flexDirection: "row",
+  },
+  pickerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.05)",
+  },
+  pickerTitle: {
+    color: "#00f5ff",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  pickerList: {
+    flex: 1,
+  },
+  pickerItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.03)",
+    gap: 12,
+  },
+  pickerFlag: {
+    fontSize: 20,
+  },
+  pickerName: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 14,
+  },
+  pickerCode: {
+    color: "#00f5ff",
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+  simPayBtnSecondary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#00f5ff",
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 8,
+    marginTop: 10,
+  },
+  simPayBtnTextSecondary: {
+    color: "#00f5ff",
     fontSize: 13,
     fontWeight: "bold",
     textTransform: "uppercase",

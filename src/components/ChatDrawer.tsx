@@ -69,7 +69,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   onOpenStoryGroup,
   initialConversationId = null,
 }) => {
-  const { triggerHaptic } = useStore();
+  const { triggerHaptic, currentUser } = useStore();
+  const currentUserId = currentUser?.id || "user_2pk5xskr";
 
   // Chat states
   const [activeChat, setActiveChat] = useState<any>(null);
@@ -120,7 +121,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const fetchChats = async () => {
     setLoadingChats(true);
     try {
-      const res = await fetch(`${API_HOST}/api/mobile/chat?userId=user_2pk5xskr&maisonId=${activeMaisonId}`);
+      const res = await fetch(`${API_HOST}/api/mobile/chat?userId=${currentUserId}&maisonId=${activeMaisonId}&mode=${isSeller ? "seller" : "buyer"}`);
       const data = await res.json();
       if (data.success && data.conversations.length > 0) {
         const mapped = data.conversations.map((c: any, index: number) => {
@@ -139,7 +140,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         // Auto-seed a starter conversation if none exist yet
         try {
           await fetch(`${API_HOST}/api/mobile/seed-chat`, { method: "POST" });
-          const retryRes = await fetch(`${API_HOST}/api/mobile/chat?userId=user_2pk5xskr&maisonId=${activeMaisonId}`);
+          const retryRes = await fetch(`${API_HOST}/api/mobile/chat?userId=${currentUserId}&maisonId=${activeMaisonId}&mode=${isSeller ? "seller" : "buyer"}`);
           const retryData = await retryRes.json();
           if (retryData.success && retryData.conversations.length > 0) {
             setConversations(retryData.conversations.map((c: any) => ({ ...c, category: "Primary" })));
@@ -324,7 +325,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                       isAdmin: eventData.isAdmin || false
                     };
                     
-                    const mySenderId = isSeller ? activeMaisonId : "user_2pk5xskr";
+                    const mySenderId = isSeller ? activeMaisonId : currentUserId;
                     if (msg.senderId !== mySenderId) {
                       // Trigger haptic and play incoming message sound/dot
                       triggerHaptic("light");
@@ -390,12 +391,14 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     const textToSend = chatReplyText;
     setChatReplyText("");
 
-    const currentSenderName = isSeller ? (activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()))) : "Alok Singh";
+    const currentSenderName = isSeller 
+      ? (activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()))) 
+      : (currentUser?.name || "Alok Singh");
 
     const tempMessage = {
       id: `m_${Date.now()}`,
       content: textToSend,
-      senderId: isSeller ? activeMaisonId : "user_2pk5xskr",
+      senderId: isSeller ? activeMaisonId : currentUserId,
       senderName: currentSenderName,
       createdAt: new Date().toISOString(),
       isAdmin: isSeller
@@ -419,7 +422,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId: activeChat.id,
-          senderId: isSeller ? activeMaisonId : "user_2pk5xskr",
+          senderId: isSeller ? activeMaisonId : currentUserId,
           senderName: currentSenderName,
           content: textToSend,
           type: activeChat.type || "MAISON",
@@ -1055,7 +1058,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </Text>
               
               {(activeChat.messages || []).map((msg: any) => {
-                const isMine = msg.senderId === (isSeller ? activeMaisonId : "user_2pk5xskr");
+                const isMine = msg.senderId === (isSeller ? activeMaisonId : currentUserId);
                 return (
                   <View key={msg.id} style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}>
                     {!isMine && (

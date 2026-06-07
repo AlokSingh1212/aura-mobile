@@ -33,6 +33,7 @@ import * as ImagePicker from "expo-image-picker";
 import { CameraView } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
 import { API_HOST } from "@/constants/api";
+import { formatCompactNumber } from "@/constants/format";
 import { CameraStudio } from "@/components/CameraStudio";
 import { ChatDrawer } from "@/components/ChatDrawer";
 import { FeedCard } from "@/components/FeedCard";
@@ -237,7 +238,7 @@ interface FloatingHeart {
 
 export default function ReelsScreen() {
   const { products, stories, loadingFeed, fetchFeed, fetchProducts, triggerHaptic, activeMaisonId, currentUser, authOnboard, setCurrentUser, activeProfile, userProfiles, createNewProfile, switchActiveProfile, fetchProfiles, notifications, loadingNotifications, fetchNotifications, markNotificationsRead, hasMoreFeed } = useStore();
-  const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()));
+  const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : (activeMaisonId ? activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "AURA Client"));
   const params = useLocalSearchParams<{ openDMs?: string; openSearch?: string; activeTab?: string; openCamera?: string; conversationId?: string }>();
   const insets = useSafeAreaInsets();
   const [chatConversationId, setChatConversationId] = useState<string | null>(null);
@@ -605,7 +606,7 @@ export default function ReelsScreen() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          userId: isSeller ? activeMaisonId : "user_2pk5xskr",
+          userId: isSeller ? activeMaisonId : (currentUser?.id || activeProfile?.id || "user_2pk5xskr"),
           url: selectedMediaUri,
           thumbnail: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400",
           caption: newPostCaption || null,
@@ -919,7 +920,7 @@ export default function ReelsScreen() {
 
   const displayStories = [
     ...localReels,
-    ...(stories.length > 0 ? stories : simulatedStories)
+    ...(stories.length > 0 ? stories.filter((s: any) => s.music !== "STORY_ONLY") : simulatedStories)
   ];
 
   // Synchronized real-time soundtrack player for active feeds
@@ -1170,7 +1171,7 @@ export default function ReelsScreen() {
                               </View>
                               <View style={styles.showroomViewerBadge}>
                                 <Lucide name="people" size={12} color="#fff" />
-                                <Text style={styles.showroomViewerText}>{session.viewerCount}</Text>
+                                <Text style={styles.showroomViewerText}>{formatCompactNumber(session.viewerCount)}</Text>
                               </View>
                             </View>
                             <View style={styles.showroomFooter}>
@@ -1321,7 +1322,7 @@ export default function ReelsScreen() {
               />
             ) : (
               <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
-                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId[0]?.toUpperCase() || "R"}</Text>
+                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId?.[0]?.toUpperCase() || "R"}</Text>
               </View>
             )}
             <View style={styles.profileActiveIndicator} />
@@ -2484,27 +2485,27 @@ export default function ReelsScreen() {
                 <View style={styles.commentRow}>
                   <TouchableOpacity 
                     onPress={() => {
-                      const authorName = commentsTargetPost.user?.name || "gucci";
+                      const authorName = commentsTargetPost.profile?.name || commentsTargetPost.user?.name || currentMaisonName;
                       navigateToUserProfile(authorName);
                     }}
                     activeOpacity={0.85}
                   >
                     <View style={styles.commentAvatar}>
                       <Text style={styles.commentAvatarText}>
-                        {commentsTargetPost.user?.name?.[0]?.toUpperCase() || "S"}
+                        {(commentsTargetPost.profile?.name || commentsTargetPost.user?.name || "A")[0]?.toUpperCase()}
                       </Text>
                     </View>
                   </TouchableOpacity>
                   <View style={{ flex: 1 }}>
                     <TouchableOpacity 
                       onPress={() => {
-                        const authorName = commentsTargetPost.user?.name || "gucci";
+                        const authorName = commentsTargetPost.profile?.name || commentsTargetPost.user?.name || currentMaisonName;
                         navigateToUserProfile(authorName);
                       }}
                       activeOpacity={0.85}
                     >
                       <Text style={styles.commentUsername}>
-                        {commentsTargetPost.user?.name?.toLowerCase().replace(/\s+/g, "") || "gucci"} <Text style={styles.commentBadge}>Author</Text>
+                        {(commentsTargetPost.profile?.name || commentsTargetPost.user?.name || currentMaisonName).toLowerCase().replace(/\s+/g, "")} <Text style={styles.commentBadge}>Author</Text>
                       </Text>
                     </TouchableOpacity>
                     <Text style={styles.commentTextContent}>

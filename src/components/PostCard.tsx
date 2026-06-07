@@ -9,6 +9,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { Image } from "expo-image";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
+import { formatCompactNumber } from "@/constants/format";
 
 export interface PostCardProps {
   item: any;
@@ -68,12 +69,12 @@ export const PostCard: React.FC<PostCardProps> = ({
         >
           <View style={styles.photoCardAvatar}>
             <Text style={{ color: "#000", fontSize: 13, fontWeight: "bold" }}>
-              {item.user?.name === "Alok Maison" ? currentMaisonName[0]?.toUpperCase() : (item.user?.name?.[0]?.toUpperCase() || "S")}
+              {(item.profile?.name || item.user?.name || currentMaisonName)[0]?.toUpperCase() || "A"}
             </Text>
           </View>
           <View>
             <Text style={styles.photoCardAuthor}>
-              {item.user?.name === "Alok Maison" ? currentMaisonName : (item.user?.name || "Gucci Atelier")}
+              {item.profile?.name || item.user?.name || currentMaisonName}
             </Text>
             <Text style={styles.photoCardSubtitle}>Quiet Luxury Node</Text>
           </View>
@@ -124,9 +125,11 @@ export const PostCard: React.FC<PostCardProps> = ({
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.photoCardLikes}>{item.likesCount ? (isLiked ? item.likesCount + 1 : item.likesCount) : 104} likes</Text>
+      <Text style={styles.photoCardLikes}>
+        {formatCompactNumber(item.likesCount ? (isLiked ? item.likesCount + 1 : item.likesCount) : 104)} likes
+      </Text>
       <Text style={styles.photoCardCaption}>
-        <Text style={{ fontWeight: "bold" }}>{item.user?.name?.toLowerCase().replace(/\s+/g, "") || "gucci"} </Text>
+        <Text style={{ fontWeight: "bold" }}>{(item.profile?.name || item.user?.name || currentMaisonName).toLowerCase().replace(/\s+/g, "")} </Text>
         {item.caption || "Atelier Masterpiece Collection."}
       </Text>
     </View>
