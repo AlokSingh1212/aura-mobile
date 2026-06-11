@@ -124,16 +124,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       const res = await fetch(`${API_HOST}/api/mobile/chat?userId=${currentUserId}&maisonId=${activeMaisonId}&mode=${isSeller ? "seller" : "buyer"}`);
       const data = await res.json();
       if (data.success && data.conversations.length > 0) {
-        const mapped = data.conversations.map((c: any, index: number) => {
-          let category = "Primary";
-          if (c.name.toLowerCase().includes("namita") || index % 4 === 1) {
-            category = "From ads";
-          } else if (c.name.toLowerCase().includes("mikai") || index % 4 === 2) {
-            category = "Requests";
-          } else if (index % 4 === 3) {
-            category = "General";
-          }
-          return { ...c, category };
+        const mapped = data.conversations.map((c: any) => {
+          return { ...c, category: "Primary" };
         });
         setConversations(mapped);
       } else {
@@ -665,7 +657,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
 
                   {/* ── Customer Enquiries ── */}
                   <Text style={styles.bizSectionLabel}>Customer Enquiries</Text>
-                  {CUSTOMER_THREADS.filter(t => t.name.toLowerCase().includes(dmSearch.toLowerCase())).map((thread) => (
+                  {conversations.filter(t => t.name.toLowerCase().includes(dmSearch.toLowerCase())).map((thread) => (
                     <TouchableOpacity
                       key={thread.id}
                       style={[styles.threadItemRow, { marginHorizontal: 16 }]}
@@ -677,11 +669,11 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                         <View style={styles.threadNameRow}>
                           <Text style={styles.threadNameText}>{thread.name}</Text>
                           <View style={[styles.bizTagBadge, { backgroundColor: thread.unread ? "#00f5ff22" : "#ffffff11" }]}>
-                            <Text style={[styles.bizTagText, { color: thread.unread ? "#00f5ff" : "rgba(255,255,255,0.4)" }]}>{thread.tag}</Text>
+                            <Text style={[styles.bizTagText, { color: thread.unread ? "#00f5ff" : "rgba(255,255,255,0.4)" }]}>Enquiry</Text>
                           </View>
                         </View>
                         <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
-                          {thread.message}
+                          {thread.lastMessage || "Secure direct message sync handshake established."}
                         </Text>
                       </View>
                       {thread.unread && <View style={styles.bizUnreadDot} />}
@@ -995,7 +987,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   </TouchableOpacity>
                   <Text style={styles.bizSubTitle}>👥 Customer Inbox</Text>
                   <Text style={styles.bizSubSubtitle}>Order & product enquiries</Text>
-                  {CUSTOMER_THREADS.map((thread) => (
+                  {conversations.map((thread) => (
                     <TouchableOpacity
                       key={thread.id}
                       style={styles.threadItemRow}
@@ -1007,11 +999,11 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                         <View style={styles.threadNameRow}>
                           <Text style={styles.threadNameText}>{thread.name}</Text>
                           <View style={[styles.bizTagBadge, { backgroundColor: "#fbbf2422" }]}>
-                            <Text style={{ color: "#fbbf24", fontSize: 13.5 }}>{thread.tag}</Text>
+                            <Text style={{ color: "#fbbf24", fontSize: 13.5 }}>Enquiry</Text>
                           </View>
                         </View>
                         <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
-                          {thread.message}
+                          {thread.lastMessage || "Secure direct message sync handshake established."}
                         </Text>
                       </View>
                       {thread.unread && <View style={styles.bizUnreadDot} />}

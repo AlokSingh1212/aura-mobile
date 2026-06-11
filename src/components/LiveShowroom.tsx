@@ -124,9 +124,17 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
         setActiveSessionId(data.session.id);
         setLiveViewerCount(data.session.viewerCount);
         setLiveHeartsCount(data.session.heartsCount);
+        
+        // Broadcast dynamic token generated - start the WebRTC engine
+        if (data.rtc) {
+          await initWebRTCEngine(data.rtc.appId, data.rtc.token, data.rtc.channelName);
+        } else {
+          await initWebRTCEngine();
+        }
       }
     } catch (e) {
       console.warn("Failed to create live session on backend:", e);
+      await initWebRTCEngine();
     }
   };
 
@@ -136,16 +144,35 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
 
     if (activeLiveMode === "broadcaster") {
       createStreamSession();
-    }
-
-    if (activeLiveMode === "viewer" || activeLiveMode === "broadcaster") {
-      initWebRTCEngine();
+    } else if (activeLiveMode === "viewer") {
+      if (sessionId) {
+        const fetchAndJoin = async () => {
+          setJoining(true);
+          try {
+            const detailRes = await fetch(`${API_HOST}/api/mobile/live?sessionId=${sessionId}&role=viewer`);
+            const detailData = await detailRes.json();
+            if (detailData.success && detailData.rtc) {
+              await initWebRTCEngine(detailData.rtc.appId, detailData.rtc.token, detailData.rtc.channelName);
+            } else {
+              await initWebRTCEngine();
+            }
+          } catch (err) {
+            console.warn("Failed to fetch viewer token for initial sessionId:", err);
+            await initWebRTCEngine();
+          } finally {
+            setJoining(false);
+          }
+        };
+        fetchAndJoin();
+      } else {
+        handleJoinLive();
+      }
     }
 
     return () => {
       destroyWebRTCEngine();
     };
-  }, [visible, activeLiveMode]);
+  }, [visible, activeLiveMode, sessionId]);
 
   // Synchronize comments & stats from the database session
   useEffect(() => {
@@ -189,7 +216,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
     return () => clearInterval(interval);
   }, [visible, activeSessionId, activeLiveMode]);
 
-  const initWebRTCEngine = async () => {
+  const initWebRTCEngine = async (customAppId?: string, customToken?: string, customChannel?: string) => {
     if (!createRtcEngine) {
       // Running in simulation fallback mode
       setJoined(true);
@@ -202,9 +229,15 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
       const engine = createRtcEngine();
       engineRef.current = engine;
 
+      const appId = customAppId || "demo-app-id-placeholder-token";
+      const token = customToken || "";
+      const channel = customChannel || maisonId;
+
+      console.log(`[RTC] Initializing Agora with App ID: ${appId}, Channel: ${channel}`);
+
       // 1. Initialize the RTC engine
       await engine.initialize({
-        appId: "demo-app-id-placeholder-token", // Demo token
+        appId,
         channelProfile: ChannelProfileType.CHANNEL_PROFILE_LIVE_BROADCASTING,
       });
 
@@ -239,8 +272,8 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
         await engine.setClientRole(ClientRoleType.CLIENT_ROLE_AUDIENCE);
       }
 
-      // 4. Join streaming channel (using maisonId as the channel name key)
-      await engine.joinChannel("", maisonId, 0, {});
+      // 4. Join streaming channel
+      await engine.joinChannel(token, channel, 0, {});
 
     } catch (e) {
       console.warn("[Agora Native RTC Init failed, falling back to sandbox simulator]:", e);
@@ -430,8 +463,24 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
       const res = await fetch(`${API_HOST}/api/mobile/live?maisonId=${maisonId}`);
       const data = await res.json();
       if (data.success && data.sessions && data.sessions.length > 0) {
-        setActiveSessionId(data.sessions[0].id);
-        setActiveLiveMode("viewer");
+        const activeSession = data.sessions[0];
+        setActiveSessionId(activeSession.id);
+        
+        // Fetch viewer token for active session
+        try {
+          const detailRes = await fetch(`${API_HOST}/api/mobile/live?sessionId=${activeSession.id}&role=viewer`);
+          const detailData = await detailRes.json();
+          setActiveLiveMode("viewer");
+          if (detailData.success && detailData.rtc) {
+            await initWebRTCEngine(detailData.rtc.appId, detailData.rtc.token, detailData.rtc.channelName);
+          } else {
+            await initWebRTCEngine();
+          }
+        } catch (err) {
+          console.warn("Failed to fetch viewer token:", err);
+          setActiveLiveMode("viewer");
+          await initWebRTCEngine();
+        }
       } else {
         Alert.alert("No Stream Found", `${maisonName} is not broadcasting at the moment.`);
       }
@@ -439,6 +488,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
       console.warn("Failed to query active session for joining:", e);
       // Fallback
       setActiveLiveMode("viewer");
+      await initWebRTCEngine();
     } finally {
       setJoining(false);
     }

@@ -16,6 +16,14 @@ Notifications.setNotificationHandler({
   }),
 });
 
+const CURRENCY_MAP: Record<string, { code: string; symbol: string; rate: number }> = {
+  'IN': { code: 'INR', symbol: '₹', rate: 1.0 },
+  'GB': { code: 'GBP', symbol: '£', rate: 0.0095 },
+  'EU': { code: 'EUR', symbol: '€', rate: 0.011 },
+  'JP': { code: 'JPY', symbol: '¥', rate: 1.82 },
+  'US': { code: 'USD', symbol: '$', rate: 0.012 }
+};
+
 async function registerForPushNotificationsAsync() {
   if (Platform.OS === "web") return null;
 
@@ -73,6 +81,12 @@ interface StoreState {
   warehouses: any[];
   orders: any[];
   
+  currency: { code: string; symbol: string; rate: number };
+  countryCode: string;
+  detectLocation: () => Promise<void>;
+  formatPrice: (amount: number) => string;
+  setCurrency: (code: string) => void;
+
   // New State variables for parity expansion
   adBids: any[];
   adMetrics: any;
@@ -82,6 +96,12 @@ interface StoreState {
   loyaltyElite: boolean;
   loyaltyEliteUntil: string | null;
   rewardLogs: any[];
+
+  aiCreativeResult: any;
+  loadingAiCreative: boolean;
+  brandDeals: any[];
+  loadingDeals: boolean;
+  influencers: any[];
   
   loadingProducts: boolean;
   loadingFeed: boolean;
@@ -115,6 +135,11 @@ interface StoreState {
   fetchAdBids: (maisonId: string, model?: string) => Promise<void>;
   createAdBid: (payload: any) => Promise<boolean>;
   fundAdWallet: (maisonId: string, amount: number) => Promise<boolean>;
+  generateAiCreative: (artifactId: string, maisonId: string) => Promise<boolean>;
+  fetchBrandDeals: (filters?: { creatorId?: string; maisonId?: string }) => Promise<void>;
+  fetchInfluencers: () => Promise<void>;
+  proposeBrandDeal: (payload: { creatorId: string; maisonId: string; budget: number; type: string; terms: string }) => Promise<boolean>;
+  respondToBrandDeal: (dealId: string, status: "ACCEPTED" | "DECLINED" | "COMPLETED") => Promise<boolean>;
 
   // New Competitor repricing actions
   fetchRepricer: (maisonId: string) => Promise<void>;
@@ -226,6 +251,9 @@ export const useStore = create<StoreState>((set, get) => ({
   orders: [],
   wishlist: [],
   
+  currency: CURRENCY_MAP['IN'],
+  countryCode: 'IN',
+  
   // Advanced States
   adBids: [],
   adMetrics: null,
@@ -235,6 +263,12 @@ export const useStore = create<StoreState>((set, get) => ({
   loyaltyElite: false,
   loyaltyEliteUntil: null,
   rewardLogs: [],
+
+  aiCreativeResult: null,
+  loadingAiCreative: false,
+  brandDeals: [],
+  loadingDeals: false,
+  influencers: [],
   
   activeMaisonId: "aloksingh",
   setActiveMaisonId: (id) => set({ activeMaisonId: id }),
@@ -535,6 +569,113 @@ export const useStore = create<StoreState>((set, get) => ({
       return false;
     } catch (e) {
       console.warn("Could not top up ad wallet.", e);
+      return false;
+    }
+  },
+
+  generateAiCreative: async (artifactId, maisonId) => {
+    set({ loadingAiCreative: true, aiCreativeResult: null });
+    try {
+      const res = await fetch(`${API_BASE}/ads/ai-generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artifactId, maisonId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        set({ aiCreativeResult: data });
+        get().triggerHaptic("success");
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.warn("Could not generate AI creative copy.", e);
+      return false;
+    } finally {
+      set({ loadingAiCreative: false });
+    }
+  },
+
+  fetchBrandDeals: async (filters = {}) => {
+    set({ loadingDeals: true });
+    try {
+      const query = new URLSearchParams();
+      if (filters.creatorId) query.append("creatorId", filters.creatorId);
+      if (filters.maisonId) query.append("maisonId", filters.maisonId);
+      
+      const res = await fetch(`${API_BASE}/brand-deals?${query.toString()}`);
+      const data = await res.json();
+      if (data.success) {
+        set({ brandDeals: data.deals });
+      }
+    } catch (e) {
+      console.warn("Could not query brand deals from backend.", e);
+    } finally {
+      set({ loadingDeals: false });
+    }
+  },
+
+  fetchInfluencers: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/profile?type=INFLUENCER`);
+      const data = await res.json();
+      if (data.success && data.profiles) {
+        set({ influencers: data.profiles });
+      } else {
+        // Fallback influencers list
+        set({ influencers: [
+          { id: "c1", userId: "user_influencer_1", name: "studywithjasmeet", username: "studywithjasmeet", category: "Creator / Stylist" },
+          { id: "c2", userId: "user_influencer_2", name: "fitwithyashika_", username: "fitwithyashika_", category: "Influencer / Fitness" }
+        ]});
+      }
+    } catch (e) {
+      console.warn("Could not fetch influencers list.", e);
+      // Fallback
+      set({ influencers: [
+        { id: "c1", userId: "user_influencer_1", name: "studywithjasmeet", username: "studywithjasmeet", category: "Creator / Stylist" },
+        { id: "c2", userId: "user_influencer_2", name: "fitwithyashika_", username: "fitwithyashika_", category: "Influencer / Fitness" }
+      ]});
+    }
+  },
+
+  proposeBrandDeal: async (payload) => {
+    try {
+      const res = await fetch(`${API_BASE}/brand-deals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        get().triggerHaptic("success");
+        get().fetchBrandDeals({ maisonId: payload.maisonId });
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.warn("Could not propose brand deal.", e);
+      return false;
+    }
+  },
+
+  respondToBrandDeal: async (dealId, status) => {
+    try {
+      const res = await fetch(`${API_BASE}/brand-deals`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId, status })
+      });
+      const data = await res.json();
+      if (data.success) {
+        get().triggerHaptic("success");
+        const userId = get().currentUser?.id;
+        const maisonId = get().activeMaisonId;
+        get().fetchBrandDeals({ creatorId: userId, maisonId });
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.warn("Could not respond to brand deal.", e);
       return false;
     }
   },
@@ -1044,6 +1185,36 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch (e) {
       console.warn("toggleWishlist failed.", e);
       return { success: false, error: String(e) };
+    }
+  },
+
+  detectLocation: async () => {
+    try {
+      const res = await fetch("https://ipapi.co/json/");
+      const data = await res.json();
+      if (data.country_code && CURRENCY_MAP[data.country_code]) {
+        set({
+          countryCode: data.country_code,
+          currency: CURRENCY_MAP[data.country_code]
+        });
+        console.log(`[Store] Geo-Detected Country: ${data.country_code}, Currency: ${CURRENCY_MAP[data.country_code].code}`);
+      }
+    } catch (error) {
+      console.warn("[Store] Geo-Detection Sync Failure. Defaulting to India Node (INR).");
+    }
+  },
+
+  formatPrice: (amount: number) => {
+    const { currency } = get();
+    if (!currency) return `₹${(amount || 0).toLocaleString()}`;
+    const converted = amount * currency.rate;
+    // Format compact or clean depending on values
+    return `${currency.symbol}${Math.round(converted).toLocaleString()}`;
+  },
+
+  setCurrency: (code: string) => {
+    if (CURRENCY_MAP[code]) {
+      set({ countryCode: code, currency: CURRENCY_MAP[code] });
     }
   }
 }));

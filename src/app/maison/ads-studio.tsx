@@ -28,7 +28,10 @@ export default function AdsStudioScreen() {
     products,
     fetchProducts,
     triggerHaptic,
-    activeMaisonId
+    activeMaisonId,
+    aiCreativeResult,
+    loadingAiCreative,
+    generateAiCreative
   } = useStore();
 
   const maisonId = activeMaisonId;
@@ -224,7 +227,93 @@ export default function AdsStudioScreen() {
 
             {bidModalVisible && (
               <View style={styles.bidFormCard}>
-                <Text style={styles.formTitle}>Launch Programmatic Bid Campaign</Text>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <Text style={styles.formTitle}>Launch Bid Campaign</Text>
+                  {selectedProduct && (
+                    <TouchableOpacity 
+                      style={[styles.launchBtn, { marginVertical: 0, paddingVertical: 4, height: 28, paddingHorizontal: 10 }]} 
+                      onPress={async () => {
+                        if (loadingAiCreative) return;
+                        triggerHaptic("medium");
+                        const success = await generateAiCreative(selectedProduct, maisonId);
+                        if (!success) {
+                          Alert.alert("AI Error", "Failed to retrieve suggestions from Neon DB / Gemini node.");
+                        }
+                      }}
+                      disabled={loadingAiCreative}
+                    >
+                      {loadingAiCreative ? (
+                        <ActivityIndicator size="small" color="#00f5ff" />
+                      ) : (
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                          <Lucide name="sparkles" size={13} color="#00f5ff" />
+                          <Text style={[styles.launchBtnText, { fontSize: 10 }]}>AI Suggest</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {aiCreativeResult?.success && (
+                  <View style={styles.aiSuggestionCard}>
+                    <View style={styles.aiSuggestionHeader}>
+                      <Lucide name="sparkles" size={15} color="#00f5ff" />
+                      <Text style={styles.aiSuggestionTitle}>AURA AI Creative & Targeting</Text>
+                    </View>
+
+                    {/* Creative Copy Options */}
+                    <Text style={styles.aiHeading}>Suggested Slogans / Keywords</Text>
+                    <View style={{ gap: 6, marginVertical: 4 }}>
+                      {aiCreativeResult.creatives.headlines.map((hl: string, idx: number) => (
+                        <TouchableOpacity 
+                          key={idx} 
+                          style={styles.aiCopyOption}
+                          onPress={() => { triggerHaptic("light"); setKeyword(hl); }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.aiCopyText}>• "{hl}"</Text>
+                          <Text style={styles.aiCopyHint}>Tap to apply</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <Text style={styles.aiHeading}>Suggested Description (Snippet)</Text>
+                    <Text style={styles.aiDescQuote}>"{aiCreativeResult.creatives.descriptions[0]}"</Text>
+
+                    {/* Targeting Recommendations */}
+                    <View style={styles.aiTargetingRow}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.aiHeading}>Suggested Demographics</Text>
+                        <Text style={styles.aiTargetText}>Age: {aiCreativeResult.targeting.minAge} - {aiCreativeResult.targeting.maxAge}</Text>
+                        <Text style={styles.aiTargetText}>Gender: {aiCreativeResult.targeting.genders.join(", ")}</Text>
+                      </View>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.aiHeading}>Estimated Telemetry</Text>
+                        <Text style={styles.aiTargetText}>Reach: {aiCreativeResult.budget.estimatedReach}</Text>
+                        <Text style={styles.aiTargetText}>Clicks: {aiCreativeResult.budget.estimatedClicks}</Text>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity 
+                      style={styles.applyAiBtn}
+                      onPress={() => {
+                        triggerHaptic("success");
+                        const c = aiCreativeResult;
+                        setKeyword(c.targeting.keywords);
+                        setMaxCpc(c.budget.maxCpc.toString());
+                        setBudget(c.budget.campaignBudget.toString());
+                        setMinAge(c.targeting.minAge.toString());
+                        setMaxAge(c.targeting.maxAge.toString());
+                        setSelectedGender(c.targeting.genders[0]);
+                        setPincode(c.targeting.pincodes ? c.targeting.pincodes.join(", ") : "");
+                        Alert.alert("AI Applied", "Form parameters and target bids populated.");
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.applyAiText}>Apply AI Parameters</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
                 
                 {/* Product picker */}
                 <View style={styles.formGroup}>
@@ -809,5 +898,98 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 1.5,
+  },
+  aiSuggestionCard: {
+    backgroundColor: "rgba(0, 245, 255, 0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(0, 245, 255, 0.15)",
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 14,
+    gap: 8,
+  },
+  aiSuggestionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderBottomWidth: 1,
+    borderColor: "rgba(0, 245, 255, 0.1)",
+    paddingBottom: 6,
+  },
+  aiSuggestionTitle: {
+    color: "#00f5ff",
+    fontSize: 11.5,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  aiHeading: {
+    color: "rgba(255, 255, 255, 0.4)",
+    fontSize: 10,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: 4,
+  },
+  aiCopyOption: {
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  aiCopyText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "500",
+    flex: 1,
+  },
+  aiCopyHint: {
+    color: "rgba(0, 245, 255, 0.5)",
+    fontSize: 9,
+    textTransform: "uppercase",
+    fontWeight: "bold",
+  },
+  aiDescQuote: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 11.5,
+    fontStyle: "italic",
+    lineHeight: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.01)",
+    padding: 8,
+    borderRadius: 8,
+  },
+  aiTargetingRow: {
+    flexDirection: "row",
+    gap: 12,
+    borderTopWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.03)",
+    paddingTop: 8,
+  },
+  aiTargetText: {
+    color: "#fff",
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  applyAiBtn: {
+    backgroundColor: "rgba(0, 245, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(0, 245, 255, 0.3)",
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 6,
+  },
+  applyAiText: {
+    color: "#00f5ff",
+    fontSize: 11,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
 });

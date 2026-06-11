@@ -72,7 +72,7 @@ const HERO_SLIDES = [
 ];
 
 export default function ShopScreen() {
-  const { products, loadingProducts, fetchProducts, addToCart, triggerHaptic, activeMaisonId, activeProfile, loyaltyPoints } = useStore();
+  const { products, loadingProducts, fetchProducts, addToCart, triggerHaptic, activeMaisonId, activeProfile, loyaltyPoints, formatPrice } = useStore();
   const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : (activeMaisonId ? activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "AURA Client"));
   const insets = useSafeAreaInsets();
   
@@ -501,7 +501,7 @@ export default function ShopScreen() {
             {item.title}
           </Text>
           <Text style={styles.price}>
-            ₹{item.price?.toLocaleString() || "Price on Request"}
+            {item.price ? formatPrice(item.price) : "Price on Request"}
           </Text>
 
           {/* Vibe and Star Rating Row */}
@@ -627,7 +627,7 @@ export default function ShopScreen() {
                   <View style={styles.personalMeta}>
                     <Text style={styles.personalMaison}>{item.maison?.name || currentMaisonName}</Text>
                     <Text style={styles.personalTitle} numberOfLines={1}>{item.title}</Text>
-                    <Text style={styles.personalPrice}>₹{item.price?.toLocaleString()}</Text>
+                    <Text style={styles.personalPrice}>{formatPrice(item.price)}</Text>
                   </View>
                 </TouchableOpacity>
               );

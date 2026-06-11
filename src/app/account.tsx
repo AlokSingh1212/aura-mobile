@@ -1333,7 +1333,7 @@ export default function AccountScreen() {
               </TouchableOpacity>
             )}
 
-            {/* 🔴 ACTION BUTTONS (EDIT PROFILE, SHARE PROFILE) */}
+            {/* 🔴 ACTION BUTTONS (EDIT PROFILE, SHARE PROFILE, SPONSORSHIPS) */}
             <View style={styles.actionButtonsRow}>
               <TouchableOpacity style={styles.actionBtn} onPress={handleEditProfilePress}>
                 <Text style={styles.actionBtnText}>Edit profile</Text>
@@ -1342,6 +1342,15 @@ export default function AccountScreen() {
               <TouchableOpacity style={styles.actionBtn} onPress={handleShareProfile}>
                 <Text style={styles.actionBtnText}>Share profile</Text>
               </TouchableOpacity>
+
+              {(isCreatorProfile || isBusinessProfile) && (
+                <TouchableOpacity 
+                  style={[styles.actionBtn, { backgroundColor: "rgba(0,245,255,0.08)", borderWidth: 1, borderColor: "rgba(0,245,255,0.25)" }]} 
+                  onPress={() => { triggerHaptic("medium"); router.push("/sponsorships" as any); }}
+                >
+                  <Text style={[styles.actionBtnText, { color: "#00f5ff" }]}>Sponsorships</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* 🔴 INTERACTIVE HIGHLIGHTS ROW */}

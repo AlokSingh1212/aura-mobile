@@ -68,7 +68,8 @@ export default function ProductDetailScreen() {
     applyCoupon,
     wishlist,
     toggleWishlist,
-    fetchWishlist
+    fetchWishlist,
+    formatPrice
   } = useStore();
   const [activeImg, setActiveImg] = useState(0);
 
@@ -480,7 +481,7 @@ export default function ProductDetailScreen() {
             <View style={styles.matricesRow}>
               <View style={styles.matrixCell}>
                 <Text style={styles.matrixLabel}>Acquisition Price</Text>
-                <Text style={styles.matrixVal}>₹{product.price?.toLocaleString()}</Text>
+                <Text style={styles.matrixVal}>{formatPrice(product.price)}</Text>
               </View>
               <View style={styles.matrixCell}>
                 <Text style={styles.matrixLabel}>AuraGram Score</Text>
@@ -840,8 +841,11 @@ export default function ProductDetailScreen() {
                     <View style={styles.couponSuccessBadge}>
                       <Lucide name="checkmark-circle" size={16} color="#00d4aa" />
                       <Text style={styles.couponSuccessText}>
-                        Privilege Activated: {appliedCoupon.code} (-{appliedCoupon.discount}
-                        {appliedCoupon.type === "PERCENTAGE" ? "%" : " INR"})
+                        Privilege Activated: {appliedCoupon.code} (-
+                        {appliedCoupon.type === "PERCENTAGE" 
+                          ? `${appliedCoupon.discount}%` 
+                          : formatPrice(appliedCoupon.discount)}
+                        )
                       </Text>
                     </View>
                   ) : null}
@@ -849,25 +853,25 @@ export default function ProductDetailScreen() {
                   <View style={styles.priceBreakdown}>
                     <View style={styles.breakdownRow}>
                       <Text style={styles.breakdownLabel}>Artifact Value</Text>
-                      <Text style={styles.breakdownValue}>₹{product.price?.toLocaleString()}</Text>
+                      <Text style={styles.breakdownValue}>{formatPrice(product.price)}</Text>
                     </View>
                     {appliedCoupon && (
                       <View style={styles.breakdownRow}>
                         <Text style={[styles.breakdownLabel, { color: "#00d4aa" }]}>Discount Applied</Text>
-                        <Text style={[styles.breakdownValue, { color: "#00d4aa" }]}>-₹{calculateDiscount().toLocaleString()}</Text>
+                        <Text style={[styles.breakdownValue, { color: "#00d4aa" }]}>-{formatPrice(calculateDiscount())}</Text>
                       </View>
                     )}
                     <View style={styles.breakdownRow}>
                       <Text style={styles.breakdownLabel}>Import Duty & GST (18%)</Text>
-                      <Text style={styles.breakdownValue}>₹{calculateTax().toLocaleString()}</Text>
+                      <Text style={styles.breakdownValue}>{formatPrice(calculateTax())}</Text>
                     </View>
                     <View style={styles.breakdownRow}>
                       <Text style={styles.breakdownLabel}>Secured Node Courier</Text>
-                      <Text style={styles.breakdownValue}>₹1,500</Text>
+                      <Text style={styles.breakdownValue}>{formatPrice(1500)}</Text>
                     </View>
                     <View style={[styles.breakdownRow, styles.breakdownTotal]}>
                       <Text style={styles.breakdownTotalLabel}>Total Price</Text>
-                      <Text style={styles.breakdownTotalValue}>₹{calculateTotal().toLocaleString()}</Text>
+                      <Text style={styles.breakdownTotalValue}>{formatPrice(calculateTotal())}</Text>
                     </View>
                   </View>
 
@@ -947,7 +951,7 @@ export default function ProductDetailScreen() {
 
               <View style={styles.simCard}>
                 <Text style={styles.simCardLabel}>Total Due</Text>
-                <Text style={styles.simCardAmount}>₹{calculateTotal().toLocaleString()}</Text>
+                <Text style={styles.simCardAmount}>{formatPrice(calculateTotal())}</Text>
                 
                 <View style={styles.simDetailRow}>
                   <Text style={styles.simDetailLabel}>Order ID</Text>

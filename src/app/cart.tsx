@@ -65,7 +65,8 @@ export default function CartScreen() {
     initiateCheckout,
     verifyPayment,
     applyCoupon,
-    clearCart 
+    clearCart,
+    formatPrice
   } = useStore();
   const insets = useSafeAreaInsets();
 
@@ -334,7 +335,7 @@ export default function CartScreen() {
         <View style={styles.info}>
           <Text style={styles.maison} numberOfLines={1}>{item.maison?.name || "AURAGRAM Maison"}</Text>
           <Text style={styles.title} numberOfLines={1}>{item.title}</Text>
-          <Text style={styles.price}>₹{item.price?.toLocaleString()}</Text>
+          <Text style={styles.price}>{formatPrice(item.price)}</Text>
         </View>
 
         <TouchableOpacity 
@@ -545,26 +546,26 @@ export default function CartScreen() {
             <View style={[styles.summaryBox, { marginBottom: 52 + insets.bottom }]}>
               <View style={styles.row}>
                 <Text style={styles.rowLabel}>Subtotal</Text>
-                <Text style={styles.rowVal}>₹{calculateSubtotal().toLocaleString()}</Text>
+                <Text style={styles.rowVal}>{formatPrice(calculateSubtotal())}</Text>
               </View>
               {appliedCoupon ? (
                 <View style={styles.row}>
                   <Text style={[styles.rowLabel, { color: "#00d4aa" }]}>Privilege Discount</Text>
-                  <Text style={[styles.rowVal, { color: "#00d4aa" }]}>-₹{calculateDiscount().toLocaleString()}</Text>
+                  <Text style={[styles.rowVal, { color: "#00d4aa" }]}>-{formatPrice(calculateDiscount())}</Text>
                 </View>
               ) : null}
               <View style={styles.row}>
                 <Text style={styles.rowLabel}>Import Duty & GST (18%)</Text>
-                <Text style={styles.rowVal}>₹{calculateTax().toLocaleString()}</Text>
+                <Text style={styles.rowVal}>{formatPrice(calculateTax())}</Text>
               </View>
               <View style={styles.row}>
                 <Text style={styles.rowLabel}>Secured Node Courier</Text>
-                <Text style={styles.rowVal}>₹1,500</Text>
+                <Text style={styles.rowVal}>{formatPrice(1500)}</Text>
               </View>
               
               <View style={[styles.row, styles.totalRow]}>
                 <Text style={styles.totalLabel}>Total Casket Price</Text>
-                <Text style={styles.totalVal}>₹{calculateTotal().toLocaleString()}</Text>
+                <Text style={styles.totalVal}>{formatPrice(calculateTotal())}</Text>
               </View>
 
               <TouchableOpacity 
@@ -643,7 +644,7 @@ export default function CartScreen() {
 
             <View style={styles.simCard}>
               <Text style={styles.simCardLabel}>Total Due</Text>
-              <Text style={styles.simCardAmount}>₹{calculateTotal().toLocaleString()}</Text>
+              <Text style={styles.simCardAmount}>{formatPrice(calculateTotal())}</Text>
               
               <View style={styles.simDetailRow}>
                 <Text style={styles.simDetailLabel}>Order ID</Text>

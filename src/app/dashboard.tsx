@@ -303,6 +303,20 @@ export default function DashboardScreen() {
             <Text style={styles.b2bCardTitle}>WMS Picker</Text>
             <Text style={styles.b2bCardDesc}>Aisle coordinates picking sheet & JSON catalog.</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.b2bCard}
+            onPress={() => {
+              triggerHaptic("medium");
+              router.push("/sponsorships" as any);
+            }}
+          >
+            <View style={styles.b2bIconCircle}>
+              <Lucide name="people-outline" size={19} color="#00f5ff" />
+            </View>
+            <Text style={styles.b2bCardTitle}>Partnerships</Text>
+            <Text style={styles.b2bCardDesc}>Creator sponsorships and matchmaker portal.</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -884,11 +898,11 @@ const styles = StyleSheet.create({
   },
   b2bGrid: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
     gap: 8,
   },
   b2bCard: {
-    flex: 1,
+    width: (width - 56) / 2,
     backgroundColor: "#0b071e",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.04)",
@@ -896,6 +910,7 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: "center",
     gap: 6,
+    marginBottom: 4,
   },
   b2bIconCircle: {
     width: 32,

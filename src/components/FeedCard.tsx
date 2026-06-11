@@ -49,7 +49,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   handleSavePress,
   handleThreeDotsPress,
 }) => {
-  const { triggerHaptic } = useStore();
+  const { triggerHaptic, formatPrice } = useStore();
   const isPlayed = index === activeReelIndex;
   const isLiked = likedPosts[item.id] || false;
 
@@ -133,7 +133,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             <View style={styles.shopInfo}>
               <Text style={styles.shopSub}>Shop The Look</Text>
               <Text style={styles.shopTitle} numberOfLines={1}>{associatedProduct.title}</Text>
-              <Text style={styles.shopPrice}>₹{associatedProduct.price?.toLocaleString()}</Text>
+              <Text style={styles.shopPrice}>{formatPrice(associatedProduct.price)}</Text>
             </View>
             <Lucide name="chevron-forward" size={17} color="#00f5ff" />
           </TouchableOpacity>

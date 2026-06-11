@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Lucide from "@expo/vector-icons/Ionicons";
+import { useStore } from "@/store/useStore";
 
 const { width } = Dimensions.get("window");
 
@@ -30,6 +31,7 @@ export const CheckoutSuccess: React.FC<CheckoutSuccessProps> = ({
   amount = 0,
   itemCount = 1,
 }) => {
+  const { formatPrice } = useStore();
   const [checkScale] = useState(new Animated.Value(0));
   const [fadeIn] = useState(new Animated.Value(0));
   const [slideUp] = useState(new Animated.Value(60));
@@ -163,7 +165,7 @@ export const CheckoutSuccess: React.FC<CheckoutSuccessProps> = ({
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Amount Charged</Text>
                 <Text style={[styles.detailVal, { color: "#00f5ff" }]}>
-                  ₹{amount.toLocaleString()}
+                  {formatPrice(amount)}
                 </Text>
               </View>
               <View style={styles.divider} />

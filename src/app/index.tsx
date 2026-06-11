@@ -29,6 +29,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
+import * as Notifications from "expo-notifications";
 import * as ImagePicker from "expo-image-picker";
 import { CameraView } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
@@ -237,7 +238,7 @@ interface FloatingHeart {
 }
 
 export default function ReelsScreen() {
-  const { products, stories, loadingFeed, fetchFeed, fetchProducts, triggerHaptic, activeMaisonId, currentUser, authOnboard, setCurrentUser, activeProfile, userProfiles, createNewProfile, switchActiveProfile, fetchProfiles, notifications, loadingNotifications, fetchNotifications, markNotificationsRead, hasMoreFeed } = useStore();
+  const { products, stories, loadingFeed, fetchFeed, fetchProducts, triggerHaptic, activeMaisonId, currentUser, authOnboard, setCurrentUser, activeProfile, userProfiles, createNewProfile, switchActiveProfile, fetchProfiles, notifications, loadingNotifications, fetchNotifications, markNotificationsRead, hasMoreFeed, detectLocation } = useStore();
   const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : (activeMaisonId ? activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "AURA Client"));
   const params = useLocalSearchParams<{ openDMs?: string; openSearch?: string; activeTab?: string; openCamera?: string; conversationId?: string }>();
   const insets = useSafeAreaInsets();
@@ -261,6 +262,10 @@ export default function ReelsScreen() {
   };
 
   useEffect(() => {
+    detectLocation();
+  }, []);
+
+  useEffect(() => {
     if (!currentUser) {
       const timer = setTimeout(() => {
         router.replace("/login");
@@ -268,6 +273,41 @@ export default function ReelsScreen() {
       return () => clearTimeout(timer);
     }
   }, [currentUser]);
+
+  // 🔔 Push notification interaction click listener & deep-linking
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, any>;
+      if (!data?.type) return;
+
+      triggerHaptic("medium");
+
+      switch (data.type) {
+        case "FOLLOW":
+          if (data.followerId) {
+            router.push(`/profile/${data.followerId}`);
+          }
+          break;
+        case "BRAND_DEAL":
+          router.push("/dashboard");
+          break;
+        case "LIKE":
+        case "COMMENT":
+          // Refresh notifications and open activity drawer
+          if (activeProfile?.id) {
+            fetchNotifications(activeProfile.id);
+          }
+          setShowActivityDrawer(true);
+          break;
+        default:
+          break;
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [activeProfile]);
 
   useEffect(() => {
     if (params?.openDMs === "true") {
