@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   StyleSheet, 
   Text, 
@@ -9,12 +9,12 @@ import {
   Dimensions,
   TextInput,
   Modal,
-  ScrollView
+  ScrollView,
+  ActivityIndicator
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "@/store/useStore";
 import { API_HOST } from "@/constants/api";
-import MainHeader from "@/components/MainHeader";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -46,7 +46,6 @@ const formatAddressString = (addr: any) => {
   return `${namePart}${emailPart}${contactLine}${streetPart}\n${cityStateZip}${countryPart}`;
 };
 
-
 let RazorpayCheckout: any = null;
 try {
   RazorpayCheckout = require("react-native-razorpay").default || require("react-native-razorpay");
@@ -69,6 +68,12 @@ export default function CartScreen() {
     formatPrice
   } = useStore();
   const insets = useSafeAreaInsets();
+
+  // Dynamic Theme states
+  const [themeMode, setThemeMode] = useState<"obsidian" | "cream">("obsidian");
+  const [activeStep, setActiveStep] = useState<number>(0); // 0: Cart, 1: Shipping, 2: Payment
+  const [deliveryMethod, setDeliveryMethod] = useState<"standard" | "express">("standard");
+  const [paymentMethod, setPaymentMethod] = useState<"RAZORPAY" | "COD">("RAZORPAY");
 
   // Checkout States
   const [shippingAddress, setShippingAddress] = useState<any>({
@@ -100,9 +105,26 @@ export default function CartScreen() {
     orderId: ""
   });
 
+  // Theme Colors config
+  const colors = {
+    bg: themeMode === "obsidian" ? "#080415" : "#fdf8f8",
+    surface: themeMode === "obsidian" ? "#0b071e" : "#ffffff",
+    surfaceBorder: themeMode === "obsidian" ? "rgba(255,255,255,0.06)" : "#c4c7c7",
+    primary: themeMode === "obsidian" ? "#00f5ff" : "#000000",
+    text: themeMode === "obsidian" ? "#ffffff" : "#1c1b1b",
+    textMuted: themeMode === "obsidian" ? "rgba(255,255,255,0.45)" : "#5e5e5e",
+    border: themeMode === "obsidian" ? "rgba(255,255,255,0.08)" : "#c4c7c7",
+    primaryContainer: themeMode === "obsidian" ? "rgba(0, 245, 255, 0.1)" : "rgba(0,0,0,0.05)",
+    primaryContainerText: themeMode === "obsidian" ? "#00f5ff" : "#000000",
+    cardBg: themeMode === "obsidian" ? "#0b071e" : "#ffffff",
+    inputBg: themeMode === "obsidian" ? "rgba(255,255,255,0.02)" : "#f1edec",
+    surfaceContainer: themeMode === "obsidian" ? "#0b071e" : "#f1edec",
+    surfaceContainerLow: themeMode === "obsidian" ? "rgba(255,255,255,0.02)" : "#f7f3f2"
+  };
+
   const params = useLocalSearchParams<{ payment?: string; orderId?: string; amount?: string; orderNumber?: string; error?: string }>();
   
-  React.useEffect(() => {
+  useEffect(() => {
     if (params.payment === "success") {
       try {
         clearCart();
@@ -116,7 +138,6 @@ export default function CartScreen() {
       setSuccessVisible(true);
       triggerHaptic("success");
       
-      // Clean up search params
       router.setParams({ payment: undefined, orderId: undefined, amount: undefined, orderNumber: undefined });
     } else if (params.payment === "failed") {
       alert("Payment Failed: " + (params.error || "Verification failed."));
@@ -132,8 +153,22 @@ export default function CartScreen() {
     removeFromCart(id);
   };
 
+  const handleUpdateQuantity = (productId: string, amount: number) => {
+    triggerHaptic("medium");
+    useStore.setState((state) => {
+      const updatedCart = state.cart.map((item) => {
+        if (item.id === productId) {
+          const nextQty = Math.max(1, (item.quantity || 1) + amount);
+          return { ...item, quantity: nextQty };
+        }
+        return item;
+      });
+      return { cart: updatedCart };
+    });
+  };
+
   const calculateSubtotal = () => {
-    return cart.reduce((sum, item) => sum + (item.price || 0), 0);
+    return cart.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 1)), 0);
   };
 
   const calculateDiscount = () => {
@@ -150,9 +185,14 @@ export default function CartScreen() {
     return base * 0.18; // 18% standard GST
   };
 
+  const calculateShipping = () => {
+    if (cart.length === 0) return 0;
+    return deliveryMethod === "standard" ? 0 : 150;
+  };
+
   const calculateTotal = () => {
     const base = calculateSubtotal() - calculateDiscount();
-    return base + calculateTax() + (cart.length > 0 ? 1500 : 0); // 1500 shipping
+    return base + calculateTax() + calculateShipping();
   };
 
   const handleSaveAddress = () => {
@@ -192,7 +232,6 @@ export default function CartScreen() {
     setIsCheckingOut(true);
     triggerHaptic("heavy");
     try {
-      // 1. Create Razorpay order on our backend
       const payloadCartItems = cart.map(item => ({
         artifactId: item.id,
         quantity: item.quantity || 1,
@@ -214,17 +253,38 @@ export default function CartScreen() {
 
       setActiveRazorpayOrder(res);
 
-      // 2. Check if native Razorpay module exists and can be run
+      if (paymentMethod === "COD") {
+        setIsCheckingOut(false);
+        const verifyRes = await verifyPayment({
+          razorpayOrderId: res.razorpayOrderId,
+          razorpayPaymentId: "pay_cod",
+          razorpaySignature: "sig_cod"
+        });
+        if (verifyRes.success) {
+          clearCart();
+          setSuccessDetails({
+            orderNumber: verifyRes.orderNumber || "ORD-COD-2026",
+            amount: verifyRes.amount || calculateTotal(),
+            itemCount: cart.length,
+            orderId: verifyRes.orderId || res.orderId || ""
+          });
+          setSuccessVisible(true);
+          triggerHaptic("success");
+        } else {
+          alert("Verification failed: " + (verifyRes.error || "Invalid response."));
+        }
+        return;
+      }
+
       const isRazorpayNativeAvailable = RazorpayCheckout && (res.razorpayOrderId && !res.razorpayOrderId.startsWith("order_sim_"));
 
       if (isRazorpayNativeAvailable) {
-        // Run native SDK checkout
         const options = {
           description: 'AURAGRAM Luxury Fashion Checkout',
           image: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=200',
           currency: 'INR',
-          key: res.key, // From response
-          amount: res.amount, // In paise
+          key: res.key,
+          amount: res.amount,
           name: 'AURAGRAM',
           order_id: res.razorpayOrderId,
           prefill: {
@@ -238,7 +298,6 @@ export default function CartScreen() {
         };
 
         RazorpayCheckout.open(options).then(async (data: any) => {
-          // Native payment succeeded, send to verification
           const verifyRes = await verifyPayment({
             razorpayOrderId: res.razorpayOrderId,
             razorpayPaymentId: data.razorpay_payment_id,
@@ -265,7 +324,6 @@ export default function CartScreen() {
           setIsCheckingOut(false);
         });
       } else {
-        // Fallback to beautiful simulator dialog (required for sandbox / web / simulators)
         setIsCheckingOut(false);
         setPaymentSimVisible(true);
       }
@@ -315,10 +373,7 @@ export default function CartScreen() {
     }
     triggerHaptic("heavy");
     setPaymentSimVisible(false);
-    
-    // Construct the web payment checkout URL:
     const paymentUrl = `${API_HOST}/checkout/pay-mobile?orderId=${activeRazorpayOrder.orderId}&returnPath=cart`;
-    
     try {
       await WebBrowser.openBrowserAsync(paymentUrl);
     } catch (err) {
@@ -326,166 +381,241 @@ export default function CartScreen() {
     }
   };
 
+  const handleContinueCTA = () => {
+    if (activeStep === 0) {
+      triggerHaptic("medium");
+      setActiveStep(1);
+    } else if (activeStep === 1) {
+      triggerHaptic("medium");
+      setActiveStep(2);
+    } else {
+      handleCheckout();
+    }
+  };
+
   const renderCartItem = ({ item }: { item: any }) => {
     const imageUrl = item.images?.[0] || "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600";
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Image source={{ uri: imageUrl }} style={styles.image} />
         
         <View style={styles.info}>
           <Text style={styles.maison} numberOfLines={1}>{item.maison?.name || "AURAGRAM Maison"}</Text>
-          <Text style={styles.title} numberOfLines={1}>{item.title}</Text>
-          <Text style={styles.price}>{formatPrice(item.price)}</Text>
+          <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
+          <Text style={[styles.price, { color: colors.text }]}>{formatPrice(item.price)}</Text>
         </View>
 
-        <TouchableOpacity 
-          style={styles.removeBtn}
-          onPress={() => handleRemove(item.id)}
-          activeOpacity={0.8}
-        >
-          <Lucide name="trash-outline" size={19} color="rgba(255,255,255,0.4)" />
-        </TouchableOpacity>
+        <View style={styles.qtyContainer}>
+          <View style={[styles.qtyRow, { borderColor: colors.surfaceBorder }]}>
+            <TouchableOpacity onPress={() => handleUpdateQuantity(item.id, -1)} style={styles.qtyBtn}>
+              <Lucide name="remove" size={16} color={colors.text} />
+            </TouchableOpacity>
+            <Text style={[styles.qtyValText, { color: colors.text }]}>{item.quantity || 1}</Text>
+            <TouchableOpacity onPress={() => handleUpdateQuantity(item.id, 1)} style={styles.qtyBtn}>
+              <Lucide name="add" size={16} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity 
+            style={[styles.removeBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+            onPress={() => handleRemove(item.id)}
+            activeOpacity={0.8}
+          >
+            <Lucide name="trash-outline" size={16} color="#ff3b30" />
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-        {/* Reusable Brand MainHeader */}
-        <MainHeader />
+        
+        {/* Custom Cinematic Header Navigation */}
+        <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.bg }]}>
+          <TouchableOpacity onPress={() => { triggerHaptic("light"); router.back(); }}>
+            <Lucide name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Shopping Cart</Text>
+          <View style={styles.headerRight}>
+            <TouchableOpacity 
+              style={[styles.circleBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => {
+                triggerHaptic("light");
+                setThemeMode(themeMode === "obsidian" ? "cream" : "obsidian");
+              }}
+            >
+              <Lucide name={themeMode === "obsidian" ? "sunny-outline" : "moon-outline"} size={20} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {cart.length > 0 ? (
           <View style={styles.content}>
-            <FlatList
-              data={cart}
-              renderItem={renderCartItem}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-              ListFooterComponent={
-                <View style={styles.footerDetails}>
-                  {/* Shipping Node Address Selector */}
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Delivery Node Address</Text>
+            
+            {/* 3-Step Wizard Progress Bar */}
+            <View style={[styles.wizardBar, { borderBottomColor: colors.border }]}>
+              <TouchableOpacity 
+                style={[styles.stepTab, activeStep === 0 && { borderBottomColor: colors.primary }]} 
+                onPress={() => { triggerHaptic("light"); setActiveStep(0); }}
+              >
+                <Text style={[styles.stepText, { color: activeStep === 0 ? colors.text : colors.textMuted }]}>1. CART</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.stepTab, activeStep === 1 && { borderBottomColor: colors.primary }]} 
+                onPress={() => { triggerHaptic("light"); setActiveStep(1); }}
+              >
+                <Text style={[styles.stepText, { color: activeStep === 1 ? colors.text : colors.textMuted }]}>2. DELIVERY ADDRESS</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.stepTab, activeStep === 2 && { borderBottomColor: colors.primary }]} 
+                onPress={() => { triggerHaptic("light"); setActiveStep(2); }}
+              >
+                <Text style={[styles.stepText, { color: activeStep === 2 ? colors.text : colors.textMuted }]}>3. PAYMENT METHOD</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              
+              {/* STEP 0: CART ITEMS */}
+              {activeStep === 0 && (
+                <View style={styles.stepContainer}>
+                  <View style={styles.stepHeaderRow}>
+                    <Text style={[styles.stepHeadline, { color: colors.text }]}>Shopping Cart</Text>
+                    <Text style={[styles.stepMutedCount, { color: colors.textMuted }]}>{cart.length} ITEMS</Text>
                   </View>
+                  <FlatList
+                    data={cart}
+                    renderItem={renderCartItem}
+                    keyExtractor={(item) => item.id}
+                    scrollEnabled={false}
+                    contentContainerStyle={{ gap: 12 }}
+                  />
+                </View>
+              )}
+
+              {/* STEP 1: SHIPPING INFORMATION */}
+              {activeStep === 1 && (
+                <View style={styles.stepContainer}>
+                  <Text style={[styles.stepHeadline, { color: colors.text, marginBottom: 12 }]}>Delivery Address</Text>
+                  
                   {isEditingAddress ? (
-                    <View style={styles.addressEditBox}>
+                    <View style={[styles.addressEditBox, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
                       <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Full Name</Text>
+                        <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Full Name</Text>
                         <TextInput
-                          style={styles.formInput}
+                          style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
                           value={tempAddress.name}
                           onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, name: val }))}
-                          placeholder="Enter your full name"
-                          placeholderTextColor="rgba(255,255,255,0.2)"
+                          placeholder="Enter name"
+                          placeholderTextColor={themeMode === "obsidian" ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.3)"}
                         />
                       </View>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Email Address</Text>
+                        <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Email Address</Text>
                         <TextInput
-                          style={styles.formInput}
+                          style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
                           value={tempAddress.email}
                           onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, email: val }))}
                           placeholder="luxury@auragram.vip"
-                          placeholderTextColor="rgba(255,255,255,0.2)"
+                          placeholderTextColor={themeMode === "obsidian" ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.3)"}
                           keyboardType="email-address"
                           autoCapitalize="none"
                         />
                       </View>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Country / Region</Text>
+                        <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Country / Region</Text>
                         <TouchableOpacity 
-                          style={styles.countryPickerTrigger}
+                          style={[styles.countryPickerTrigger, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                           onPress={() => { setShowCountryPicker(true); triggerHaptic("light"); }}
                         >
-                          <Text style={styles.countryPickerTriggerText}>
+                          <Text style={[styles.countryPickerTriggerText, { color: colors.text }]}>
                             {tempAddress.country ? `${tempAddress.country}` : "Select Country"}
                           </Text>
-                          <Lucide name="chevron-down" size={16} color="#00f5ff" />
+                          <Lucide name="chevron-down" size={16} color={colors.primary} />
                         </TouchableOpacity>
                       </View>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Mobile Number</Text>
+                        <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Mobile Number</Text>
                         <View style={styles.phoneInputRow}>
                           <TouchableOpacity 
-                            style={styles.phoneCodeBtn}
+                            style={[styles.phoneCodeBtn, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
                             onPress={() => { setShowCountryPicker(true); triggerHaptic("light"); }}
                           >
-                            <Text style={styles.phoneCodeText}>{tempAddress.countryCode || "+91"}</Text>
-                            <Lucide name="chevron-down" size={10} color="rgba(255,255,255,0.4)" />
+                            <Text style={[styles.phoneCodeText, { color: colors.text }]}>{tempAddress.countryCode || "+91"}</Text>
+                            <Lucide name="chevron-down" size={10} color={colors.textMuted} />
                           </TouchableOpacity>
                           <TextInput
-                            style={styles.phoneNoInput}
+                            style={[styles.phoneNoInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
                             value={tempAddress.phone}
                             onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, phone: val.replace(/[^0-9]/g, "") }))}
                             placeholder="9999999999"
-                            placeholderTextColor="rgba(255,255,255,0.2)"
+                            placeholderTextColor={themeMode === "obsidian" ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.3)"}
                             keyboardType="phone-pad"
                           />
                         </View>
                       </View>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Street Address</Text>
+                        <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Street Address</Text>
                         <TextInput
-                          style={[styles.formInput, { minHeight: 60, textAlignVertical: "top" }]}
+                          style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border, minHeight: 50 }]}
                           value={tempAddress.address}
                           onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, address: val }))}
                           placeholder="Penthouse Suite 8, Aurelia Towers"
-                          placeholderTextColor="rgba(255,255,255,0.2)"
+                          placeholderTextColor={themeMode === "obsidian" ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.3)"}
                           multiline
-                          numberOfLines={2}
                         />
                       </View>
 
                       <View style={styles.formRow}>
                         <View style={[styles.inputGroup, { flex: 1 }]}>
-                          <Text style={styles.inputLabel}>City</Text>
+                          <Text style={[styles.inputLabel, { color: colors.textMuted }]}>City</Text>
                           <TextInput
-                            style={styles.formInput}
+                            style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
                             value={tempAddress.city}
                             onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, city: val }))}
                             placeholder="Mumbai"
-                            placeholderTextColor="rgba(255,255,255,0.2)"
+                            placeholderTextColor={themeMode === "obsidian" ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.3)"}
                           />
                         </View>
-                        <View style={[styles.inputGroup, { flex: 1, marginLeft: 10 }]}>
-                          <Text style={styles.inputLabel}>State</Text>
+                        <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+                          <Text style={[styles.inputLabel, { color: colors.textMuted }]}>State</Text>
                           <TextInput
-                            style={styles.formInput}
+                            style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
                             value={tempAddress.state}
                             onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, state: val }))}
                             placeholder="Maharashtra"
-                            placeholderTextColor="rgba(255,255,255,0.2)"
+                            placeholderTextColor={themeMode === "obsidian" ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.3)"}
                           />
                         </View>
                       </View>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Pincode / Postal Code</Text>
+                        <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Pincode / Postal Code</Text>
                         <TextInput
-                          style={styles.formInput}
+                          style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
                           value={tempAddress.postalCode}
                           onChangeText={(val) => setTempAddress((prev: any) => ({ ...prev, postalCode: val }))}
                           placeholder="400001"
-                          placeholderTextColor="rgba(255,255,255,0.2)"
+                          placeholderTextColor={themeMode === "obsidian" ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.3)"}
                           keyboardType="number-pad"
                         />
                       </View>
 
-                      <TouchableOpacity style={styles.saveAddressBtn} onPress={handleSaveAddress} activeOpacity={0.8}>
-                        <Text style={styles.saveAddressBtnText}>Lock Node</Text>
+                      <TouchableOpacity style={[styles.saveAddressBtn, { backgroundColor: colors.primary }]} onPress={handleSaveAddress} activeOpacity={0.8}>
+                                                  <Text style={[styles.saveAddressBtnText, { color: themeMode === "obsidian" ? "#080415" : "#ffffff" }]}>Deliver to this Address</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <View style={styles.addressBox}>
-                      <Lucide name="location" size={20} color="#00f5ff" />
+                    <View style={[styles.addressBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                      <Lucide name="location" size={22} color={colors.primary} />
                       <View style={styles.addressInfo}>
-                        <Text style={styles.addressText}>
+                        <Text style={[styles.addressText, { color: colors.text }]}>
                           {formatAddressString(shippingAddress)}
                         </Text>
                         <TouchableOpacity 
@@ -495,58 +625,162 @@ export default function CartScreen() {
                             triggerHaptic("light"); 
                           }}
                         >
-                          <Text style={styles.editAddressBtn}>Modify Delivery Node</Text>
+                          <Text style={[styles.editAddressBtn, { color: colors.primary }]}>Edit Address</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
                   )}
 
-                  {/* Privilege Coupon Input */}
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Privilege Coupon Code</Text>
-                  </View>
-                  <View style={styles.couponRow}>
-                    <TextInput
-                      style={styles.couponInput}
-                      placeholder="ENTER PRIVILEGE CODE (e.g. VIP20)"
-                      placeholderTextColor="rgba(255,255,255,0.2)"
-                      value={couponCode}
-                      onChangeText={(val) => {
-                        setCouponCode(val);
-                        setCouponError("");
-                      }}
-                      autoCapitalize="characters"
-                    />
-                    <TouchableOpacity
-                      style={[styles.couponBtn, isCheckingCoupon && styles.couponBtnDisabled]}
-                      onPress={handleApplyCoupon}
-                      disabled={isCheckingCoupon}
-                      activeOpacity={0.8}
+                  {/* Delivery Method Selection */}
+                  <View style={styles.shippingSection}>
+                    <Text style={[styles.shippingSectionTitle, { color: colors.text }]}>Delivery Options</Text>
+                    
+                    <TouchableOpacity 
+                      style={[
+                        styles.shippingMethodCard, 
+                        { backgroundColor: colors.surface, borderColor: colors.border },
+                        deliveryMethod === "standard" && { borderColor: colors.primary, borderWidth: 1.5 }
+                      ]}
+                      onPress={() => { triggerHaptic("light"); setDeliveryMethod("standard"); }}
                     >
-                      <Text style={styles.couponBtnText}>
-                        {isCheckingCoupon ? "Securing..." : "Validate"}
-                      </Text>
+                      <View style={styles.shippingMethodLeft}>
+                        <Lucide name={deliveryMethod === "standard" ? "checkbox" : "square-outline"} size={20} color={colors.primary} />
+                        <View style={styles.shippingMethodInfo}>
+                          <Text style={[styles.shippingMethodName, { color: colors.text }]}>Standard Delivery (Free)</Text>
+                          <Text style={[styles.shippingMethodDays, { color: colors.textMuted }]}>Delivered in 3-5 Business Days</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.shippingMethodCost, { color: colors.text }]}>Free</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[
+                        styles.shippingMethodCard, 
+                        { backgroundColor: colors.surface, borderColor: colors.border },
+                        deliveryMethod === "express" && { borderColor: colors.primary, borderWidth: 1.5 }
+                      ]}
+                      onPress={() => { triggerHaptic("light"); setDeliveryMethod("express"); }}
+                    >
+                      <View style={styles.shippingMethodLeft}>
+                        <Lucide name={deliveryMethod === "express" ? "checkbox" : "square-outline"} size={20} color={colors.primary} />
+                        <View style={styles.shippingMethodInfo}>
+                          <Text style={[styles.shippingMethodName, { color: colors.text }]}>Express Delivery (+₹150)</Text>
+                          <Text style={[styles.shippingMethodDays, { color: colors.textMuted }]}>Delivered Next Business Day</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.shippingMethodCost, { color: colors.text }]}>₹150</Text>
                     </TouchableOpacity>
                   </View>
-                  {couponError ? <Text style={styles.couponErrorText}>{couponError}</Text> : null}
-                  {appliedCoupon ? (
-                    <View style={styles.couponSuccessBadge}>
-                      <Lucide name="checkmark-circle" size={16} color="#00d4aa" />
-                      <Text style={styles.couponSuccessText}>
-                        Privilege Activated: {appliedCoupon.code} (-{appliedCoupon.discount}
-                        {appliedCoupon.type === "PERCENTAGE" ? "%" : " INR"})
-                      </Text>
-                    </View>
-                  ) : null}
                 </View>
-              }
-            />
+              )}
+
+              {/* STEP 2: SECURE PAYMENT OPTIONS */}
+              {activeStep === 2 && (
+                <View style={styles.stepContainer}>
+                  <Text style={[styles.stepHeadline, { color: colors.text, marginBottom: 12 }]}>Payment Method</Text>
+                  
+                  {/* Razorpay Option */}
+                  <TouchableOpacity 
+                    style={[
+                      styles.paymentMethodCard, 
+                      { backgroundColor: colors.surface, borderColor: colors.border },
+                      paymentMethod === "RAZORPAY" && { borderColor: colors.primary, borderWidth: 1.5 }
+                    ]}
+                    onPress={() => { triggerHaptic("light"); setPaymentMethod("RAZORPAY"); }}
+                  >
+                    <View style={styles.paymentMethodInfo}>
+                      <Lucide name="card" size={20} color={colors.primary} />
+                      <Text style={[styles.paymentMethodText, { color: colors.text }]}>Pay Online (UPI, Card, Net Banking)</Text>
+                    </View>
+                    <Lucide name={paymentMethod === "RAZORPAY" ? "radio-button-on" : "radio-button-off"} size={18} color={colors.primary} />
+                  </TouchableOpacity>
+
+                  {/* Cash on Delivery (COD) Option */}
+                  <TouchableOpacity 
+                    style={[
+                      styles.paymentMethodCard, 
+                      { backgroundColor: colors.surface, borderColor: colors.border },
+                      paymentMethod === "COD" && { borderColor: colors.primary, borderWidth: 1.5 }
+                    ]}
+                    onPress={() => { triggerHaptic("light"); setPaymentMethod("COD"); }}
+                  >
+                    <View style={styles.paymentMethodInfo}>
+                      <Lucide name="cash" size={20} color={colors.primary} />
+                      <Text style={[styles.paymentMethodText, { color: colors.text }]}>Cash on Delivery (COD)</Text>
+                    </View>
+                    <Lucide name={paymentMethod === "COD" ? "radio-button-on" : "radio-button-off"} size={18} color={colors.primary} />
+                  </TouchableOpacity>
+
+                  {/* Mock Alternate Gateways */}
+                  <View style={styles.alternatePayments}>
+                    <Text style={[styles.alternatePaymentsTitle, { color: colors.textMuted }]}>Alternative Secure Methods</Text>
+                    
+                    <TouchableOpacity style={[styles.mockGatewayCard, { backgroundColor: colors.surface, borderColor: colors.border }]} disabled>
+                      <View style={styles.paymentMethodInfo}>
+                        <Lucide name="logo-apple" size={18} color={colors.textMuted} />
+                        <Text style={[styles.mockGatewayText, { color: colors.textMuted }]}>Apple Pay (Unavailable)</Text>
+                      </View>
+                      <Lucide name="chevron-forward" size={14} color={colors.textMuted} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={[styles.mockGatewayCard, { backgroundColor: colors.surface, borderColor: colors.border }]} disabled>
+                      <View style={styles.paymentMethodInfo}>
+                        <Lucide name="logo-paypal" size={18} color={colors.textMuted} />
+                        <Text style={[styles.mockGatewayText, { color: colors.textMuted }]}>PayPal (Unavailable)</Text>
+                      </View>
+                      <Lucide name="chevron-forward" size={14} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Privilege Coupon Codes block */}
+              <View style={[styles.couponBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.couponTitle, { color: colors.text }]}>Promo Code / Discount Coupon</Text>
+                <View style={styles.couponRow}>
+                  <TextInput
+                    style={[styles.couponInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    placeholder="ENTER PROMO CODE (e.g. VIP20)"
+                    placeholderTextColor={themeMode === "obsidian" ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.3)"}
+                    value={couponCode}
+                    onChangeText={(val) => {
+                      setCouponCode(val);
+                      setCouponError("");
+                    }}
+                    autoCapitalize="characters"
+                  />
+                  <TouchableOpacity
+                    style={[styles.couponBtn, { backgroundColor: colors.primary }, isCheckingCoupon && styles.couponBtnDisabled]}
+                    onPress={handleApplyCoupon}
+                    disabled={isCheckingCoupon}
+                    activeOpacity={0.8}
+                  >
+                    {isCheckingCoupon ? (
+                      <ActivityIndicator size="small" color={themeMode === "obsidian" ? "#080415" : "#fff"} />
+                    ) : (
+                      <Text style={[styles.couponBtnText, { color: themeMode === "obsidian" ? "#080415" : "#ffffff" }]}>Apply</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+                {couponError ? <Text style={styles.couponErrorText}>{couponError}</Text> : null}
+                {appliedCoupon ? (
+                  <View style={styles.couponSuccessBadge}>
+                    <Lucide name="checkmark-circle" size={16} color="#00d4aa" />
+                    <Text style={styles.couponSuccessText}>
+                      Coupon Applied: {appliedCoupon.code} (-{appliedCoupon.discount}
+                      {appliedCoupon.type === "PERCENTAGE" ? "%" : " INR"})
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+            </ScrollView>
 
             {/* Calculations Box */}
-            <View style={[styles.summaryBox, { marginBottom: 52 + insets.bottom }]}>
+            <View style={[styles.summaryBox, { backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 52 + insets.bottom }]}>
               <View style={styles.row}>
-                <Text style={styles.rowLabel}>Subtotal</Text>
-                <Text style={styles.rowVal}>{formatPrice(calculateSubtotal())}</Text>
+                <Text style={[styles.rowLabel, { color: colors.textMuted }]}>Subtotal</Text>
+                <Text style={[styles.rowVal, { color: colors.text }]}>{formatPrice(calculateSubtotal())}</Text>
               </View>
               {appliedCoupon ? (
                 <View style={styles.row}>
@@ -555,138 +789,220 @@ export default function CartScreen() {
                 </View>
               ) : null}
               <View style={styles.row}>
-                <Text style={styles.rowLabel}>Import Duty & GST (18%)</Text>
-                <Text style={styles.rowVal}>{formatPrice(calculateTax())}</Text>
+                <Text style={[styles.rowLabel, { color: colors.textMuted }]}>Import Duty & GST (18%)</Text>
+                <Text style={[styles.rowVal, { color: colors.text }]}>{formatPrice(calculateTax())}</Text>
               </View>
               <View style={styles.row}>
-                <Text style={styles.rowLabel}>Secured Node Courier</Text>
-                <Text style={styles.rowVal}>{formatPrice(1500)}</Text>
+                <Text style={[styles.rowLabel, { color: colors.textMuted }]}>Secured Node Courier</Text>
+                <Text style={[styles.rowVal, { color: colors.text }]}>{formatPrice(calculateShipping())}</Text>
               </View>
               
-              <View style={[styles.row, styles.totalRow]}>
-                <Text style={styles.totalLabel}>Total Casket Price</Text>
-                <Text style={styles.totalVal}>{formatPrice(calculateTotal())}</Text>
+              <View style={[styles.row, styles.totalRow, { borderColor: colors.border }]}>
+                <Text style={[styles.totalLabel, { color: colors.text }]}>Total Casket Price</Text>
+                <Text style={[styles.totalVal, { color: colors.primary }]}>{formatPrice(calculateTotal())}</Text>
               </View>
 
               <TouchableOpacity 
-                style={[styles.checkoutBtn, isCheckingOut && styles.checkoutBtnDisabled]}
+                style={[styles.checkoutBtn, { backgroundColor: colors.primary }, isCheckingOut && styles.checkoutBtnDisabled]}
                 activeOpacity={0.9}
-                onPress={handleCheckout}
+                onPress={handleContinueCTA}
                 disabled={isCheckingOut}
               >
-                <Text style={styles.checkoutText}>
-                  {isCheckingOut ? "Securing Node..." : "Authenticate Purchase"}
+                <Text style={[styles.checkoutText, { color: themeMode === "obsidian" ? "#080415" : "#ffffff" }]}>
+                  {isCheckingOut ? "Securing Node..." : 
+                   activeStep === 0 ? "Continue to Shipping" : 
+                   activeStep === 1 ? "Continue to Payment" : "Authenticate Purchase"}
                 </Text>
-                <Lucide name="shield-checkmark" size={17} color="#000" />
+                <Lucide name={activeStep === 2 ? "shield-checkmark" : "arrow-forward-sharp"} size={17} color={themeMode === "obsidian" ? "#080415" : "#ffffff"} />
               </TouchableOpacity>
+
+              {/* Confidence Badges */}
+              <View style={styles.confidenceBadges}>
+                <View style={styles.badgeItem}>
+                  <Lucide name="shield-checkmark" size={16} color={colors.textMuted} />
+                  <Text style={[styles.badgeLabel, { color: colors.textMuted }]}>Secure Pay</Text>
+                </View>
+                <View style={styles.badgeItem}>
+                  <Lucide name="flash" size={16} color={colors.textMuted} />
+                  <Text style={[styles.badgeLabel, { color: colors.textMuted }]}>Fast Delivery</Text>
+                </View>
+                <View style={styles.badgeItem}>
+                  <Lucide name="refresh" size={16} color={colors.textMuted} />
+                  <Text style={[styles.badgeLabel, { color: colors.textMuted }]}>30 Day Returns</Text>
+                </View>
+              </View>
             </View>
           </View>
         ) : (
           <View style={styles.emptyContainer}>
-            <Lucide name="bag-handle-outline" size={48} color="rgba(255,255,255,0.06)" />
-            <Text style={styles.emptyTitle}>Your casket is empty.</Text>
-            <Text style={styles.emptySub}>Select elite curator artifacts from the atelier grid to lock down stock nodes.</Text>
+            <Lucide name="bag-handle-outline" size={48} color={colors.textMuted} style={{ opacity: 0.2 }} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>Your Cart is empty.</Text>
+            <Text style={[styles.emptySub, { color: colors.textMuted }]}>Add items to your cart to start shopping.</Text>
           </View>
         )}
 
       </SafeAreaView>
 
-      {/* 🏠 GLOBAL PERSISTENT Bottom Navigation tabs replica */}
-      <View style={[styles.instagramBottomBar, { height: 52 + insets.bottom, paddingBottom: insets.bottom }]}>
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/"); }}>
-          <Lucide name="home-outline" size={28} color="#fff" />
+      {/* 🏠 AURA BOTTOM NAVIGATION — 5 tabs with elevated Create */}
+      <View style={[styles.auraBottomBar, { paddingBottom: insets.bottom, height: 62 + insets.bottom }]}>
+
+        {/* TAB 1 — Home */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push("/");
+          }}
+        >
+          <Lucide
+            name="home-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push({ pathname: "/", params: { activeTab: "reels" } } as any); }}>
-          <Lucide name="film-outline" size={28} color="#fff" />
+        {/* TAB 2 — Reel */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push({ pathname: "/", params: { activeTab: "reels" } } as any);
+          }}
+        >
+          <Lucide
+            name="film-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Reel</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push({ pathname: "/", params: { openDMs: "true" } } as any); }}>
-          <Lucide name="paper-plane-outline" size={28} color="#fff" />
+        {/* TAB 3 — Inbox */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push({ pathname: "/", params: { openDMs: "true" } } as any);
+          }}
+        >
+          <Lucide
+            name="paper-plane-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Inbox</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/shop" as any); }}>
-          <Lucide name="play-outline" size={28} color="#fff" />
+        {/* TAB 4 — Products */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push("/shop");
+          }}
+        >
+          <Lucide
+            name="bag-handle-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Products</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/account"); }}>
-          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "#00f5ff", overflow: "hidden" }]}>
+        {/* TAB 5 — Profile */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push("/account");
+          }}
+        >
+          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", overflow: "hidden" }]}>
             {activeProfile?.logo ? (
               <Image 
                 source={{ uri: activeProfile.logo }} 
                 style={styles.profileTabImg} 
               />
+            ) : currentUser?.avatar ? (
+              <Image 
+                source={{ uri: currentUser.avatar }} 
+                style={styles.profileTabImg} 
+              />
             ) : (
-              <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
-                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId?.[0]?.toUpperCase() || "A"}</Text>
+              <View style={[styles.profileTabImg, { backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
+                <Text style={{ color: themeMode === "obsidian" ? "#000" : "#fff", fontSize: 10, fontWeight: "bold" }}>
+                  {(activeProfile?.name || currentUser?.name || activeMaisonId || "R")[0]?.toUpperCase()}
+                </Text>
               </View>
             )}
-            <View style={styles.profileActiveIndicator} />
           </View>
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Profile</Text>
         </TouchableOpacity>
+
       </View>
 
       {/* Interactive Simulated Payment Gateway Modal */}
       <Modal visible={paymentSimVisible} transparent animationType="slide" onRequestClose={() => setPaymentSimVisible(false)}>
         <View style={styles.simOverlay}>
-          <View style={styles.simContainer}>
+          <View style={[styles.simContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.simHeader}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Lucide name="shield-checkmark" size={22} color="#00f5ff" />
-                <Text style={styles.simTitle}>AURAGRAM PAYMENT NODE</Text>
+                <Lucide name="shield-checkmark" size={22} color={colors.primary} />
+                <Text style={[styles.simTitle, { color: colors.text }]}>AURAGRAM PAYMENT</Text>
               </View>
               <TouchableOpacity onPress={() => setPaymentSimVisible(false)}>
-                <Lucide name="close" size={24} color="rgba(255,255,255,0.4)" />
+                <Lucide name="close" size={24} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.simSubtitle}>Test Mode Simulation · Safe Sandbox Environment</Text>
 
-            <View style={styles.simCard}>
-              <Text style={styles.simCardLabel}>Total Due</Text>
-              <Text style={styles.simCardAmount}>{formatPrice(calculateTotal())}</Text>
+            <View style={[styles.simCard, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+              <Text style={[styles.simCardLabel, { color: colors.textMuted }]}>Total Due</Text>
+              <Text style={[styles.simCardAmount, { color: colors.primary }]}>{formatPrice(calculateTotal())}</Text>
               
               <View style={styles.simDetailRow}>
-                <Text style={styles.simDetailLabel}>Order ID</Text>
-                <Text style={styles.simDetailVal}>{activeRazorpayOrder?.razorpayOrderId || "N/A"}</Text>
+                <Text style={[styles.simDetailLabel, { color: colors.textMuted }]}>Order ID</Text>
+                <Text style={[styles.simDetailVal, { color: colors.text }]}>{activeRazorpayOrder?.razorpayOrderId || "N/A"}</Text>
               </View>
               
               <View style={styles.simDetailRow}>
-                <Text style={styles.simDetailLabel}>Description</Text>
-                <Text style={styles.simDetailVal}>AURAGRAM Luxury Attire Casket</Text>
+                <Text style={[styles.simDetailLabel, { color: colors.textMuted }]}>Description</Text>
+                <Text style={[styles.simDetailVal, { color: colors.text }]}>AURAGRAM Shopping Cart</Text>
               </View>
             </View>
 
-            <View style={styles.simInstructions}>
-              <Text style={styles.simInstructionText}>
+            <View style={[styles.simInstructions, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+              <Text style={[styles.simInstructionText, { color: colors.textMuted }]}>
                 Choose whether to confirm via the real Razorpay standard gateway check on web, or bypass instantly using the sandbox simulation.
               </Text>
             </View>
 
             <TouchableOpacity
-              style={[styles.simPayBtn, isCheckingOut && styles.simPayBtnDisabled]}
+              style={[styles.simPayBtn, { backgroundColor: colors.primary }, isCheckingOut && styles.simPayBtnDisabled]}
               onPress={handleOpenWebCheckout}
               disabled={isCheckingOut}
               activeOpacity={0.8}
             >
               {isCheckingOut ? (
-                <Text style={styles.simPayBtnText}>Connecting Gateway...</Text>
+                <Text style={[styles.simPayBtnText, { color: themeMode === "obsidian" ? "#080415" : "#ffffff" }]}>Connecting Gateway...</Text>
               ) : (
                 <>
-                  <Text style={styles.simPayBtnText}>Open Web Checkout (Real Gateway)</Text>
-                  <Lucide name="card-sharp" size={18} color="#080415" />
+                  <Text style={[styles.simPayBtnText, { color: themeMode === "obsidian" ? "#080415" : "#ffffff" }]}>Open Web Checkout</Text>
+                  <Lucide name="card-sharp" size={18} color={themeMode === "obsidian" ? "#080415" : "#ffffff"} />
                 </>
               )}
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.simPayBtnSecondary, isCheckingOut && styles.simPayBtnDisabled]}
+              style={[styles.simPayBtnSecondary, { borderColor: colors.primary }, isCheckingOut && styles.simPayBtnDisabled]}
               onPress={handleSimulateSuccess}
               disabled={isCheckingOut}
               activeOpacity={0.8}
             >
-              <Text style={styles.simPayBtnTextSecondary}>Sandbox Simulation Bypass</Text>
-              <Lucide name="arrow-forward-sharp" size={16} color="#00f5ff" />
+              <Text style={[styles.simPayBtnTextSecondary, { color: colors.primary }]}>Sandbox Simulation Bypass</Text>
+              <Lucide name="arrow-forward-sharp" size={16} color={colors.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -708,21 +1024,22 @@ export default function CartScreen() {
         amount={successDetails.amount}
         itemCount={successDetails.itemCount}
       />
+      
       {/* Country Selector Overlay */}
       {showCountryPicker && (
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "#080415", padding: 24, zIndex: 999 }]}>
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg, padding: 24, zIndex: 999 }]}>
           <SafeAreaView style={{ flex: 1 }}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>Select Destination Node</Text>
+            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.pickerTitle, { color: colors.primary }]}>Select Country</Text>
               <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
-                <Lucide name="close" size={24} color="rgba(255,255,255,0.4)" />
+                <Lucide name="close" size={24} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.pickerList} showsVerticalScrollIndicator={false}>
               {LUXURY_COUNTRIES.map((c) => (
                 <TouchableOpacity
                   key={c.name}
-                  style={styles.pickerItem}
+                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
                   onPress={() => {
                     setTempAddress((prev: any) => ({
                       ...prev,
@@ -734,8 +1051,8 @@ export default function CartScreen() {
                   }}
                 >
                   <Text style={styles.pickerFlag}>{c.flag}</Text>
-                  <Text style={styles.pickerName}>{c.name}</Text>
-                  <Text style={styles.pickerCode}>{c.code}</Text>
+                  <Text style={[styles.pickerName, { color: colors.text }]}>{c.name}</Text>
+                  <Text style={[styles.pickerCode, { color: colors.primary }]}>{c.code}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -749,7 +1066,6 @@ export default function CartScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#080415",
   },
   safeArea: {
     flex: 1,
@@ -759,49 +1075,82 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
   },
   headerTitle: {
-    color: "#fff",
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "300",
     letterSpacing: 2,
     textTransform: "uppercase",
+    textAlign: "center",
   },
-  badge: {
-    backgroundColor: "#00f5ff",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-  badgeText: {
-    color: "#000",
-    fontSize: 12,
+  circleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  wizardBar: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    borderBottomWidth: 1,
+    paddingVertical: 12,
+  },
+  stepTab: {
+    paddingBottom: 6,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+    paddingHorizontal: 12,
+  },
+  stepText: {
+    fontSize: 11,
     fontWeight: "bold",
+    letterSpacing: 1.5,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  stepContainer: {
+    gap: 16,
+    marginBottom: 20,
+  },
+  stepHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    marginBottom: 8,
+  },
+  stepHeadline: {
+    fontSize: 22,
+    fontWeight: "600",
+    letterSpacing: -0.5,
+  },
+  stepMutedCount: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   content: {
     flex: 1,
     justifyContent: "space-between",
   },
-  listContent: {
-    padding: 16,
-    gap: 12,
-  },
   card: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#0b071e",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.04)",
-    borderRadius: 20,
+    borderRadius: 16,
     padding: 12,
   },
   image: {
-    width: 64,
-    height: 64,
-    borderRadius: 14,
+    width: 68,
+    height: 85,
+    borderRadius: 10,
     resizeMode: "cover",
   },
   info: {
@@ -810,39 +1159,56 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   maison: {
-    color: "#00f5ff",
-    fontSize: 11,
+    color: "#ff3366",
+    fontSize: 10,
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   title: {
-    color: "#fff",
     fontSize: 14.5,
     fontWeight: "bold",
     marginTop: 2,
   },
   price: {
-    color: "#fff",
-    fontSize: 15.5,
+    fontSize: 15.0,
     fontWeight: "300",
     marginTop: 4,
   },
-  removeBtn: {
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.02)",
+  qtyContainer: {
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  qtyRow: {
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.04)",
+    borderRadius: 20,
+    paddingHorizontal: 6,
+    height: 28,
+  },
+  qtyBtn: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtyValText: {
+    fontSize: 13,
+    fontWeight: "bold",
+    marginHorizontal: 8,
+  },
+  removeBtn: {
+    padding: 6,
+    borderRadius: 8,
+    borderWidth: 0.5,
   },
   summaryBox: {
-    backgroundColor: "#0b071e",
     borderTopWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    padding: 24,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    gap: 12,
+    padding: 20,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    gap: 10,
   },
   row: {
     flexDirection: "row",
@@ -850,32 +1216,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   rowLabel: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   rowVal: {
-    color: "#fff",
-    fontSize: 14.5,
-    fontWeight: "400",
+    fontSize: 14,
+    fontWeight: "500",
   },
   totalRow: {
     borderTopWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
     paddingTop: 12,
     marginTop: 4,
   },
   totalLabel: {
-    color: "#fff",
-    fontSize: 14.5,
+    fontSize: 14,
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   totalVal: {
-    color: "#00f5ff",
     fontSize: 18.5,
     fontWeight: "bold",
   },
@@ -883,14 +1244,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#00f5ff",
     paddingVertical: 14,
-    borderRadius: 16,
-    marginTop: 12,
+    borderRadius: 14,
+    marginTop: 8,
     gap: 8,
   },
   checkoutText: {
-    color: "#000",
     fontSize: 13.5,
     fontWeight: "bold",
     textTransform: "uppercase",
@@ -904,15 +1263,13 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   emptyTitle: {
-    color: "#fff",
     fontSize: 18.5,
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   emptySub: {
-    color: "rgba(255,255,255,0.3)",
-    fontSize: 13.5,
+    fontSize: 13,
     textAlign: "center",
     lineHeight: 18,
     fontWeight: "400",
@@ -927,9 +1284,33 @@ const styles = StyleSheet.create({
     justifyContent: "space-around",
     alignItems: "center",
     height: 52,
-    backgroundColor: "#080415",
     borderTopWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.08)",
+  },
+  auraBottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "flex-end",
+    backgroundColor: "rgba(5,3,15,0.94)",
+    borderTopWidth: 0.5,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
+  auraTabBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingBottom: 10,
+    paddingTop: 8,
+    gap: 3,
+  },
+  auraTabLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+    letterSpacing: 0.2,
   },
   tabBtn: {
     padding: 8,
@@ -955,33 +1336,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#ff3b30",
   },
   checkoutBtnDisabled: {
-    backgroundColor: "rgba(0,245,255,0.3)",
-  },
-  footerDetails: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 24,
-    gap: 16,
-  },
-  sectionHeader: {
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  sectionTitle: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: 11,
-    fontWeight: "bold",
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
+    opacity: 0.5,
   },
   addressBox: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#0b071e",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     gap: 12,
   },
   addressInfo: {
@@ -989,51 +1351,47 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   addressText: {
-    color: "#fff",
-    fontSize: 13.5,
+    fontSize: 13,
     lineHeight: 18,
     fontWeight: "400",
   },
   editAddressBtn: {
-    color: "#00f5ff",
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginTop: 4,
   },
   addressEditBox: {
-    backgroundColor: "#0b071e",
     borderWidth: 1,
-    borderColor: "#00f5ff",
-    borderRadius: 16,
+    borderRadius: 14,
     padding: 12,
     gap: 10,
   },
-  addressInput: {
-    color: "#fff",
-    fontSize: 13.5,
-    lineHeight: 18,
-    backgroundColor: "rgba(255,255,255,0.02)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 10,
-    padding: 10,
-    minHeight: 60,
-    textAlignVertical: "top",
-  },
   saveAddressBtn: {
-    backgroundColor: "#00f5ff",
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: "center",
     borderRadius: 10,
+    marginTop: 4,
   },
   saveAddressBtnText: {
-    color: "#080415",
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 1,
+  },
+  couponBox: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
+    marginTop: 16,
+  },
+  couponTitle: {
+    fontSize: 12,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
   couponRow: {
     flexDirection: "row",
@@ -1041,32 +1399,28 @@ const styles = StyleSheet.create({
   },
   couponInput: {
     flex: 1,
-    color: "#fff",
-    backgroundColor: "#0b071e",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     fontSize: 13,
     fontWeight: "500",
   },
   couponBtn: {
-    backgroundColor: "#00f5ff",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 18,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    height: 42,
   },
   couponBtnDisabled: {
-    backgroundColor: "rgba(0,245,255,0.3)",
+    opacity: 0.5,
   },
   couponBtnText: {
-    color: "#080415",
     fontSize: 12,
     fontWeight: "bold",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   couponErrorText: {
     color: "#ff3b30",
@@ -1090,18 +1444,112 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "bold",
   },
+  shippingSection: {
+    marginTop: 16,
+    gap: 10,
+  },
+  shippingSectionTitle: {
+    fontSize: 13,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  shippingMethodCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
+  shippingMethodLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  shippingMethodInfo: {
+    gap: 2,
+  },
+  shippingMethodName: {
+    fontSize: 13.5,
+    fontWeight: "bold",
+  },
+  shippingMethodDays: {
+    fontSize: 11,
+  },
+  shippingMethodCost: {
+    fontSize: 13.5,
+    fontWeight: "bold",
+  },
+  paymentMethodCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+  },
+  paymentMethodInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  paymentMethodText: {
+    fontSize: 13.5,
+    fontWeight: "bold",
+  },
+  alternatePayments: {
+    marginTop: 16,
+    gap: 10,
+  },
+  alternatePaymentsTitle: {
+    fontSize: 11,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  mockGatewayCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    opacity: 0.6,
+  },
+  mockGatewayText: {
+    fontSize: 13,
+  },
+  confidenceBadges: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginTop: 12,
+    borderTopWidth: 0.5,
+    borderTopColor: "rgba(255,255,255,0.05)",
+    paddingTop: 12,
+  },
+  badgeItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  badgeLabel: {
+    fontSize: 10.5,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   simOverlay: {
     flex: 1,
     backgroundColor: "rgba(8, 4, 21, 0.85)",
     justifyContent: "flex-end",
   },
   simContainer: {
-    backgroundColor: "#0b071e",
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     borderWidth: 1,
     borderBottomWidth: 0,
-    borderColor: "rgba(255,255,255,0.08)",
     padding: 24,
     paddingBottom: 40,
     gap: 16,
@@ -1112,7 +1560,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   simTitle: {
-    color: "#fff",
     fontSize: 15,
     fontWeight: "300",
     letterSpacing: 1.5,
@@ -1126,22 +1573,18 @@ const styles = StyleSheet.create({
     marginTop: -8,
   },
   simCard: {
-    backgroundColor: "#080415",
     borderWidth: 1,
-    borderColor: "rgba(0, 245, 255, 0.15)",
     borderRadius: 20,
     padding: 20,
     gap: 12,
   },
   simCardLabel: {
-    color: "rgba(255,255,255,0.4)",
     fontSize: 11,
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   simCardAmount: {
-    color: "#00f5ff",
     fontSize: 32,
     fontWeight: "bold",
   },
@@ -1152,24 +1595,19 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   simDetailLabel: {
-    color: "rgba(255,255,255,0.3)",
     fontSize: 12,
     fontWeight: "500",
   },
   simDetailVal: {
-    color: "#fff",
     fontSize: 12.5,
     fontWeight: "600",
   },
   simInstructions: {
-    backgroundColor: "rgba(255,255,255,0.02)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.04)",
     borderRadius: 12,
     padding: 12,
   },
   simInstructionText: {
-    color: "rgba(255,255,255,0.4)",
     fontSize: 12,
     lineHeight: 16,
     textAlign: "center",
@@ -1178,55 +1616,46 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#00f5ff",
     paddingVertical: 15,
     borderRadius: 16,
     gap: 8,
   },
   simPayBtnDisabled: {
-    backgroundColor: "rgba(0, 245, 255, 0.3)",
+    opacity: 0.5,
   },
   simPayBtnText: {
-    color: "#080415",
     fontSize: 13,
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   inputGroup: {
-    marginBottom: 12,
+    marginBottom: 10,
     gap: 4,
   },
   inputLabel: {
-    color: "rgba(255,255,255,0.4)",
     fontSize: 11,
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   formInput: {
-    color: "#fff",
     fontSize: 13.5,
-    backgroundColor: "rgba(255,255,255,0.02)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   countryPickerTrigger: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.02)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   countryPickerTriggerText: {
-    color: "#fff",
     fontSize: 13.5,
   },
   phoneInputRow: {
@@ -1237,29 +1666,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.02)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    width: 75,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    width: 70,
     gap: 4,
   },
   phoneCodeText: {
-    color: "#fff",
     fontSize: 13,
     fontWeight: "bold",
   },
   phoneNoInput: {
     flex: 1,
-    color: "#fff",
     fontSize: 13.5,
-    backgroundColor: "rgba(255,255,255,0.02)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   formRow: {
     flexDirection: "row",
@@ -1271,10 +1694,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
   },
   pickerTitle: {
-    color: "#00f5ff",
     fontSize: 14,
     fontWeight: "bold",
     letterSpacing: 1,
@@ -1288,7 +1709,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.03)",
     gap: 12,
   },
   pickerFlag: {
@@ -1296,11 +1716,9 @@ const styles = StyleSheet.create({
   },
   pickerName: {
     flex: 1,
-    color: "#fff",
     fontSize: 14,
   },
   pickerCode: {
-    color: "#00f5ff",
     fontSize: 13,
     fontWeight: "bold",
   },
@@ -1310,14 +1728,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: "#00f5ff",
     paddingVertical: 14,
     borderRadius: 14,
     gap: 8,
     marginTop: 10,
   },
   simPayBtnTextSecondary: {
-    color: "#00f5ff",
     fontSize: 13,
     fontWeight: "bold",
     textTransform: "uppercase",

@@ -21,6 +21,7 @@ import { useStore } from "@/store/useStore";
 import { router } from "expo-router";
 import Lucide from "@expo/vector-icons/Ionicons";
 import MainHeader from "@/components/MainHeader";
+import { ShimmerShopGrid } from "@/components/ui/ShimmerLoader";
 import { formatCompactNumber } from "@/constants/format";
 import * as Location from "expo-location";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -884,39 +885,96 @@ export default function ShopScreen() {
 
       </SafeAreaView>
 
-      {/* 🏠 GLOBAL PERSISTENT Bottom Navigation tabs replica */}
-      <View style={[styles.instagramBottomBar, { height: 52 + insets.bottom, paddingBottom: insets.bottom }]}>
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/"); }}>
-          <Lucide name="home-outline" size={28} color="#fff" />
+      {/* 🏠 AURA BOTTOM NAVIGATION — 5 tabs with elevated Create */}
+      <View style={[styles.auraBottomBar, { paddingBottom: insets.bottom, height: 62 + insets.bottom }]}>
+
+        {/* TAB 1 — Home */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push("/");
+          }}
+        >
+          <Lucide
+            name="home-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push({ pathname: "/", params: { activeTab: "reels" } } as any); }}>
-          <Lucide name="film-outline" size={28} color="#fff" />
+        {/* TAB 2 — Reel */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push({ pathname: "/", params: { activeTab: "reels" } } as any);
+          }}
+        >
+          <Lucide
+            name="film-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Reel</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push({ pathname: "/", params: { openDMs: "true" } } as any); }}>
-          <Lucide name="paper-plane-outline" size={28} color="#fff" />
+        {/* TAB 3 — Inbox */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push({ pathname: "/", params: { openDMs: "true" } } as any);
+          }}
+        >
+          <Lucide
+            name="paper-plane-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Inbox</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/shop" as any); }}>
-          <Lucide name="play-outline" size={28} color="#00f5ff" />
+        {/* TAB 4 — Products */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push("/shop");
+          }}
+        >
+          <Lucide
+            name="bag-handle-outline"
+            size={26}
+            color="#00f5ff"
+          />
+          <Text style={[styles.auraTabLabel, { color: "#00f5ff" }]}>Products</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/account"); }}>
-          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "#00f5ff", overflow: "hidden" }]}>
+        {/* TAB 5 — Profile */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push("/account");
+          }}
+        >
+          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", overflow: "hidden" }]}>
             {activeProfile?.logo ? (
-              <Image 
-                source={{ uri: activeProfile.logo }} 
-                style={styles.profileTabImg} 
+              <Image
+                source={{ uri: activeProfile.logo }}
+                style={styles.profileTabImg}
               />
             ) : (
               <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
-                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId?.[0]?.toUpperCase() || "A"}</Text>
+                <Text style={{ color: "#000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId?.[0]?.toUpperCase() || "R"}</Text>
               </View>
             )}
-            <View style={styles.profileActiveIndicator} />
           </View>
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Profile</Text>
         </TouchableOpacity>
+
       </View>
 
       {/* 📍 DELIVERY PINCODE CHECK MODAL */}
@@ -1983,6 +2041,32 @@ const styles = StyleSheet.create({
     backgroundColor: "#080415",
     borderTopWidth: 0.5,
     borderColor: "rgba(255,255,255,0.08)",
+  },
+  auraBottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "flex-end",
+    backgroundColor: "rgba(5,3,15,0.94)",
+    borderTopWidth: 0.5,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
+  auraTabBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingBottom: 10,
+    paddingTop: 8,
+    gap: 3,
+  },
+  auraTabLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+    letterSpacing: 0.2,
   },
   tabBtn: {
     padding: 8,

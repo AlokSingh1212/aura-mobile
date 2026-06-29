@@ -89,6 +89,139 @@ export default function ViewProfileScreen() {
   // 📞 Contact sheet states
   const [showContactSheet, setShowContactSheet] = useState(false);
 
+  // ➕ Tags and Custom prompt modal states
+  const [tags, setTags] = useState<string[]>([]);
+  const [promptVisible, setPromptVisible] = useState(false);
+  const [promptTitle, setPromptTitle] = useState("");
+  const [promptDesc, setPromptDesc] = useState("");
+  const [promptPlaceholder, setPromptPlaceholder] = useState("");
+  const [promptValue, setPromptValue] = useState("");
+  const [promptOnSubmit, setPromptOnSubmit] = useState<((val: string) => void) | null>(null);
+
+  const showCustomPrompt = (title: string, desc: string, placeholder: string, onSubmit: (val: string) => void) => {
+    setPromptTitle(title);
+    setPromptDesc(desc);
+    setPromptPlaceholder(placeholder);
+    setPromptValue("");
+    setPromptOnSubmit(() => onSubmit);
+    setPromptVisible(true);
+  };
+
+  const handleAddPress = () => {
+    triggerHaptic("light");
+    showCustomPrompt(
+      "Add Profile Tag",
+      "Enter a custom handle tag (e.g. @rare_raven, ✦ Expert):",
+      "e.g. ✦ Stylist",
+      async (tag) => {
+        if (tag && tag.trim()) {
+          triggerHaptic("success");
+          const newTags = [...tags, tag.trim()];
+          setTags(newTags);
+
+          // Save to Neon PostgreSQL
+          try {
+            await fetch(`${API_HOST}/api/mobile/profile`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                maisonId: profile.username || "rare_raven",
+                oldMaisonId: profile.username,
+                profileName: profile.profileName,
+                category: profile.category,
+                bioText: profile.bioText,
+                websiteLink: profile.websiteLink,
+                logo: profile.logo,
+                tags: newTags,
+                postsCount: profile.postsCount,
+                followersCount: profile.followersCount,
+                followingCount: profile.followingCount
+              })
+            });
+
+            // Also update activeProfile store state so it propagates immediately to account.tsx
+            useStore.setState((state) => {
+              const updatedProfile = state.activeProfile ? { 
+                ...state.activeProfile, 
+                tags: newTags
+              } : null;
+              return {
+                activeProfile: updatedProfile,
+                userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { 
+                  ...p, 
+                  tags: newTags
+                } : p)
+              };
+            });
+          } catch (e) {
+            console.warn("Failed to save tag in dynamic profile view", e);
+          }
+        }
+      }
+    );
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    triggerHaptic("medium");
+    Alert.alert(
+      "Remove Tag",
+      `Are you sure you want to remove the tag "${tagToRemove}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            const newTags = tags.filter(t => t !== tagToRemove);
+            setTags(newTags);
+            triggerHaptic("success");
+
+            // Save to database
+            try {
+              await fetch(`${API_HOST}/api/mobile/profile`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  maisonId: profile.username || "rare_raven",
+                  oldMaisonId: profile.username,
+                  profileName: profile.profileName,
+                  category: profile.category,
+                  bioText: profile.bioText,
+                  websiteLink: profile.websiteLink,
+                  logo: profile.logo,
+                  tags: newTags,
+                  postsCount: profile.postsCount,
+                  followersCount: profile.followersCount,
+                  followingCount: profile.followingCount
+                })
+              });
+
+              useStore.setState((state) => {
+                const updatedProfile = state.activeProfile ? { 
+                  ...state.activeProfile, 
+                  tags: newTags
+                } : null;
+                return {
+                  activeProfile: updatedProfile,
+                  userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { 
+                    ...p, 
+                    tags: newTags
+                  } : p)
+                };
+              });
+            } catch (e) {
+              console.warn("Failed to remove tag in dynamic profile view", e);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // Fetch profile data on mount
   useEffect(() => {
     if (username) {
@@ -101,6 +234,13 @@ export default function ViewProfileScreen() {
 
   // Derived profile state
   const profile = viewingProfile;
+  const isOwnProfile = profile?.username === currentUser?.username;
+
+  useEffect(() => {
+    if (viewingProfile?.tags) {
+      setTags(viewingProfile.tags);
+    }
+  }, [viewingProfile]);
   const isPersonalProfile = profile?.profileType === "PERSONAL";
   const isCreatorProfile = profile?.profileType === "CREATOR";
   const isBusinessProfile = profile?.profileType === "BUSINESS";
@@ -394,14 +534,33 @@ export default function ViewProfileScreen() {
               </View>
             </View>
 
-            {/* 🔴 HORIZONTAL TAG BADGES (no Add button for other user) */}
-            {profile.tags && profile.tags.length > 0 && (
+            {/* 🔴 HORIZONTAL TAG BADGES */}
+            {((isOwnProfile ? tags : (profile.tags || [])).length > 0 || isOwnProfile) && (
               <View style={styles.tagsContainer}>
-                {profile.tags.map((tagItem: string, idx: number) => (
-                  <View key={idx} style={styles.tagBadge}>
-                    <Text style={styles.tagBadgeText}>{tagItem}</Text>
-                  </View>
-                ))}
+                {(isOwnProfile ? tags : (profile.tags || [])).map((tagItem: string, idx: number) => {
+                  if (isOwnProfile) {
+                    return (
+                      <TouchableOpacity 
+                        key={idx} 
+                        style={styles.tagBadge}
+                        onPress={() => handleRemoveTag(tagItem)}
+                      >
+                        <Text style={styles.tagBadgeText}>{tagItem}</Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                  return (
+                    <View key={idx} style={styles.tagBadge}>
+                      <Text style={styles.tagBadgeText}>{tagItem}</Text>
+                    </View>
+                  );
+                })}
+                {isOwnProfile && (
+                  <TouchableOpacity style={styles.addTagBtn} onPress={handleAddPress}>
+                    <Lucide name="add" size={12} color="#00f5ff" />
+                    <Text style={styles.addTagBtnText}>Add</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
@@ -920,6 +1079,53 @@ export default function ViewProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* ➕ CUSTOM PROMPT MODAL */}
+      <Modal
+        visible={promptVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPromptVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.promptOverlay}
+          activeOpacity={1}
+          onPress={() => setPromptVisible(false)}
+        >
+          <View style={styles.promptContainer} onStartShouldSetResponder={() => true}>
+            <Text style={styles.promptTitle}>{promptTitle}</Text>
+            {promptDesc ? <Text style={styles.promptDesc}>{promptDesc}</Text> : null}
+            <TextInput
+              style={styles.promptInput}
+              placeholder={promptPlaceholder}
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              value={promptValue}
+              onChangeText={setPromptValue}
+              keyboardAppearance="dark"
+              autoFocus
+            />
+            <View style={styles.promptActionRow}>
+              <TouchableOpacity
+                style={[styles.promptButton, styles.promptCancelButton]}
+                onPress={() => setPromptVisible(false)}
+              >
+                <Text style={styles.promptCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.promptButton, styles.promptSubmitButton]}
+                onPress={() => {
+                  setPromptVisible(false);
+                  if (promptOnSubmit) {
+                    promptOnSubmit(promptValue);
+                  }
+                }}
+              >
+                <Text style={styles.promptSubmitButtonText}>Submit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
     </View>
@@ -1453,6 +1659,22 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: "600",
   },
+  addTagBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 12,
+    paddingVertical: 5.5,
+    borderRadius: 14,
+  },
+  addTagBtnText: {
+    color: "#00f5ff",
+    fontSize: 11.5,
+    fontWeight: "bold",
+  },
 
   // Professional Dashboard
   dashboardCard: {
@@ -1753,5 +1975,76 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     textAlign: "center",
     lineHeight: 18.5,
+  },
+  // Custom prompt modal styles
+  promptOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  promptContainer: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: "#0b071e",
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+  },
+  promptTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  promptDesc: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  promptInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 8,
+    color: "#ffffff",
+    fontSize: 14,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 20,
+  },
+  promptActionRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  promptButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  promptCancelButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  promptCancelButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  promptSubmitButton: {
+    backgroundColor: "#00f5ff",
+  },
+  promptSubmitButtonText: {
+    color: "#080415",
+    fontSize: 14,
+    fontWeight: "bold",
   },
 });

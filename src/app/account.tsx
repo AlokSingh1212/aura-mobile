@@ -62,7 +62,9 @@ export default function AccountScreen() {
     wishlist,
     fetchWishlist,
     toggleWishlist,
-    addToCart
+    addToCart,
+    isSubscribed,
+    setSubscribed
   } = useStore();
   const personalProfile = userProfiles.find(p => p.type === "PERSONAL") || userProfiles.find(p => p.type !== "BUSINESS") || userProfiles[0];
   const brandProfiles = userProfiles.filter(p => p.type === "BUSINESS");
@@ -80,36 +82,36 @@ export default function AccountScreen() {
   const [isUpdating, setIsUpdating] = useState(false);
 
   // 🔴 PROFILE EDITABLE STATES (PARITY WITH SCREENSHOT AND EXTENDED TO BE FULLY FUNCTIONAL)
-  const [username, setUsername] = useState(activeMaisonId);
-  const [logo, setLogo] = useState<string | null>(null);
-  const [editLogo, setEditLogo] = useState<string | null>(null);
-  const [profileName, setProfileName] = useState(activeMaisonId === "aloksingh" ? "Alok Singh" : "Rare Raven");
-  const [category, setCategory] = useState(activeMaisonId === "aloksingh" ? "Personal Profile" : "Clothing (Brand)");
+  const [username, setUsername] = useState<string>(activeProfile?.username || activeMaisonId);
+  const [logo, setLogo] = useState<string | null>(activeProfile?.logo || null);
+  const [editLogo, setEditLogo] = useState<string | null>(activeProfile?.logo || null);
+  const [profileName, setProfileName] = useState<string>(activeProfile?.name || (activeMaisonId === "aloksingh" ? "Alok Singh" : "Rare Raven"));
+  const [category, setCategory] = useState<string>(activeProfile?.category || (activeMaisonId === "aloksingh" ? "Personal Profile" : "Clothing (Brand)"));
 
   // 🧠 Profile-Centric Logical Helpers
   const isPersonalProfile = category === "Personal Profile" || category?.toLowerCase().includes("personal");
   const isCreatorProfile = category?.toLowerCase().includes("creator") || category?.toLowerCase().includes("stylist") || category?.toLowerCase().includes("influencer") || category?.toLowerCase().includes("artist");
   const isBusinessProfile = !isPersonalProfile && !isCreatorProfile;
-  const [bioText, setBioText] = useState(
-    activeMaisonId === "aloksingh" 
+  const [bioText, setBioText] = useState<string>(
+    activeProfile?.bioText || (activeMaisonId === "aloksingh" 
       ? "Founder of AURA. Brutalist Web Architect & Sovereign Creator."
-      : "Streetwear + Gen Z Aesthetic\nBold Fits. Clean Planet.\nOversized fashion that slap — not the Earth.\nEco-conscious streetwear for every vibe."
+      : "Streetwear + Gen Z Aesthetic\nBold Fits. Clean Planet.\nOversized fashion that slap — not the Earth.\nEco-conscious streetwear for every vibe.")
   );
-  const [websiteLink, setWebsiteLink] = useState(activeMaisonId === "aloksingh" ? "aisastra.com" : "clothikoo.in");
-  const [tags, setTags] = useState(activeMaisonId === "aloksingh" ? ["@aloksingh", "✦ Founder", "✦ AI Sastra"] : ["@rare_raven", "ⓕ Clothikoo", "✦ Ecom Expert"]);
-  const [postsCount, setPostsCount] = useState(activeMaisonId === "aloksingh" ? 42 : 137);
-  const [followersCount, setFollowersCount] = useState(activeMaisonId === "aloksingh" ? 880 : 80);
-  const [followingCount, setFollowingCount] = useState(activeMaisonId === "aloksingh" ? 120 : 613);
+  const [websiteLink, setWebsiteLink] = useState<string>(activeProfile?.websiteLink || (activeMaisonId === "aloksingh" ? "aisastra.com" : "clothikoo.in"));
+  const [tags, setTags] = useState<string[]>(activeProfile?.tags || (activeMaisonId === "aloksingh" ? ["@aloksingh", "✦ Founder", "✦ AI Sastra"] : ["@rare_raven", "ⓕ Clothikoo", "✦ Ecom Expert"]));
+  const [postsCount, setPostsCount] = useState<number>(activeProfile?.postsCount || (activeMaisonId === "aloksingh" ? 42 : 137));
+  const [followersCount, setFollowersCount] = useState<number>(activeProfile?.followersCount || (activeMaisonId === "aloksingh" ? 880 : 80));
+  const [followingCount, setFollowingCount] = useState<number>(activeProfile?.followingCount || (activeMaisonId === "aloksingh" ? 120 : 613));
 
   // Edit profile popup form values
-  const [editUsername, setEditUsername] = useState(username);
-  const [editProfileName, setEditProfileName] = useState(profileName);
-  const [editCategory, setEditCategory] = useState(category);
-  const [editBioText, setEditBioText] = useState(bioText);
-  const [editWebsiteLink, setEditWebsiteLink] = useState(websiteLink);
-  const [editPostsCount, setEditPostsCount] = useState(postsCount.toString());
-  const [editFollowersCount, setEditFollowersCount] = useState(followersCount.toString());
-  const [editFollowingCount, setEditFollowingCount] = useState(followingCount.toString());
+  const [editUsername, setEditUsername] = useState<string>(activeProfile?.username || activeMaisonId);
+  const [editProfileName, setEditProfileName] = useState<string>(activeProfile?.name || (activeMaisonId === "aloksingh" ? "Alok Singh" : "Rare Raven"));
+  const [editCategory, setEditCategory] = useState<string>(activeProfile?.category || (activeMaisonId === "aloksingh" ? "Personal Profile" : "Clothing (Brand)"));
+  const [editBioText, setEditBioText] = useState<string>(activeProfile?.bioText || (activeMaisonId === "aloksingh" ? "Founder of AURA. Brutalist Web Architect & Sovereign Creator." : "Streetwear + Gen Z Aesthetic\nBold Fits. Clean Planet.\nOversized fashion that slap — not the Earth.\nEco-conscious streetwear for every vibe."));
+  const [editWebsiteLink, setEditWebsiteLink] = useState<string>(activeProfile?.websiteLink || (activeMaisonId === "aloksingh" ? "aisastra.com" : "clothikoo.in"));
+  const [editPostsCount, setEditPostsCount] = useState<string>((activeProfile?.postsCount || (activeMaisonId === "aloksingh" ? 42 : 137)).toString());
+  const [editFollowersCount, setEditFollowersCount] = useState<string>((activeProfile?.followersCount || (activeMaisonId === "aloksingh" ? 880 : 80)).toString());
+  const [editFollowingCount, setEditFollowingCount] = useState<string>((activeProfile?.followingCount || (activeMaisonId === "aloksingh" ? 120 : 613)).toString());
 
   // UI state hooks
   const [showEditModal, setShowEditModal] = useState(false);
@@ -219,6 +221,33 @@ export default function AccountScreen() {
     setAlertsEnabled(currentUser.alertsEnabled ?? true);
     setFediverseSharing(currentUser.fediverseSharing ?? false);
   }, [currentUser]);
+
+  // Synchronize local states instantly from activeProfile when it changes, preventing lag/flicker
+  useEffect(() => {
+    if (activeProfile) {
+      setUsername(activeProfile.username || activeMaisonId);
+      setProfileName(activeProfile.name || (activeProfile.username === "aloksingh" ? "Alok Singh" : "Rare Raven"));
+      setCategory(activeProfile.category || (activeProfile.username === "aloksingh" ? "Personal Profile" : "Clothing (Brand)"));
+      setLogo(activeProfile.logo || null);
+      setEditLogo(activeProfile.logo || null);
+      setBioText(activeProfile.bioText || "");
+      setWebsiteLink(activeProfile.websiteLink || "");
+      setTags(activeProfile.tags || []);
+      setPostsCount(activeProfile.postsCount || 0);
+      setFollowersCount(activeProfile.followersCount || 0);
+      setFollowingCount(activeProfile.followingCount || 0);
+
+      setEditUsername(activeProfile.username || activeMaisonId);
+      setEditProfileName(activeProfile.name || (activeProfile.username === "aloksingh" ? "Alok Singh" : "Rare Raven"));
+      setEditCategory(activeProfile.category || (activeProfile.username === "aloksingh" ? "Personal Profile" : "Clothing (Brand)"));
+      setEditLogo(activeProfile.logo || null);
+      setEditBioText(activeProfile.bioText || "");
+      setEditWebsiteLink(activeProfile.websiteLink || "");
+      setEditPostsCount((activeProfile.postsCount || 0).toString());
+      setEditFollowersCount((activeProfile.followersCount || 0).toString());
+      setEditFollowingCount((activeProfile.followingCount || 0).toString());
+    }
+  }, [activeProfile]);
 
   // Synchronize profile details from Next.js Neon PostgreSQL on mount
   useEffect(() => {
@@ -445,6 +474,10 @@ export default function AccountScreen() {
       });
       const data = await res.json();
       if (data.success) {
+        useStore.setState((state) => ({
+          activeProfile: state.activeProfile ? { ...state.activeProfile, logo: url } : null,
+          userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { ...p, logo: url } : p)
+        }));
         Alert.alert("Profile Photo Updated", "Your brand/identity logo has been written to PostgreSQL!");
       } else {
         Alert.alert("Update Rejected", "Failed to update profile image in the database.");
@@ -715,6 +748,27 @@ export default function AccountScreen() {
       
       const data = await res.json();
       if (data.success) {
+        useStore.setState((state) => {
+          const updatedProfile = state.activeProfile ? { 
+            ...state.activeProfile, 
+            logo: editLogo,
+            username: editUsername,
+            name: editProfileName,
+            category: editCategory,
+            website: editWebsiteLink
+          } : null;
+          return {
+            activeProfile: updatedProfile,
+            userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { 
+              ...p, 
+              logo: editLogo, 
+              username: editUsername, 
+              name: editProfileName,
+              category: editCategory,
+              website: editWebsiteLink
+            } : p)
+          };
+        });
         Alert.alert("Profile Synchronized", "Sovereign identity parameters written securely to PostgreSQL!");
       } else {
         triggerHaptic("heavy");
@@ -828,12 +882,112 @@ export default function AccountScreen() {
       "Add Profile Tag",
       "Enter a custom handle tag (e.g. @rare_raven, ✦ Expert):",
       "e.g. ✦ Stylist",
-      (tag) => {
+      async (tag) => {
         if (tag && tag.trim()) {
           triggerHaptic("success");
-          setTags(prev => [...prev, tag.trim()]);
+          const newTags = [...tags, tag.trim()];
+          setTags(newTags);
+
+          // Save to Neon PostgreSQL
+          try {
+            await fetch(`${API_HOST}/api/mobile/profile`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                maisonId: username || "rare_raven",
+                oldMaisonId: username,
+                profileName: profileName,
+                category: category,
+                bioText: bioText,
+                websiteLink: websiteLink,
+                logo: logo,
+                tags: newTags,
+                postsCount: postsCount,
+                followersCount: followersCount,
+                followingCount: followingCount
+              })
+            });
+
+            // Update activeProfile store state so it propagates immediately to dynamic profile screen
+            useStore.setState((state) => {
+              const updatedProfile = state.activeProfile ? { 
+                ...state.activeProfile, 
+                tags: newTags
+              } : null;
+              return {
+                activeProfile: updatedProfile,
+                userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { 
+                  ...p, 
+                  tags: newTags
+                } : p)
+              };
+            });
+          } catch (e) {
+            console.warn("Failed to save tag in account profile view", e);
+          }
         }
       }
+    );
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    triggerHaptic("medium");
+    Alert.alert(
+      "Remove Tag",
+      `Are you sure you want to remove the tag "${tagToRemove}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            const newTags = tags.filter(t => t !== tagToRemove);
+            setTags(newTags);
+            triggerHaptic("success");
+
+            // Save to database
+            try {
+              await fetch(`${API_HOST}/api/mobile/profile`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  maisonId: username || "rare_raven",
+                  oldMaisonId: username,
+                  profileName: profileName,
+                  category: category,
+                  bioText: bioText,
+                  websiteLink: websiteLink,
+                  logo: logo,
+                  tags: newTags,
+                  postsCount: postsCount,
+                  followersCount: followersCount,
+                  followingCount: followingCount
+                })
+              });
+
+              useStore.setState((state) => {
+                const updatedProfile = state.activeProfile ? { 
+                  ...state.activeProfile, 
+                  tags: newTags
+                } : null;
+                return {
+                  activeProfile: updatedProfile,
+                  userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { 
+                    ...p, 
+                    tags: newTags
+                  } : p)
+                };
+              });
+            } catch (e) {
+              console.warn("Failed to remove tag in account profile view", e);
+            }
+          }
+        }
+      ]
     );
   };
 
@@ -1190,14 +1344,14 @@ export default function AccountScreen() {
                             source={{ uri: logo }} 
                             style={{ width: "100%", height: "100%", borderRadius: 38 }} 
                           />
-                        ) : username === "aloksingh" ? (
+                        ) : currentUser?.avatar ? (
                           <Image 
-                            source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150" }} 
+                            source={{ uri: currentUser.avatar }} 
                             style={{ width: "100%", height: "100%", borderRadius: 38 }} 
                           />
                         ) : (
                           <Text style={styles.avatarInitial}>
-                            {profileName[0]?.toUpperCase() || "R"}
+                            {(profileName || activeProfile?.name || currentUser?.name || username || "R")[0]?.toUpperCase()}
                           </Text>
                         )}
                       </View>
@@ -1293,9 +1447,13 @@ export default function AccountScreen() {
               {/* 🔴 HORIZONTAL TAG BADGES */}
               <View style={styles.tagsContainer}>
                 {tags.map((tagItem, idx) => (
-                  <View key={idx} style={styles.tagBadge}>
+                  <TouchableOpacity 
+                    key={idx} 
+                    style={styles.tagBadge}
+                    onPress={() => handleRemoveTag(tagItem)}
+                  >
                     <Text style={styles.tagBadgeText}>{tagItem}</Text>
-                  </View>
+                  </TouchableOpacity>
                 ))}
                 <TouchableOpacity style={styles.addTagBtn} onPress={handleAddPress}>
                   <Lucide name="add" size={12} color="#00f5ff" />
@@ -1351,6 +1509,142 @@ export default function AccountScreen() {
                   <Text style={[styles.actionBtnText, { color: "#00f5ff" }]}>Sponsorships</Text>
                 </TouchableOpacity>
               )}
+            </View>
+
+            {/* 🛡️ AURA VAULT SUBSCRIPTION TEST CARD */}
+            <View style={{
+              marginHorizontal: 24,
+              marginTop: 16,
+              marginBottom: 8,
+              padding: 16,
+              borderRadius: 20,
+              backgroundColor: "rgba(11, 7, 30, 0.65)",
+              borderWidth: 1,
+              borderColor: isSubscribed ? "rgba(0, 245, 255, 0.45)" : "rgba(255, 255, 255, 0.08)",
+              shadowColor: "#00f5ff",
+              shadowOpacity: isSubscribed ? 0.15 : 0,
+              shadowOffset: { width: 0, height: 4 },
+              shadowRadius: 10,
+              elevation: 4,
+            }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold", letterSpacing: 1 }}>AURA VAULT MEMBER</Text>
+                <View style={{ 
+                  backgroundColor: isSubscribed ? "rgba(0, 245, 255, 0.15)" : "rgba(255, 255, 255, 0.05)",
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderRadius: 8,
+                  borderWidth: 0.5,
+                  borderColor: isSubscribed ? "#00f5ff" : "rgba(255,255,255,0.15)"
+                }}>
+                  <Text style={{ color: isSubscribed ? "#00f5ff" : "rgba(255,255,255,0.4)", fontSize: 10, fontWeight: "bold" }}>
+                    {isSubscribed ? "PREMIUM ⚡" : "FREE 📁"}
+                  </Text>
+                </View>
+              </View>
+              <Text style={{ color: "rgba(255, 255, 255, 0.45)", fontSize: 12, lineHeight: 16, marginBottom: 12 }}>
+                {isSubscribed 
+                  ? "You have full access to direct search, categories, and immediate ledger checkout." 
+                  : "Subscribe to unlock direct e-commerce catalog features and exclusive drops."}
+              </Text>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: isSubscribed ? "rgba(255, 59, 48, 0.15)" : "#00f5ff",
+                  borderWidth: isSubscribed ? 1 : 0,
+                  borderColor: isSubscribed ? "#FF3B30" : "transparent",
+                  borderRadius: 12,
+                  height: 38,
+                  justifyContent: "center",
+                  alignItems: "center"
+                }}
+                onPress={() => {
+                  triggerHaptic("medium");
+                  setSubscribed(!isSubscribed);
+                  Alert.alert(
+                    "AURA Subscription Sync", 
+                    isSubscribed 
+                      ? "Premium subscription cancelled. Vault store features locked." 
+                      : "Premium subscription activated! Vault store features unlocked."
+                  );
+                }}
+              >
+                <Text style={{ 
+                  color: isSubscribed ? "#FF3B30" : "#000000", 
+                  fontSize: 12, 
+                  fontWeight: "bold",
+                  letterSpacing: 0.5
+                }}>
+                  {isSubscribed ? "CANCEL VAULT MEMBERSHIP" : "UPGRADE TO VAULT MEMBER (₹299/mo)"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* 🛡️ AURA VAULT SUBSCRIPTION TEST CARD */}
+            <View style={{
+              marginHorizontal: 24,
+              marginTop: 16,
+              marginBottom: 8,
+              padding: 16,
+              borderRadius: 20,
+              backgroundColor: "rgba(11, 7, 30, 0.65)",
+              borderWidth: 1,
+              borderColor: isSubscribed ? "rgba(0, 245, 255, 0.45)" : "rgba(255, 255, 255, 0.08)",
+              shadowColor: "#00f5ff",
+              shadowOpacity: isSubscribed ? 0.15 : 0,
+              shadowOffset: { width: 0, height: 4 },
+              shadowRadius: 10,
+              elevation: 4,
+            }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold", letterSpacing: 1 }}>AURA VAULT MEMBER</Text>
+                <View style={{ 
+                  backgroundColor: isSubscribed ? "rgba(0, 245, 255, 0.15)" : "rgba(255, 255, 255, 0.05)",
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderRadius: 8,
+                  borderWidth: 0.5,
+                  borderColor: isSubscribed ? "#00f5ff" : "rgba(255,255,255,0.15)"
+                }}>
+                  <Text style={{ color: isSubscribed ? "#00f5ff" : "rgba(255,255,255,0.4)", fontSize: 10, fontWeight: "bold" }}>
+                    {isSubscribed ? "PREMIUM ⚡" : "FREE 📁"}
+                  </Text>
+                </View>
+              </View>
+              <Text style={{ color: "rgba(255, 255, 255, 0.45)", fontSize: 12, lineHeight: 16, marginBottom: 12 }}>
+                {isSubscribed 
+                  ? "You have full access to direct search, categories, and immediate ledger checkout." 
+                  : "Subscribe to unlock direct e-commerce catalog features and exclusive drops."}
+              </Text>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: isSubscribed ? "rgba(255, 59, 48, 0.15)" : "#00f5ff",
+                  borderWidth: isSubscribed ? 1 : 0,
+                  borderColor: isSubscribed ? "#FF3B30" : "transparent",
+                  borderRadius: 12,
+                  height: 38,
+                  justifyContent: "center",
+                  alignItems: "center"
+                }}
+                onPress={() => {
+                  triggerHaptic("medium");
+                  setSubscribed(!isSubscribed);
+                  Alert.alert(
+                    "AURA Subscription Sync", 
+                    isSubscribed 
+                      ? "Premium subscription cancelled. Vault store features locked." 
+                      : "Premium subscription activated! Vault store features unlocked."
+                  );
+                }}
+              >
+                <Text style={{ 
+                  color: isSubscribed ? "#FF3B30" : "#000000", 
+                  fontSize: 12, 
+                  fontWeight: "bold",
+                  letterSpacing: 0.5
+                }}>
+                  {isSubscribed ? "CANCEL VAULT MEMBERSHIP" : "UPGRADE TO VAULT MEMBER (₹299/mo)"}
+                </Text>
+              </TouchableOpacity>
             </View>
 
             {/* 🔴 INTERACTIVE HIGHLIGHTS ROW */}
@@ -2746,25 +3040,81 @@ export default function AccountScreen() {
         </Modal>
       )}
 
-      {/* 🏠 GLOBAL BOTTOM NAVIGATION BAR (AURA THEME MATCHING FEED STYLING) */}
-      <View style={[styles.instagramBottomBar, { height: 52 + insets.bottom, paddingBottom: insets.bottom }]}>
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/"); }}>
-          <Lucide name="home-outline" size={28} color="#ffffff" />
+      {/* 🏠 AURA BOTTOM NAVIGATION — 5 tabs with elevated Create */}
+      <View style={[styles.auraBottomBar, { paddingBottom: insets.bottom, height: 62 + insets.bottom }]}>
+
+        {/* TAB 1 — Home */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push("/");
+          }}
+        >
+          <Lucide
+            name="home-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push({ pathname: "/", params: { activeTab: "reels" } } as any); }}>
-          <Lucide name="film-outline" size={28} color="#ffffff" />
+        {/* TAB 2 — Reel */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push({ pathname: "/", params: { activeTab: "reels" } } as any);
+          }}
+        >
+          <Lucide
+            name="film-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Reel</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push({ pathname: "/", params: { openDMs: "true" } } as any); }}>
-          <Lucide name="paper-plane-outline" size={28} color="#ffffff" />
+        {/* TAB 3 — Inbox */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push({ pathname: "/", params: { openDMs: "true" } } as any);
+          }}
+        >
+          <Lucide
+            name="paper-plane-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Inbox</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/shop" as any); }}>
-          <Lucide name="play-outline" size={28} color="#ffffff" />
+        {/* TAB 4 — Products */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push("/shop");
+          }}
+        >
+          <Lucide
+            name="bag-handle-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Products</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { triggerHaptic("light"); router.push("/account"); }}>
+        {/* TAB 5 — Profile */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            router.push("/account");
+          }}
+        >
           <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "#00f5ff", overflow: "hidden" }]}>
             {username === "aloksingh" ? (
               <Image 
@@ -2776,9 +3126,10 @@ export default function AccountScreen() {
                 <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{username[0]?.toUpperCase() || "R"}</Text>
               </View>
             )}
-            <View style={styles.profileActiveIndicator} />
           </View>
+          <Text style={[styles.auraTabLabel, { color: "#00f5ff" }]}>Profile</Text>
         </TouchableOpacity>
+
       </View>
 
       {/* ➕ CUSTOM PROMPT MODAL */}
@@ -3447,6 +3798,32 @@ const styles = StyleSheet.create({
   },
   tabBtn: {
     padding: 8,
+  },
+  auraBottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "flex-end",
+    backgroundColor: "rgba(5,3,15,0.94)",
+    borderTopWidth: 0.5,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
+  auraTabBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingBottom: 10,
+    paddingTop: 8,
+    gap: 3,
+  },
+  auraTabLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+    letterSpacing: 0.2,
   },
   profileTabCircle: {
     width: 28,

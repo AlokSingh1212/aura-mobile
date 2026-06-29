@@ -69,7 +69,23 @@ export default function DashboardScreen() {
     activeProfile
   } = useStore();
 
-  const [activeSegment, setActiveSegment] = useState<"logistics" | "inventory" | "orders">("inventory");
+  const [themeMode, setThemeMode] = useState<"obsidian" | "cream">("obsidian");
+  const [activeSegment, setActiveSegment] = useState<"insights" | "logistics" | "inventory" | "orders">("insights");
+  
+  const colors = {
+    bg: themeMode === "obsidian" ? "#080415" : "#fdf8f8",
+    surface: themeMode === "obsidian" ? "#0b071e" : "#ffffff",
+    surfaceBorder: themeMode === "obsidian" ? "rgba(255,255,255,0.04)" : "#e4e2e2",
+    primary: themeMode === "obsidian" ? "#00f5ff" : "#000000",
+    text: themeMode === "obsidian" ? "#ffffff" : "#1c1b1b",
+    textMuted: themeMode === "obsidian" ? "rgba(255,255,255,0.4)" : "#5e5e5e",
+    border: themeMode === "obsidian" ? "rgba(255,255,255,0.05)" : "#e4e2e2",
+    primaryContainer: themeMode === "obsidian" ? "rgba(0, 245, 255, 0.1)" : "rgba(186,0,53,0.05)",
+    primaryContainerText: themeMode === "obsidian" ? "#00f5ff" : "#000000",
+    cardBg: themeMode === "obsidian" ? "#0b071e" : "#ffffff",
+    inputBg: themeMode === "obsidian" ? "rgba(255,255,255,0.03)" : "#f1edec",
+  };
+
   const [warehouseModalVisible, setWarehouseModalVisible] = useState(false);
   const [productModalVisible, setProductModalVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -102,7 +118,7 @@ export default function DashboardScreen() {
     fetchOrders(maisonId);
   }, [maisonId]);
 
-  const handleSegmentChange = (segment: "logistics" | "inventory" | "orders") => {
+  const handleSegmentChange = (segment: "insights" | "logistics" | "inventory" | "orders") => {
     triggerHaptic("light");
     setActiveSegment(segment);
   };
@@ -1756,6 +1772,328 @@ const styles = StyleSheet.create({
   forecastGrowthPct: {
     color: "#00f5ff",
     fontSize: 10,
+    fontWeight: "bold",
+  },
+  themeToggleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  insightsScrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    gap: 20,
+  },
+  insightsSubHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  insightsSectionTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+  },
+  insightsSubActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  calendarBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  calendarBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  exportBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bentoGridContainer: {
+    gap: 16,
+  },
+  bentoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 16,
+  },
+  bentoCard: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+  },
+  bentoCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  bentoCardLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  bentoBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+  },
+  greenBadge: {
+    backgroundColor: "rgba(76, 175, 80, 0.15)",
+  },
+  greenBadgeText: {
+    color: "#4caf50",
+    fontSize: 9,
+    fontWeight: "bold",
+  },
+  redBadge: {
+    backgroundColor: "rgba(244, 67, 54, 0.15)",
+  },
+  redBadgeText: {
+    color: "#f44336",
+    fontSize: 9,
+    fontWeight: "bold",
+  },
+  bentoCardValue: {
+    fontSize: 24,
+    fontWeight: "bold",
+  },
+  chartCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 20,
+    gap: 20,
+  },
+  chartHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  chartSelect: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  chartSelectText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  barsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    height: 160,
+    paddingTop: 10,
+  },
+  barCol: {
+    alignItems: "center",
+    gap: 8,
+  },
+  barTrack: {
+    height: 120,
+    justifyContent: "flex-end",
+    width: 14,
+  },
+  barFill: {
+    width: "100%",
+    borderRadius: 7,
+  },
+  barLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+  },
+  aiCard: {
+    borderRadius: 24,
+    padding: 20,
+    gap: 16,
+  },
+  aiHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  aiTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  aiTitleText: {
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#00f5ff",
+  },
+  recommendationList: {
+    gap: 12,
+  },
+  recommendationItem: {
+    flexDirection: "row",
+    gap: 10,
+    paddingBottom: 12,
+  },
+  recDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#00f5ff",
+    marginTop: 6,
+  },
+  recTextWrapper: {
+    flex: 1,
+    gap: 2,
+  },
+  recTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  recDesc: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  aiButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 8,
+  },
+  aiButtonText: {
+    fontSize: 12.5,
+    fontWeight: "bold",
+  },
+  splitRowContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  splitCard: {
+    flex: 1,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+  },
+  splitCardTitle: {
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+  progressContainer: {
+    gap: 6,
+  },
+  progressRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  progressLabel: {
+    fontSize: 11,
+  },
+  progressVal: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  progressBarBg: {
+    height: 6,
+    borderRadius: 3,
+    width: "100%",
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  donutContainer: {
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 4,
+  },
+  donutOuter: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  donutInner: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  donutCenterText: {
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+  donutCenterSub: {
+    fontSize: 9,
+  },
+  donutLegend: {
+    gap: 6,
+    width: "100%",
+  },
+  legendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  legendBox: {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+  },
+  legendText: {
+    fontSize: 10,
+  },
+  heroBanner: {
+    borderRadius: 24,
+    padding: 20,
+    gap: 16,
+    alignItems: "center",
+  },
+  heroBannerText: {
+    fontSize: 17,
+    fontWeight: "300",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  heroBannerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+  },
+  heroBannerBtnText: {
+    fontSize: 12,
     fontWeight: "bold",
   },
 });

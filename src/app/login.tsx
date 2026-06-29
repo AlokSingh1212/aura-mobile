@@ -12,492 +12,365 @@ import {
   Dimensions,
   ScrollView
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import { useStore } from "../store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
+
+// AURA Onboarding Design Tokens
+const C = {
+  bg: "#FFFFFF",
+  bgSecondary: "#F8F8F8",
+  text: "#111111",
+  textSecondary: "#666666",
+  border: "#EAEAEA",
+  accent: "#000000",
+  success: "#16A34A",
+  error: "#DC2626",
+};
 
 export default function LoginScreen() {
   const router = useRouter();
-  const triggerHaptic = useStore((state) => state.triggerHaptic);
-  const authLogIn = useStore((state) => state.authLogIn);
-  const authSignUp = useStore((state) => state.authSignUp);
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const triggerHaptic = useStore((s) => s.triggerHaptic);
+  const authLogIn = useStore((s) => s.authLogIn);
+  const authSignUp = useStore((s) => s.authSignUp);
 
-  const [isLogin, setIsLogin] = useState(true);
-  const [signupStep, setSignupStep] = useState(1); // 1, 2, or 3
+  const [isLogin, setIsLogin] = useState(params.mode !== "signup");
+  const [signupStep, setSignupStep] = useState(1);
 
-  // Step 1: Account credentials
-  const [username, setUsername] = useState("");
+  // Signup fields
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  // Step 2: Social data
-  const [dob, setDob] = useState("2000-01-01");
   const [phone, setPhone] = useState("");
-
-  // Step 3: Identity & Gender mapping
-  const [gender, setGender] = useState("Prefer Not to Say");
-
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  // Login fields
+  const [loginId, setLoginId] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleNextStep = () => {
+  const handleSignup = async () => {
+    if (!email || !password) {
+      Alert.alert("Required", "Email and password are required.");
+      return;
+    }
+    if (!email.includes("@")) {
+      Alert.alert("Invalid Email", "Please enter a valid email address.");
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert("Weak Password", "Password must be at least 6 characters.");
+      return;
+    }
+    if (!agreedToTerms) {
+      Alert.alert("Terms Required", "Please agree to the Terms & Privacy Policy.");
+      return;
+    }
+
+    setIsLoading(true);
     triggerHaptic("medium");
-    if (signupStep === 1) {
-      if (!username || !email || !password) {
-        triggerHaptic("heavy");
-        Alert.alert("Input Needed", "Username, Email, and Password are all required to proceed.");
-        return;
+    try {
+      // Generate a username from email for now
+      const username = email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "");
+      const res = await authSignUp({ username, email, password, phone, gender: "Prefer Not to Say", dob: "2000-01-01" });
+      if (res.success) {
+        triggerHaptic("success");
+        // Navigate to OTP verification
+        router.push({ pathname: "/otp", params: { userId: "new", phone: phone || email } } as any);
+      } else {
+        Alert.alert("Sign Up Failed", res.error || "Could not create your account. Please try again.");
       }
-      if (!email.includes("@")) {
-        triggerHaptic("heavy");
-        Alert.alert("Invalid Email", "Please enter a valid email address.");
-        return;
-      }
-      setSignupStep(2);
-    } else if (signupStep === 2) {
-      if (!dob.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        triggerHaptic("heavy");
-        Alert.alert("Incorrect Format", "Date of Birth must be in YYYY-MM-DD format (e.g. 1998-10-15).");
-        return;
-      }
-      setSignupStep(3);
+    } catch (e: any) {
+      Alert.alert("Connection Error", e.message || "Could not reach the server.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleBackStep = () => {
-    triggerHaptic("light");
-    if (signupStep > 1) {
-      setSignupStep(signupStep - 1);
+  const handleLogin = async () => {
+    if (!loginId || !loginPassword) {
+      Alert.alert("Required", "Please enter your email and password.");
+      return;
     }
-  };
 
-  const handleAuthAction = async () => {
-    if (isLogin) {
-      if (!username || !password) {
-        triggerHaptic("heavy");
-        Alert.alert("Input Needed", "Please enter your username or email address and password.");
-        return;
+    setIsLoading(true);
+    triggerHaptic("medium");
+    try {
+      const res = await authLogIn({ usernameOrEmail: loginId, password: loginPassword });
+      if (res.success) {
+        triggerHaptic("success");
+        router.replace("/");
+      } else {
+        Alert.alert("Login Failed", res.error || "Invalid email or password.");
       }
-
-      setIsLoading(true);
-      triggerHaptic("medium");
-      try {
-        const res = await authLogIn({ usernameOrEmail: username, password });
-        if (res.success) {
-          triggerHaptic("success");
-          Alert.alert("Welcome Back", "Successfully synchronized your active session node!");
-          router.replace("/");
-        } else {
-          triggerHaptic("heavy");
-          Alert.alert("Access Denied", res.error || "Authentication failure.");
-        }
-      } catch (e: any) {
-        triggerHaptic("heavy");
-        Alert.alert("Network Converge Failure", e.message || "Failed to contact database gateway.");
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      // Step 3 registration trigger
-      setIsLoading(true);
-      triggerHaptic("medium");
-      try {
-        const res = await authSignUp({
-          username,
-          email,
-          password,
-          dob,
-          phone,
-          gender
-        });
-        if (res.success) {
-          triggerHaptic("success");
-          Alert.alert("Account Minted", "Welcome to the AURAGRAM Social Network! Your personal Maison has been seeded.");
-          router.replace("/");
-        } else {
-          triggerHaptic("heavy");
-          Alert.alert("Minting Interrupted", res.error || "Registration failure.");
-        }
-      } catch (e: any) {
-        triggerHaptic("heavy");
-        Alert.alert("Network Converge Failure", e.message || "Failed to contact database gateway.");
-      } finally {
-        setIsLoading(false);
-      }
+    } catch (e: any) {
+      Alert.alert("Connection Error", e.message || "Could not reach the server.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
-    >
-      <View style={styles.backgroundGlowLeft} />
-      <View style={styles.backgroundGlowRight} />
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar style="dark" />
 
-      <View style={styles.card}>
-        {/* Brand Header */}
-        <View style={styles.header}>
-          <Text style={styles.brandTitle}>A U R A</Text>
-          <Text style={styles.brandSubtitle}>PREMIUM SOCIAL NETWORK</Text>
-        </View>
+      {/* Back Button */}
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => { triggerHaptic("light"); router.back(); }}
+      >
+        <Lucide name="chevron-back" size={24} color={C.text} />
+      </TouchableOpacity>
 
-        {/* Step Indicator dots for Signup Wizard */}
-        {!isLogin && (
-          <View style={styles.stepIndicatorContainer}>
-            {[1, 2, 3].map((step) => {
-              const isActive = signupStep === step;
-              const isCompleted = signupStep > step;
-              return (
-                <View 
-                  key={step} 
-                  style={[
-                    styles.stepIndicatorDot,
-                    isActive && styles.stepIndicatorDotActive,
-                    isCompleted && styles.stepIndicatorDotCompleted
-                  ]} 
-                />
-              );
-            })}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.brandMark}>AURA</Text>
+            <Text style={styles.heading}>
+              {isLogin ? "Welcome back" : "Create your account"}
+            </Text>
+            <Text style={styles.subtitle}>
+              {isLogin
+                ? "Log in to continue to your feed"
+                : "Join the future of social commerce"}
+            </Text>
           </View>
-        )}
 
-        <ScrollView style={{ width: "100%" }} showsVerticalScrollIndicator={false}>
           {isLogin ? (
-            /* 🔴 LOGIN FORM */
+            /* ───── LOGIN FORM ───── */
             <View style={styles.form}>
               <View style={styles.inputContainer}>
-                <Lucide name="person-outline" size={20} color="#8e8e8e" style={styles.inputIcon} />
+                <Lucide name="mail-outline" size={20} color={C.textSecondary} style={styles.inputIcon} />
                 <TextInput
-                  placeholder="Username or Email"
-                  placeholderTextColor="#555"
-                  value={username}
-                  onChangeText={setUsername}
+                  placeholder="Email or username"
+                  placeholderTextColor="#999"
+                  value={loginId}
+                  onChangeText={setLoginId}
                   style={styles.input}
                   autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Lucide name="lock-closed-outline" size={20} color={C.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  placeholder="Password"
+                  placeholderTextColor="#999"
+                  value={loginPassword}
+                  onChangeText={setLoginPassword}
+                  secureTextEntry={!showPassword}
+                  style={styles.input}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                  <Lucide name={showPassword ? "eye" : "eye-off"} size={20} color={C.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity style={styles.forgotLink}>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.primaryBtn, isLoading && styles.primaryBtnDisabled]}
+                onPress={handleLogin}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Log In</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* ───── SIGNUP FORM ───── */
+            <View style={styles.form}>
+              <View style={styles.inputContainer}>
+                <Lucide name="mail-outline" size={20} color={C.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  placeholder="Email address"
+                  placeholderTextColor="#999"
+                  value={email}
+                  onChangeText={setEmail}
+                  style={styles.input}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
                   autoCorrect={false}
                 />
               </View>
 
               <View style={styles.inputContainer}>
-                <Lucide name="lock-closed-outline" size={20} color="#8e8e8e" style={styles.inputIcon} />
+                <Lucide name="call-outline" size={20} color={C.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  placeholder="Phone number (optional)"
+                  placeholderTextColor="#999"
+                  value={phone}
+                  onChangeText={setPhone}
+                  style={styles.input}
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Lucide name="lock-closed-outline" size={20} color={C.textSecondary} style={styles.inputIcon} />
                 <TextInput
                   placeholder="Password"
-                  placeholderTextColor="#555"
+                  placeholderTextColor="#999"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
                   style={styles.input}
                   autoCapitalize="none"
-                  autoCorrect={false}
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                  <Lucide name={showPassword ? "eye" : "eye-off"} size={20} color="#8e8e8e" />
+                  <Lucide name={showPassword ? "eye" : "eye-off"} size={20} color={C.textSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={styles.forgotBtn}>
-                <Text style={styles.forgotText}>Forgot Password?</Text>
+              {/* Terms Checkbox */}
+              <TouchableOpacity
+                style={styles.termsRow}
+                onPress={() => { triggerHaptic("light"); setAgreedToTerms(!agreedToTerms); }}
+              >
+                <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
+                  {agreedToTerms && <Lucide name="checkmark" size={14} color="#FFFFFF" />}
+                </View>
+                <Text style={styles.termsText}>
+                  I agree to the <Text style={styles.termsLink}>Terms of Service</Text> and{" "}
+                  <Text style={styles.termsLink}>Privacy Policy</Text>
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={handleAuthAction}
-                disabled={isLoading}
-                style={styles.submitBtn}
+                style={[styles.primaryBtn, (isLoading || !agreedToTerms) && styles.primaryBtnDisabled]}
+                onPress={handleSignup}
+                disabled={isLoading || !agreedToTerms}
               >
                 {isLoading ? (
-                  <ActivityIndicator color="#080415" size="small" />
+                  <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={styles.submitBtnText}>LOG IN</Text>
+                  <Text style={styles.primaryBtnText}>Create Account</Text>
                 )}
               </TouchableOpacity>
-            </View>
-          ) : (
-            /* 🟢 MULTI-STEP SIGNUP WIZARD FORM */
-            <View style={styles.form}>
-              {signupStep === 1 && (
-                /* STEP 1: Account basics */
-                <View style={styles.wizardStepContainer}>
-                  <Text style={styles.stepTitle}>Account Essentials</Text>
-                  <Text style={styles.stepSubtitle}>Provide login credentials for your identity node.</Text>
-                  
-                  <View style={styles.inputContainer}>
-                    <Lucide name="person-outline" size={20} color="#8e8e8e" style={styles.inputIcon} />
-                    <TextInput
-                      placeholder="Username"
-                      placeholderTextColor="#555"
-                      value={username}
-                      onChangeText={setUsername}
-                      style={styles.input}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                  </View>
 
-                  <View style={styles.inputContainer}>
-                    <Lucide name="mail-outline" size={20} color="#8e8e8e" style={styles.inputIcon} />
-                    <TextInput
-                      placeholder="Email Address"
-                      placeholderTextColor="#555"
-                      value={email}
-                      onChangeText={setEmail}
-                      style={styles.input}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      autoCorrect={false}
-                    />
-                  </View>
+              {/* Divider */}
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
 
-                  <View style={styles.inputContainer}>
-                    <Lucide name="lock-closed-outline" size={20} color="#8e8e8e" style={styles.inputIcon} />
-                    <TextInput
-                      placeholder="Password"
-                      placeholderTextColor="#555"
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry={!showPassword}
-                      style={styles.input}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                      <Lucide name={showPassword ? "eye" : "eye-off"} size={20} color="#8e8e8e" />
-                    </TouchableOpacity>
-                  </View>
+              {/* Social Buttons */}
+              <TouchableOpacity
+                style={styles.socialBtn}
+                onPress={() => Alert.alert("Coming Soon", "Google login will be available soon.")}
+              >
+                <Lucide name="logo-google" size={20} color={C.text} />
+                <Text style={styles.socialBtnText}>Continue with Google</Text>
+              </TouchableOpacity>
 
-                  <TouchableOpacity onPress={handleNextStep} style={styles.submitBtn}>
-                    <Text style={styles.submitBtnText}>CONTINUE</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {signupStep === 2 && (
-                /* STEP 2: Social metadata details */
-                <View style={styles.wizardStepContainer}>
-                  <Text style={styles.stepTitle}>Personal Details</Text>
-                  <Text style={styles.stepSubtitle}>AURAGRAM keeps your data secure. These are never shared publicly.</Text>
-
-                  <View style={styles.inputContainer}>
-                    <Lucide name="calendar-outline" size={20} color="#8e8e8e" style={styles.inputIcon} />
-                    <TextInput
-                      placeholder="Date of Birth (YYYY-MM-DD)"
-                      placeholderTextColor="#555"
-                      value={dob}
-                      onChangeText={setDob}
-                      style={styles.input}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Lucide name="call-outline" size={20} color="#8e8e8e" style={styles.inputIcon} />
-                    <TextInput
-                      placeholder="Phone Number"
-                      placeholderTextColor="#555"
-                      value={phone}
-                      onChangeText={setPhone}
-                      style={styles.input}
-                      autoCapitalize="none"
-                      keyboardType="phone-pad"
-                      autoCorrect={false}
-                    />
-                  </View>
-
-                  <View style={styles.wizardActionRow}>
-                    <TouchableOpacity onPress={handleBackStep} style={styles.backBtn}>
-                      <Text style={styles.backBtnText}>BACK</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleNextStep} style={[styles.submitBtn, { flex: 1, marginTop: 0 }]}>
-                      <Text style={styles.submitBtnText}>NEXT</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {signupStep === 3 && (
-                /* STEP 3: Identity & Gender selection tags */
-                <View style={styles.wizardStepContainer}>
-                  <Text style={styles.stepTitle}>Identity & Gender</Text>
-                  <Text style={styles.stepSubtitle}>Select a gender category identifier for custom collections.</Text>
-
-                  <View style={styles.genderTagGrid}>
-                    {["Male", "Female", "Non-Binary", "Prefer Not to Say"].map((g) => {
-                      const isSelected = gender === g;
-                      return (
-                        <TouchableOpacity
-                          key={g}
-                          onPress={() => { triggerHaptic("light"); setGender(g); }}
-                          style={[
-                            styles.genderTagItem,
-                            isSelected && styles.genderTagItemActive
-                          ]}
-                        >
-                          <Text style={[styles.genderTagText, isSelected && styles.genderTagTextActive]}>{g}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-
-                  <View style={styles.wizardActionRow}>
-                    <TouchableOpacity onPress={handleBackStep} style={styles.backBtn}>
-                      <Text style={styles.backBtnText}>BACK</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={handleAuthAction}
-                      disabled={isLoading}
-                      style={[styles.submitBtn, { flex: 1, marginTop: 0 }]}
-                    >
-                      {isLoading ? (
-                        <ActivityIndicator color="#080415" size="small" />
-                      ) : (
-                        <Text style={styles.submitBtnText}>MINT NODE</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
+              <TouchableOpacity
+                style={styles.socialBtn}
+                onPress={() => Alert.alert("Coming Soon", "Apple login will be available soon.")}
+              >
+                <Lucide name="logo-apple" size={20} color={C.text} />
+                <Text style={styles.socialBtnText}>Continue with Apple</Text>
+              </TouchableOpacity>
             </View>
           )}
         </ScrollView>
+      </KeyboardAvoidingView>
 
-        {/* Footer switch layout */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            {isLogin ? "New to AURAGRAM?" : "Already have an account?"}
+      {/* Footer Toggle */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+        <Text style={styles.footerText}>
+          {isLogin ? "Don't have an account?" : "Already have an account?"}
+        </Text>
+        <TouchableOpacity
+          onPress={() => {
+            triggerHaptic("light");
+            setIsLogin(!isLogin);
+          }}
+        >
+          <Text style={styles.footerLink}>
+            {isLogin ? " Sign Up" : " Log In"}
           </Text>
-          <TouchableOpacity
-            onPress={() => {
-              triggerHaptic("light");
-              setIsLogin(!isLogin);
-              setSignupStep(1); // Reset wizard steps
-            }}
-          >
-            <Text style={styles.footerActionText}>
-              {isLogin ? " Sign Up" : " Log In"}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#080415",
+    backgroundColor: C.bg,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
+    marginLeft: 12,
+    marginTop: 4,
   },
-  backgroundGlowLeft: {
-    position: "absolute",
-    top: height * 0.1,
-    left: -width * 0.3,
-    width: width * 0.8,
-    height: width * 0.8,
-    borderRadius: (width * 0.8) / 2,
-    backgroundColor: "#00f5ff",
-    opacity: 0.15,
-  },
-  backgroundGlowRight: {
-    position: "absolute",
-    bottom: height * 0.1,
-    right: -width * 0.3,
-    width: width * 0.8,
-    height: width * 0.8,
-    borderRadius: (width * 0.8) / 2,
-    backgroundColor: "#b026ff",
-    opacity: 0.12,
-  },
-  card: {
-    width: width * 0.88,
-    paddingHorizontal: 25,
-    paddingTop: 30,
-    paddingBottom: 25,
-    borderRadius: 32,
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.07)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 10,
-    alignItems: "center",
-    maxHeight: height * 0.82,
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 40,
   },
   header: {
-    alignItems: "center",
-    marginBottom: 20,
+    marginTop: 12,
+    marginBottom: 32,
   },
-  brandTitle: {
-    fontSize: 28,
+  brandMark: {
+    fontSize: 16,
     fontWeight: "300",
-    color: "#fff",
-    letterSpacing: 8,
+    letterSpacing: 6,
+    color: C.textSecondary,
+    marginBottom: 16,
   },
-  brandSubtitle: {
-    fontSize: 9,
+  heading: {
+    fontSize: 32,
     fontWeight: "bold",
-    color: "#00f5ff",
-    letterSpacing: 2,
-    marginTop: 6,
-    opacity: 0.8,
+    color: C.text,
+    lineHeight: 38,
   },
-  stepIndicatorContainer: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 25,
-    alignItems: "center",
-  },
-  stepIndicatorDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "rgba(255,255,255,0.15)",
-  },
-  stepIndicatorDotActive: {
-    backgroundColor: "#00f5ff",
-    width: 14,
-    borderRadius: 3,
-  },
-  stepIndicatorDotCompleted: {
-    backgroundColor: "rgba(0, 245, 255, 0.4)",
+  subtitle: {
+    fontSize: 16,
+    color: C.textSecondary,
+    marginTop: 8,
+    lineHeight: 22,
   },
   form: {
-    width: "100%",
-  },
-  wizardStepContainer: {
-    width: "100%",
-    alignItems: "center",
-  },
-  stepTitle: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "bold",
-    marginBottom: 6,
-  },
-  stepSubtitle: {
-    color: "#8e8e8e",
-    fontSize: 11,
-    textAlign: "center",
-    lineHeight: 15,
-    marginBottom: 24,
-    paddingHorizontal: 10,
+    gap: 14,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    width: "100%",
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: C.bgSecondary,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    marginBottom: 16,
+    borderColor: C.border,
     paddingHorizontal: 16,
   },
   inputIcon: {
@@ -505,109 +378,114 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    color: "#fff",
-    fontSize: 14,
+    color: C.text,
+    fontSize: 16,
   },
   eyeBtn: {
     padding: 4,
   },
-  forgotBtn: {
+  forgotLink: {
     alignSelf: "flex-end",
-    marginBottom: 20,
+    marginTop: -4,
   },
   forgotText: {
-    color: "#8e8e8e",
-    fontSize: 12,
+    color: C.accent,
+    fontSize: 14,
+    fontWeight: "500",
   },
-  submitBtn: {
-    width: "100%",
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: "#00f5ff",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#00f5ff",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
-    marginTop: 10,
-  },
-  submitBtnText: {
-    color: "#080415",
-    fontSize: 13,
-    fontWeight: "bold",
-    letterSpacing: 1.5,
-  },
-  wizardActionRow: {
+  termsRow: {
     flexDirection: "row",
-    width: "100%",
-    gap: 12,
-    marginTop: 10,
-  },
-  backBtn: {
-    width: 80,
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backBtnText: {
-    color: "#8e8e8e",
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  genderTagGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    alignItems: "flex-start",
     gap: 10,
-    width: "100%",
-    justifyContent: "center",
-    marginBottom: 20,
-    paddingTop: 10,
+    marginTop: 4,
   },
-  genderTagItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    minWidth: "45%",
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    backgroundColor: C.bgSecondary,
     alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
   },
-  genderTagItemActive: {
-    backgroundColor: "#00f5ff",
-    borderColor: "#00f5ff",
-    shadowColor: "#00f5ff",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
+  checkboxChecked: {
+    backgroundColor: C.accent,
+    borderColor: C.accent,
   },
-  genderTagText: {
-    color: "#ffffff",
-    fontSize: 12,
+  termsText: {
+    flex: 1,
+    fontSize: 13,
+    color: C.textSecondary,
+    lineHeight: 18,
+  },
+  termsLink: {
+    color: C.accent,
+    fontWeight: "600",
+  },
+  primaryBtn: {
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: C.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  primaryBtnDisabled: {
+    backgroundColor: C.border,
+  },
+  primaryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 16,
     fontWeight: "bold",
   },
-  genderTagTextActive: {
-    color: "#080415",
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: 4,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: C.border,
+  },
+  dividerText: {
+    color: C.textSecondary,
+    fontSize: 13,
+  },
+  socialBtn: {
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: C.bg,
+    borderWidth: 1,
+    borderColor: C.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  socialBtnText: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "600",
   },
   footer: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 25,
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
   },
   footerText: {
-    color: "#8e8e8e",
-    fontSize: 13,
+    color: C.textSecondary,
+    fontSize: 14,
   },
-  footerActionText: {
-    color: "#00f5ff",
-    fontSize: 13,
+  footerLink: {
+    color: C.accent,
+    fontSize: 14,
     fontWeight: "bold",
   },
 });

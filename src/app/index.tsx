@@ -38,8 +38,63 @@ import { formatCompactNumber } from "@/constants/format";
 import { CameraStudio } from "@/components/CameraStudio";
 import { ChatDrawer } from "@/components/ChatDrawer";
 import { FeedCard } from "@/components/FeedCard";
+import { ImageEditor, FILTER_PRESETS } from "@/components/ImageEditor";
 import { PostCard } from "@/components/PostCard";
 import { LiveShowroom } from "@/components/LiveShowroom";
+import { ProductPreviewSheet } from "@/components/ProductPreviewSheet";
+import { ShimmerFeedList } from "@/components/ui/ShimmerLoader";
+import { useVideoPlayer, VideoView } from "expo-video";
+
+const MOCK_PRODUCTS = [
+  {
+    id: "p1",
+    title: "Obsidian Gold Vestment",
+    name: "Obsidian Gold Vestment",
+    price: 185000,
+    vibe: "Quiet Luxury",
+    images: ["https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400"],
+    maison: { name: "Rare Raven", id: "rare_raven" },
+    auraScore: 9.9,
+    rating: 4.9,
+    type: "Fashion"
+  },
+  {
+    id: "p2",
+    title: "Atelier Silk Trench Jacket",
+    name: "Atelier Silk Trench Jacket",
+    price: 245000,
+    vibe: "Avant-Garde",
+    images: ["https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400"],
+    maison: { name: "Rare Raven", id: "rare_raven" },
+    auraScore: 9.8,
+    rating: 4.8,
+    type: "Fashion"
+  },
+  {
+    id: "p3",
+    title: "Cyber Penthouse Cuff",
+    name: "Cyber Penthouse Cuff",
+    price: 95000,
+    vibe: "Brutalist",
+    images: ["https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=400"],
+    maison: { name: "Rare Raven", id: "rare_raven" },
+    auraScore: 9.7,
+    rating: 4.7,
+    type: "Jewelry"
+  },
+  {
+    id: "p4",
+    title: "Heritage Calfskin Carryall",
+    name: "Heritage Calfskin Carryall",
+    price: 320000,
+    vibe: "Quiet Luxury",
+    images: ["https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600"],
+    maison: { name: "Rare Raven", id: "rare_raven" },
+    auraScore: 9.9,
+    rating: 4.9,
+    type: "Bags"
+  }
+];
 
 const { height, width } = Dimensions.get("window");
 
@@ -237,13 +292,213 @@ interface FloatingHeart {
   scale: number;
 }
 
+interface ZoomableImageProps {
+  source: { uri: string };
+  style: any;
+}
+
+const ZoomableImage: React.FC<ZoomableImageProps> = ({ source, style }) => {
+  const pinchScale = React.useRef(new Animated.Value(1)).current;
+  const [isPinching, setIsPinching] = React.useState(false);
+  const lastPinchDist = React.useRef(0);
+  const basePinchScale = React.useRef(1);
+
+  const getDistance = (touches: any[]) => {
+    const dx = touches[0].pageX - touches[1].pageX;
+    const dy = touches[0].pageY - touches[1].pageY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const handleTouchStart = (e: any) => {
+    if (e.nativeEvent.touches.length === 2) {
+      setIsPinching(true);
+      lastPinchDist.current = getDistance(e.nativeEvent.touches);
+      basePinchScale.current = (pinchScale as any).__getValue?.() || 1;
+    }
+  };
+
+  const handleTouchMove = (e: any) => {
+    if (e.nativeEvent.touches.length === 2 && isPinching) {
+      const currentDist = getDistance(e.nativeEvent.touches);
+      const scaleFactor = currentDist / lastPinchDist.current;
+      const newScale = Math.min(Math.max(basePinchScale.current * scaleFactor, 1), 3);
+      pinchScale.setValue(newScale);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (isPinching) {
+      setIsPinching(false);
+      Animated.spring(pinchScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 120,
+        useNativeDriver: true,
+      }).start();
+    }
+  };
+
+  return (
+    <Animated.View
+      style={{ transform: [{ scale: pinchScale }] }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      <Image source={source} style={style} contentFit="cover" />
+    </Animated.View>
+  );
+};
+
+interface CreatorCommerceCardProps {
+  item: any;
+  feedMuted: boolean;
+  setFeedMuted: (muted: boolean) => void;
+  triggerHaptic: (style: any) => void;
+  setSelectedProductForPreview: (product: any) => void;
+  setPreviewFeedItemId: (id: any) => void;
+  setPreviewSheetVisible: (visible: boolean) => void;
+  formatPrice: (price: number) => string;
+}
+
+const CreatorCommerceCard: React.FC<CreatorCommerceCardProps> = ({
+  item,
+  feedMuted,
+  setFeedMuted,
+  triggerHaptic,
+  setSelectedProductForPreview,
+  setPreviewFeedItemId,
+  setPreviewSheetVisible,
+  formatPrice,
+}) => {
+  const prod = item.product || {};
+  const video = item.content?.videoUrl || "";
+  const caption = item.content?.caption || "";
+  const creatorName = item.creator?.name || "AURA Creator";
+  const creatorUsername = item.creator?.username || "aura_curator";
+  const creatorAvatar = item.creator?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150";
+
+  const videoPlayer = useVideoPlayer(video, (p) => {
+    p.loop = true;
+    p.muted = feedMuted;
+    p.play();
+  });
+
+  useEffect(() => {
+    videoPlayer.muted = feedMuted;
+  }, [feedMuted, videoPlayer]);
+
+  return (
+    <View style={{ backgroundColor: "#FFFFFF", marginBottom: 24, borderBottomWidth: 1, borderBottomColor: "#F5F5F7", paddingBottom: 16 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12 }}>
+        <Image source={{ uri: creatorAvatar }} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 8 }} />
+        <View>
+          <Text style={{ fontWeight: "700", fontSize: 14, color: "#111111" }}>{creatorName}</Text>
+          <Text style={{ fontSize: 11, color: "#8E8E93" }}>@{creatorUsername} • Commerce</Text>
+        </View>
+      </View>
+
+      <View style={{ width: "100%", height: 380, position: "relative", backgroundColor: "#000000" }}>
+        <VideoView
+          player={videoPlayer}
+          style={{ width: "100%", height: "100%" }}
+          contentFit="cover"
+          nativeControls={false}
+        />
+        <TouchableOpacity 
+          style={{
+            position: "absolute",
+            bottom: 12,
+            right: 12,
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            alignItems: "center",
+            justifyContent: "center"
+          }}
+          onPress={() => setFeedMuted(!feedMuted)}
+        >
+          <Lucide name={feedMuted ? "volume-mute" : "volume-high"} size={16} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+        <Text style={{ fontSize: 13, color: "#111111", lineHeight: 18 }}>
+          <Text style={{ fontWeight: "700" }}>{creatorUsername} </Text>
+          {caption}
+        </Text>
+        
+        <TouchableOpacity 
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: "#F5F5F7",
+            borderWidth: 1,
+            borderColor: "#EAEAEA",
+            borderRadius: 14,
+            padding: 10,
+            marginTop: 12,
+          }}
+          onPress={() => {
+            triggerHaptic("medium");
+            setSelectedProductForPreview(prod);
+            setPreviewFeedItemId(item.id);
+            setPreviewSheetVisible(true);
+          }}
+        >
+          <Image source={{ uri: prod.images?.[0] }} style={{ width: 44, height: 44, borderRadius: 8 }} />
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={{ fontSize: 12, fontWeight: "bold", color: "#8E8E93", textTransform: "uppercase" }}>FEATURED PRODUCT</Text>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#111111", marginTop: 2 }}>{prod.name}</Text>
+          </View>
+          <Text style={{ fontSize: 13, fontWeight: "bold", color: "#111111", marginRight: 8 }}>{formatPrice(prod.price)}</Text>
+          <Lucide name="chevron-forward" size={16} color="#111111" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
 export default function ReelsScreen() {
-  const { products, stories, loadingFeed, fetchFeed, fetchProducts, triggerHaptic, activeMaisonId, currentUser, authOnboard, setCurrentUser, activeProfile, userProfiles, createNewProfile, switchActiveProfile, fetchProfiles, notifications, loadingNotifications, fetchNotifications, markNotificationsRead, hasMoreFeed, detectLocation } = useStore();
+  const { 
+    products, 
+    stories, 
+    loadingFeed, 
+    fetchFeed, 
+    fetchProducts, 
+    triggerHaptic, 
+    activeMaisonId, 
+    currentUser, 
+    authOnboard, 
+    setCurrentUser, 
+    activeProfile, 
+    userProfiles, 
+    createNewProfile, 
+    switchActiveProfile, 
+    fetchProfiles, 
+    notifications, 
+    loadingNotifications, 
+    fetchNotifications, 
+    markNotificationsRead, 
+    hasMoreFeed, 
+    detectLocation,
+    feedItems,
+    loadingFeedItems,
+    fetchFeedItems,
+    logEngagement,
+    toggleFeedSave,
+    logFeedShare,
+    logFeedCartAdd,
+    cart,
+    formatPrice,
+    addToCart
+  } = useStore();
   const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : (activeMaisonId ? activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "AURA Client"));
   const params = useLocalSearchParams<{ openDMs?: string; openSearch?: string; activeTab?: string; openCamera?: string; conversationId?: string }>();
   const insets = useSafeAreaInsets();
   const [chatConversationId, setChatConversationId] = useState<string | null>(null);
-  const bottomBarHeight = 52 + insets.bottom;
+  const bottomBarHeight = 62 + insets.bottom;
   const [activeStoryIndex, setActiveStoryIndex] = useState(0);
 
   const loadMoreStories = () => {
@@ -298,6 +553,12 @@ export default function ReelsScreen() {
             fetchNotifications(activeProfile.id);
           }
           setShowActivityDrawer(true);
+          break;
+        case "MESSAGE":
+          setShowDMs(true);
+          if (data.conversationId) {
+            setChatConversationId(data.conversationId);
+          }
           break;
         default:
           break;
@@ -371,6 +632,7 @@ export default function ReelsScreen() {
 
   const [showExploreGrid, setShowExploreGrid] = useState(false);
   const [selectedMediaUri, setSelectedMediaUri] = useState<string | null>(null);
+  const [showImageEditor, setShowImageEditor] = useState<boolean>(false);
   const [newPostCaption, setNewPostCaption] = useState("");
   const [newPostLocation, setNewPostLocation] = useState("");
   const [newPostAudio, setNewPostAudio] = useState("");
@@ -385,6 +647,18 @@ export default function ReelsScreen() {
   const [selectedAudience, setSelectedAudience] = useState<"everyone" | "followers" | "close_friends">("everyone");
   const [showAudienceSelector, setShowAudienceSelector] = useState(false);
   const [newPostShareFeed, setNewPostShareFeed] = useState(true);
+
+  // AURA Home Feed State Extensions
+  const [selectedCategory, setSelectedCategory] = useState("For You");
+  const [previewSheetVisible, setPreviewSheetVisible] = useState(false);
+  const [selectedProductForPreview, setSelectedProductForPreview] = useState<any>(null);
+  const [previewFeedItemId, setPreviewFeedItemId] = useState<string | undefined>(undefined);
+  const [showAiAssistant, setShowAiAssistant] = useState(false);
+  
+  const [aiChatMessages, setAiChatMessages] = useState<any[]>([
+    { id: "msg_init", sender: "ai", text: "Welcome to AURA Conversational Shopping. I am your concierge. Ask me anything, e.g., 'Find oversized hoodies under ₹1500' or 'Show me quiet luxury bags'." }
+  ]);
+  const [aiChatQuery, setAiChatQuery] = useState("");
 
   // New Tab switch states: "grid" | "reels" | "live" | "posts"
   const [activeFeedTab, setActiveFeedTab] = useState<"grid" | "reels" | "live" | "posts">("posts");
@@ -509,6 +783,7 @@ export default function ReelsScreen() {
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const [storyProgress, setStoryProgress] = useState(0);
   const [storyReplyText, setStoryReplyText] = useState("");
+  const [storyPaused, setStoryPaused] = useState(false);
 
   // Comments, Saves, and Options Bottom Sheet states
   const [savedPosts, setSavedPosts] = useState<Record<string, boolean>>({});
@@ -612,7 +887,12 @@ export default function ReelsScreen() {
       });
 
       if (!result.canceled && result.assets?.[0]?.uri) {
-        setSelectedMediaUri(result.assets[0].uri);
+        const uri = result.assets[0].uri;
+        setSelectedMediaUri(uri);
+        const isVideo = uri.toLowerCase().endsWith(".mp4") || uri.toLowerCase().endsWith(".mov");
+        if (!isVideo) {
+          setShowImageEditor(true);
+        }
       } else {
         Alert.alert(
           "Curation Sandbox",
@@ -755,10 +1035,10 @@ export default function ReelsScreen() {
     return () => clearInterval(heartTimer);
   }, [floatingHearts]);
 
-  // Story slide viewer ticks
+  // Story slide viewer ticks — pauses when user holds screen
   useEffect(() => {
     let storyTimer: any;
-    if (selectedStoriesGroup) {
+    if (selectedStoriesGroup && !storyPaused) {
       storyTimer = setInterval(() => {
         setStoryProgress(prev => {
           if (prev >= 100) {
@@ -770,7 +1050,7 @@ export default function ReelsScreen() {
       }, 50);
     }
     return () => clearInterval(storyTimer);
-  }, [selectedStoriesGroup, activeSlideIndex]);
+  }, [selectedStoriesGroup, activeSlideIndex, storyPaused]);
 
   const handleStoryNext = () => {
     if (!selectedStoriesGroup) return;
@@ -870,11 +1150,21 @@ export default function ReelsScreen() {
   useEffect(() => {
     fetchFeed();
     fetchProducts();
+    fetchFeedItems("", "For You", true);
   }, []);
 
   const handleLikePress = (id: string) => {
     triggerHaptic("heavy");
-    setLikedReels(prev => ({ ...prev, [id]: !prev[id] }));
+    const wasLiked = !!likedReels[id];
+    
+    // 1. Optimistic state change
+    setLikedReels(prev => ({ ...prev, [id]: !wasLiked }));
+    
+    // 2. Background sync
+    logEngagement(id, "like").catch(e => {
+      console.warn("Optimistic like toggle failed, reverting:", e);
+      setLikedReels(prev => ({ ...prev, [id]: wasLiked }));
+    });
   };
 
   const handleShare = (item: any) => {
@@ -1017,19 +1307,467 @@ export default function ReelsScreen() {
     // Persistent header - disabled collapsing to prevent layout shifts during scroll
   };
 
-    const unreadNotificationsCount = notifications ? notifications.filter((n: any) => !n.read).length : 0;
+  // Animated values for Creator post heart burst animation
+  const [heartAnimScale] = useState(new Animated.Value(0));
+  const [heartAnimOpacity] = useState(new Animated.Value(0));
+  const [heartAnimItem, setHeartAnimItem] = useState<string | null>(null);
+  
+  const triggerHeartBurst = (itemId: string) => {
+    setHeartAnimItem(itemId);
+    heartAnimScale.setValue(0);
+    heartAnimOpacity.setValue(1);
+    Animated.parallel([
+      Animated.spring(heartAnimScale, {
+        toValue: 1.5,
+        friction: 3,
+        useNativeDriver: true,
+      }),
+      Animated.timing(heartAnimOpacity, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      })
+    ]).start(() => {
+      setHeartAnimItem(null);
+    });
+  };
 
-    return (
-      <View style={styles.container}>
-        <SafeAreaView style={styles.safeAreaContainer} edges={["top"]}>
+  const handleFeedItemLike = async (id: string) => {
+    triggerHaptic("heavy");
+    setLikedReels(prev => ({ ...prev, [id]: !prev[id] }));
+    await logEngagement(id, "like");
+  };
+
+  const handleFeedItemSave = async (id: string) => {
+    triggerHaptic("medium");
+    setSavedPosts(prev => ({ ...prev, [id]: !prev[id] }));
+    await toggleFeedSave(id);
+    await logEngagement(id, "save");
+  };
+
+  const handleFeedItemShare = async (id: string) => {
+    triggerHaptic("medium");
+    const shareUrl = await logFeedShare(id);
+    if (shareUrl) {
+      Share.share({
+        message: `Check out this amazing design on AURA: ${shareUrl}`,
+      });
+    }
+  };
+
+  const handleAiChatSubmit = () => {
+    if (!aiChatQuery.trim()) return;
+    triggerHaptic("light");
+    const query = aiChatQuery;
+    setAiChatMessages(prev => [...prev, { id: `user_${Date.now()}`, sender: "user", text: query }]);
+    setAiChatQuery("");
+
+    // Simulate AI Concierge Typing Response
+    setTimeout(() => {
+      triggerHaptic("medium");
+      let matchedProd = null;
+      let replyText = "I searched the AURA catalog for you. Here is the closest match for your query:";
+
+      const lower = query.toLowerCase();
+      if (lower.includes("bag") || lower.includes("carryall") || lower.includes("purse")) {
+        matchedProd = products.find(p => p.id === "p4") || MOCK_PRODUCTS[3];
+        replyText = "I found the Heritage Calfskin Carryall. It matches your quiet luxury carryall query. Handcrafted in Milan from premium full-grain leather:";
+      } else if (lower.includes("hoodie") || lower.includes("vestment") || lower.includes("black")) {
+        matchedProd = products.find(p => p.id === "p1") || MOCK_PRODUCTS[0];
+        replyText = "Here is the Obsidian Gold Vestment. It features bespoke heavy-drape fabrics in deep obsidian shades, perfect for quiet luxury styling:";
+      } else if (lower.includes("jacket") || lower.includes("trench") || lower.includes("coat")) {
+        matchedProd = products.find(p => p.id === "p2") || MOCK_PRODUCTS[1];
+        replyText = "Exquisite. I recommend the Atelier Silk Trench Jacket. A rare runway piece made from pure mulberry silk, complete with custom metal hardware details:";
+      } else if (lower.includes("cuff") || lower.includes("jewelry") || lower.includes("accessory")) {
+        matchedProd = products.find(p => p.id === "p3") || MOCK_PRODUCTS[2];
+        replyText = "Here is the Cyber Penthouse Cuff. Brutalist luxury design cast in sterling silver with an electroplated raw platinum finish:";
+      } else {
+        matchedProd = products[Math.floor(Math.random() * products.length)] || MOCK_PRODUCTS[0];
+        replyText = "I found this designer piece matching your taste in our current digital catalog. A limited-edition release:";
+      }
+
+      setAiChatMessages(prev => [...prev, {
+        id: `ai_${Date.now()}`,
+        sender: "ai",
+        text: replyText,
+        product: matchedProd
+      }]);
+    }, 800);
+  };
+
+  const renderFeedItem = ({ item, index }: { item: any; index: number }) => {
+    if (item.type === "ASK_AURA_AI") {
+      return (
+        <TouchableOpacity 
+          style={{
+            marginHorizontal: 16,
+            marginVertical: 12,
+            padding: 16,
+            borderRadius: 16,
+            backgroundColor: "#F5F5F7",
+            borderWidth: 1,
+            borderColor: "#EAEAEA",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+          }}
+          activeOpacity={0.85}
+          onPress={() => {
+            triggerHaptic("medium");
+            setShowAiAssistant(true);
+          }}
+        >
+          <View style={{
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            backgroundColor: "#111111",
+            alignItems: "center",
+            justifyContent: "center"
+          }}>
+            <Lucide name="sparkles" size={18} color="#FFFFFF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: "bold", color: "#111111" }}>Ask Aura AI Assistant</Text>
+            <Text style={{ fontSize: 12, color: "#8E8E93", marginTop: 2 }}>"Find oversized black hoodies under ₹1500"</Text>
+          </View>
+          <Lucide name="arrow-forward" size={16} color="#8E8E93" />
+        </TouchableOpacity>
+      );
+    }
+
+    const creatorName = item.creator?.name || "AURA Creator";
+    const creatorUsername = item.creator?.username || "aura_curator";
+    const creatorAvatar = item.creator?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150";
+
+    const isLiked = likedReels[item.id] || false;
+    const isSaved = savedPosts[item.id] || false;
+
+    if (item.type === "CREATOR_POST") {
+      const media = item.content?.mediaUrl || "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=600";
+      const caption = item.content?.caption || "";
+      const likesCount = item.content?.likesCount || 128;
+      const commentsCount = item.content?.commentsCount || 18;
+
+      let lastTap = 0;
+      const handleDoubleTap = () => {
+        const now = Date.now();
+        if (now - lastTap < 300) {
+          handleFeedItemLike(item.id);
+          triggerHeartBurst(item.id);
+        }
+        lastTap = now;
+      };
+
+      return (
+        <View style={{ backgroundColor: "#FFFFFF", marginBottom: 24, borderBottomWidth: 1, borderBottomColor: "#F5F5F7", paddingBottom: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 }}>
+            <TouchableOpacity 
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              onPress={() => router.push(`/profile/${item.creator?.id || "aria.sterling"}`)}
+            >
+              <Image source={{ uri: creatorAvatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+              <View>
+                <Text style={{ fontWeight: "700", fontSize: 14, color: "#111111" }}>{creatorName}</Text>
+                <Text style={{ fontSize: 11, color: "#8E8E93" }}>@{creatorUsername} • Creator</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => triggerHaptic("light")}>
+              <Lucide name="ellipsis-horizontal" size={20} color="#8E8E93" />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity activeOpacity={1} onPress={handleDoubleTap} style={{ position: "relative" }}>
+            <ZoomableImage source={{ uri: media }} style={{ width: "100%", height: 380 }} />
+            
+            {heartAnimItem === item.id && (
+              <Animated.View style={{
+                position: "absolute",
+                alignSelf: "center",
+                top: "40%",
+                zIndex: 10,
+                transform: [{ scale: heartAnimScale }],
+                opacity: heartAnimOpacity
+              }}>
+                <Lucide name="heart" size={80} color="#FF3B30" />
+              </Animated.View>
+            )}
+          </TouchableOpacity>
+
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12 }}>
+            <View style={{ flexDirection: "row", gap: 16 }}>
+              <TouchableOpacity onPress={() => handleFeedItemLike(item.id)}>
+                <Lucide name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#FF3B30" : "#111111"} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => triggerHaptic("light")}>
+                <Lucide name="chatbubble-outline" size={23} color="#111111" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleFeedItemShare(item.id)}>
+                <Lucide name="paper-plane-outline" size={23} color="#111111" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={() => handleFeedItemSave(item.id)}>
+              <Lucide name={isSaved ? "bookmark" : "bookmark-outline"} size={23} color={isSaved ? "#111111" : "#111111"} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ paddingHorizontal: 16 }}>
+            <Text style={{ fontWeight: "700", fontSize: 13, color: "#111111", marginBottom: 4 }}>
+              {(likesCount + (isLiked ? 1 : 0)).toLocaleString()} likes
+            </Text>
+            <Text style={{ fontSize: 13, color: "#111111", lineHeight: 18 }}>
+              <Text style={{ fontWeight: "700" }}>{creatorUsername} </Text>
+              {caption}
+            </Text>
+            <Text style={{ fontSize: 12, color: "#8E8E93", marginTop: 6 }}>
+              View all {commentsCount} comments
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    if (item.type === "PRODUCT_POST") {
+      const prod = item.product || {};
+      const prodImg = prod.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=400";
+      const rating = prod.rating || 4.8;
+      const discount = prod.discount || 0;
+
+      return (
+        <TouchableOpacity 
+          style={{ 
+            backgroundColor: "#FFFFFF", 
+            marginHorizontal: 16, 
+            marginBottom: 20, 
+            borderRadius: 20, 
+            borderWidth: 1, 
+            borderColor: "#EAEAEA",
+            overflow: "hidden" 
+          }}
+          activeOpacity={0.95}
+          onPress={() => {
+            triggerHaptic("medium");
+            setSelectedProductForPreview(prod);
+            setPreviewFeedItemId(item.id);
+            setPreviewSheetVisible(true);
+          }}
+        >
+          <Image source={{ uri: prodImg }} style={{ width: "100%", height: 320 }} contentFit="cover" placeholder="L184i9ofbHof00ayjZay~qj[ayof" transition={300} />
           
-          {/* 🏔️ TOP HEADER ROW */}
-          {!(isReelsFullScreen && activeFeedTab === "reels") && (
-            <View style={styles.instaHeader}>
-              <TouchableOpacity onPress={handleSelectMedia}>
-                <Lucide name="add-outline" size={28} color="#fff" />
+          {discount > 0 && (
+            <View style={{ position: "absolute", top: 12, left: 12, backgroundColor: "#E5F9E7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+              <Text style={{ color: "#1F8722", fontSize: 10, fontWeight: "bold" }}>-{discount}% OFF</Text>
+            </View>
+          )}
+
+          <View style={{ padding: 16 }}>
+            <Text style={{ fontSize: 10, fontWeight: "bold", color: "#8E8E93", letterSpacing: 1 }}>AURA MAISON</Text>
+            <Text style={{ fontSize: 16, fontWeight: "800", color: "#111111", marginTop: 4 }}>{prod.name}</Text>
+            
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
+              <View style={{ flexDirection: "row", gap: 1 }}>
+                {[1,2,3,4,5].map((s) => (
+                  <Lucide key={s} name={s <= Math.floor(rating) ? "star" : "star-outline"} size={13} color="#FFB800" />
+                ))}
+              </View>
+              <Text style={{ fontSize: 12, color: "#8E8E93" }}>{rating}</Text>
+            </View>
+
+            <Text style={{ fontSize: 18, fontWeight: "800", color: "#111111", marginTop: 10 }}>{formatPrice(prod.price)}</Text>
+
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+              <TouchableOpacity 
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: "#111111",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  flexDirection: "row",
+                  gap: 6,
+                }}
+                onPress={async (e) => {
+                  e.stopPropagation();
+                  triggerHaptic("success");
+                  addToCart(prod);
+                  await logFeedCartAdd(item.id, prod.id);
+                }}
+              >
+                <Lucide name="cart-outline" size={18} color="#111111" />
+                <Text style={{ fontSize: 13, fontWeight: "700", color: "#111111" }}>Add to Cart</Text>
               </TouchableOpacity>
               
+              <TouchableOpacity 
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 10,
+                  backgroundColor: "#111111",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+                onPress={async (e) => {
+                  e.stopPropagation();
+                  triggerHaptic("heavy");
+                  addToCart(prod);
+                  await logEngagement(item.id, "purchase");
+                  router.push("/cart");
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF" }}>Buy Now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    if (item.type === "CREATOR_COMMERCE") {
+      return (
+        <CreatorCommerceCard
+          item={item}
+          feedMuted={feedMuted}
+          setFeedMuted={setFeedMuted}
+          triggerHaptic={triggerHaptic}
+          setSelectedProductForPreview={setSelectedProductForPreview}
+          setPreviewFeedItemId={setPreviewFeedItemId}
+          setPreviewSheetVisible={setPreviewSheetVisible}
+          formatPrice={formatPrice}
+        />
+      );
+    }
+
+    if (item.type === "LIVE_COMMERCE") {
+      const thumbnail = item.content?.liveThumbnail || "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=600";
+      const title = item.content?.title || "Live Auction Drop";
+      const viewerCount = item.content?.viewerCount || "2.1K";
+
+      return (
+        <View style={{ backgroundColor: "#FFFFFF", marginHorizontal: 16, marginBottom: 24, borderRadius: 20, borderWidth: 1, borderColor: "#EAEAEA", overflow: "hidden" }}>
+          <View style={{ position: "relative" }}>
+            <Image source={{ uri: thumbnail }} style={{ width: "100%", height: 260 }} contentFit="cover" placeholder="L184i9ofbHof00ayjZay~qj[ayof" transition={300} />
+            <View style={{ position: "absolute", top: 12, left: 12, flexDirection: "row", gap: 6 }}>
+              <View style={{ backgroundColor: "#FF3B30", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                <Text style={{ color: "#FFFFFF", fontSize: 10, fontWeight: "bold" }}>LIVE</Text>
+              </View>
+              <View style={{ backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Lucide name="eye" size={12} color="#FFFFFF" />
+                <Text style={{ color: "#FFFFFF", fontSize: 10, fontWeight: "bold" }}>{viewerCount}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={{ padding: 16 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Image source={{ uri: creatorAvatar }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: "#111111" }}>{creatorName}</Text>
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: "800", color: "#111111", marginTop: 8 }}>{title}</Text>
+            
+            <TouchableOpacity 
+              style={{
+                height: 46,
+                borderRadius: 12,
+                backgroundColor: "#FF3B30",
+                justifyContent: "center",
+                alignItems: "center",
+                marginTop: 14,
+              }}
+              onPress={() => {
+                triggerHaptic("medium");
+                setShowroomMode("viewer");
+                setShowroomMaisonId(item.creator?.id || "rare_raven");
+                setShowroomMaisonName(creatorName);
+                setShowroomSessionId("session_live");
+                setShowLiveShowroom(true);
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "700", color: "#FFFFFF" }}>Join Live Showroom</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    return null;
+  };
+
+  const unreadNotificationsCount = notifications ? notifications.filter((n: any) => !n.read).length : 0;
+
+  const listData = [...feedItems];
+  if (listData.length > 1) {
+    const hasAiBar = listData.some(item => item.id === "ask_aura_ai_bar");
+    if (!hasAiBar) {
+      listData.splice(1, 0, { id: "ask_aura_ai_bar", type: "ASK_AURA_AI" });
+    }
+  } else if (listData.length === 1) {
+    const hasAiBar = listData.some(item => item.id === "ask_aura_ai_bar");
+    if (!hasAiBar) {
+      listData.push({ id: "ask_aura_ai_bar", type: "ASK_AURA_AI" });
+    }
+  }
+
+  return (
+    <View style={[styles.container, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }]}>
+      <SafeAreaView style={[styles.safeAreaContainer, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }]} edges={["top"]}>
+        
+        {/* 🏔️ TOP HEADER ROW */}
+        {!(isReelsFullScreen && activeFeedTab === "reels") && (
+          <View style={[
+            styles.instaHeader, 
+            activeFeedTab === "posts" && { 
+              backgroundColor: "#FFFFFF", 
+              borderBottomWidth: 1, 
+              borderBottomColor: "#EAEAEA",
+              height: 56
+            }
+          ]}>
+            {/* Logo */}
+            <TouchableOpacity onPress={() => triggerHaptic("light")}>
+              <Text style={[
+                styles.instaLogoText, 
+                activeFeedTab === "posts" && { color: "#111111", fontSize: 20, fontWeight: "900", letterSpacing: 1 }
+              ]}>
+                AURA
+              </Text>
+            </TouchableOpacity>
+            
+            {/* Search Bar */}
+            {activeFeedTab === "posts" ? (
+              <View style={{
+                flex: 1,
+                marginHorizontal: 12,
+                height: 36,
+                borderRadius: 10,
+                backgroundColor: "#F5F5F7",
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 10,
+              }}>
+                <Lucide name="search-outline" size={16} color="#8E8E93" style={{ marginRight: 6 }} />
+                <TextInput
+                  style={{
+                    flex: 1,
+                    fontSize: 13,
+                    color: "#111111",
+                    padding: 0,
+                  }}
+                  placeholder="Search creators, products..."
+                  placeholderTextColor="#8E8E93"
+                  value={selectedCategory === "For You" || selectedCategory === "Following" || selectedCategory === "Fashion" || selectedCategory === "Beauty" || selectedCategory === "Tech" || selectedCategory === "Fitness" || selectedCategory === "Luxury" || selectedCategory === "Trending" || selectedCategory === "Local" ? "" : selectedCategory}
+                  onChangeText={(text) => {
+                    setSelectedCategory(text);
+                    if (text.trim() === "") {
+                      fetchFeedItems("", "For You", true);
+                    } else {
+                      fetchFeedItems(text, "For You", true);
+                    }
+                  }}
+                />
+              </View>
+            ) : (
               <TouchableOpacity 
                 onPress={() => { triggerHaptic("medium"); setShowProfileSwitcher(true); }}
                 style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
@@ -1039,52 +1777,179 @@ export default function ReelsScreen() {
                 </Text>
                 <Lucide name="chevron-down" size={14} color="#00f5ff" style={{ marginTop: 2 }} />
               </TouchableOpacity>
-  
-              <View style={styles.headerRightIcons}>
-                <TouchableOpacity 
-                  onPress={() => { 
-                    triggerHaptic("medium"); 
-                    setShowActivityDrawer(true); 
-                    if (activeProfile?.id) {
-                      markNotificationsRead(activeProfile.id);
-                    }
-                  }}
-                >
-                  <View style={{ position: "relative" }}>
-                    <Lucide name="heart-outline" size={26} color="#fff" style={styles.headerIcon} />
-                    {unreadNotificationsCount > 0 && (
-                      <View style={{
-                        position: "absolute",
-                        top: -2,
-                        right: -2,
-                        width: 10,
-                        height: 10,
-                        borderRadius: 5,
-                        backgroundColor: "#00f5ff",
-                        borderWidth: 1.5,
-                        borderColor: "#080415"
-                      }} />
-                    )}
-                  </View>
-                </TouchableOpacity>
+            )}
+
+            <View style={styles.headerRightIcons}>
+              <TouchableOpacity 
+                onPress={() => { 
+                  triggerHaptic("medium"); 
+                  setShowActivityDrawer(true); 
+                  if (activeProfile?.id) {
+                    markNotificationsRead(activeProfile.id);
+                  }
+                }}
+              >
+                <View style={{ position: "relative" }}>
+                  <Lucide 
+                    name="notifications-outline" 
+                    size={24} 
+                    color={activeFeedTab === "posts" ? "#111111" : "#ffffff"} 
+                  />
+                  {unreadNotificationsCount > 0 && (
+                    <View style={{
+                      position: "absolute",
+                      top: -4,
+                      right: -4,
+                      backgroundColor: "#FF3B30",
+                      borderRadius: 8,
+                      minWidth: 16,
+                      height: 16,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      paddingHorizontal: 4,
+                    }}>
+                      <Text style={{ color: "#FFFFFF", fontSize: 9, fontWeight: "bold" }}>
+                        {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+
               <TouchableOpacity onPress={() => { triggerHaptic("medium"); router.push("/cart"); }}>
-                <View style={styles.dmIconWrapper}>
-                  <Lucide name="cart-outline" size={26} color="#fff" />
-                  <View style={styles.redDotNotification} />
+                <View style={{ position: "relative" }}>
+                  <Lucide 
+                    name="cart-outline" 
+                    size={24} 
+                    color={activeFeedTab === "posts" ? "#111111" : "#ffffff"} 
+                  />
+                  {cart.length > 0 && (
+                    <View style={{
+                      position: "absolute",
+                      top: -4,
+                      right: -4,
+                      backgroundColor: "#111111",
+                      borderRadius: 8,
+                      minWidth: 16,
+                      height: 16,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      paddingHorizontal: 4,
+                    }}>
+                      <Text style={{ color: "#FFFFFF", fontSize: 9, fontWeight: "bold" }}>
+                        {cart.reduce((sum, item) => sum + (item.quantity || 1), 0)}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* 🔴 TOP HORIZONTAL STORIES ROW */}
-        {!(isReelsFullScreen && activeFeedTab === "reels") && (
-          <View style={styles.storiesBubbleContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesScroll}>
-              {activeInstaStories.map((story) => (
+        {/* 🔴 STORIES + LIVE STRIP */}
+        {!(isReelsFullScreen && activeFeedTab === "reels") && activeFeedTab === "posts" && (
+          <View style={{
+            backgroundColor: "#FFFFFF",
+            paddingVertical: 12,
+            borderBottomWidth: 1,
+            borderBottomColor: "#F5F5F7",
+          }}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              contentContainerStyle={{ paddingHorizontal: 16, gap: 14 }}
+            >
+              {/* Your Story */}
+              <TouchableOpacity 
+                style={{ alignItems: "center" }}
+                onPress={() => triggerHaptic("medium")}
+              >
+                <View style={{ position: "relative" }}>
+                  <Image 
+                    source={{ uri: currentUser?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80" }} 
+                    style={{ width: 62, height: 62, borderRadius: 31, borderWidth: 1, borderColor: "#EAEAEA" }} 
+                  />
+                  <View style={{
+                    position: "absolute",
+                    bottom: 0,
+                    right: 0,
+                    backgroundColor: "#111111",
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 2,
+                    borderColor: "#FFFFFF",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}>
+                    <Lucide name="add" size={12} color="#FFFFFF" />
+                  </View>
+                </View>
+                <Text style={{ fontSize: 11, color: "#8E8E93", marginTop: 6, fontWeight: "500" }}>Your Story</Text>
+              </TouchableOpacity>
+
+              {/* Live Streams (activeSessions) */}
+              {activeSessions.map((session) => {
+                const hostAvatar = "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&w=150";
+                return (
+                  <TouchableOpacity 
+                    key={session.id}
+                    style={{ alignItems: "center" }}
+                    onPress={() => {
+                      triggerHaptic("medium");
+                      setShowroomMode("viewer");
+                      setShowroomMaisonId(session.maisonId);
+                      setShowroomMaisonName(session.maisonName);
+                      setShowroomSessionId(session.id);
+                      setShowLiveShowroom(true);
+                    }}
+                  >
+                    <LinearGradient
+                      colors={["#FF2D55", "#FF9500"]}
+                      style={{
+                        width: 66,
+                        height: 66,
+                        borderRadius: 33,
+                        justifyContent: "center",
+                        alignItems: "center"
+                      }}
+                    >
+                      <View style={{
+                        width: 60,
+                        height: 60,
+                        borderRadius: 30,
+                        backgroundColor: "#FFFFFF",
+                        justifyContent: "center",
+                        alignItems: "center"
+                      }}>
+                        <Image source={{ uri: hostAvatar }} style={{ width: 54, height: 54, borderRadius: 27 }} />
+                      </View>
+                    </LinearGradient>
+                    <View style={{
+                      position: "absolute",
+                      bottom: 16,
+                      backgroundColor: "#FF3B30",
+                      paddingHorizontal: 6,
+                      paddingVertical: 1,
+                      borderRadius: 4,
+                      borderWidth: 1,
+                      borderColor: "#FFFFFF",
+                    }}>
+                      <Text style={{ color: "#FFFFFF", fontSize: 8, fontWeight: "bold" }}>LIVE</Text>
+                    </View>
+                    <Text style={{ fontSize: 11, color: "#111111", marginTop: 6, fontWeight: "600" }}>
+                      {session.maisonName.length > 10 ? `${session.maisonName.substring(0, 8)}...` : session.maisonName}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {/* Creator Stories */}
+              {activeInstaStories.filter(s => !s.isYourStory).map((story) => (
                 <TouchableOpacity 
-                  key={story.id} 
-                  style={styles.storyBubbleItem}
+                  key={story.id}
+                  style={{ alignItems: "center" }}
                   onPress={() => {
                     triggerHaptic("medium");
                     setSelectedStoriesGroup(story);
@@ -1092,50 +1957,104 @@ export default function ReelsScreen() {
                     setStoryProgress(0);
                   }}
                 >
-                  {story.active ? (
-                    <LinearGradient
-                      colors={["#fb923c", "#d946ef", "#8b5cf6"]}
-                      start={{ x: 0, y: 1 }}
-                      end={{ x: 1, y: 0 }}
-                      style={{
-                        width: 66, height: 66, borderRadius: 33,
-                        justifyContent: "center", alignItems: "center",
-                      }}
-                    >
-                      <View style={{
-                        width: 60, height: 60, borderRadius: 30,
-                        backgroundColor: "#080415",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}>
-                        <Image source={{ uri: story.avatar }} style={{ width: 54, height: 54, borderRadius: 27 }} />
-                      </View>
-                    </LinearGradient>
-                  ) : (
-                    <View style={styles.avatarWrapper}>
-                      <Image source={{ uri: story.avatar }} style={styles.storyAvatarImg} />
-                      {story.isYourStory && (
-                        <View style={styles.yourStoryPlusBadge}>
-                          <Lucide name="add-circle" size={19} color="#00f5ff" />
-                        </View>
-                      )}
+                  <LinearGradient
+                    colors={story.active ? ["#fb923c", "#d946ef", "#8b5cf6"] : ["#EAEAEA", "#EAEAEA"]}
+                    style={{
+                      width: 66,
+                      height: 66,
+                      borderRadius: 33,
+                      justifyContent: "center",
+                      alignItems: "center"
+                    }}
+                  >
+                    <View style={{
+                      width: 60,
+                      height: 60,
+                      borderRadius: 30,
+                      backgroundColor: "#FFFFFF",
+                      justifyContent: "center",
+                      alignItems: "center"
+                    }}>
+                      <Image source={{ uri: story.avatar }} style={{ width: 54, height: 54, borderRadius: 27 }} />
                     </View>
-                  )}
-                  <Text style={styles.storyUsername} numberOfLines={1}>{story.username}</Text>
+                  </LinearGradient>
+                  <Text style={{ fontSize: 11, color: "#111111", marginTop: 6, fontWeight: "500" }}>
+                    {story.username.length > 10 ? `${story.username.substring(0, 8)}...` : story.username}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
           </View>
         )}
 
+        {/* 🏷️ STICKY CATEGORY FILTER CHIPS */}
+        {!(isReelsFullScreen && activeFeedTab === "reels") && activeFeedTab === "posts" && (
+          <View style={{
+            backgroundColor: "#FFFFFF",
+            paddingVertical: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: "#F5F5F7",
+          }}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+            >
+              {[
+                "For You",
+                "Following",
+                "Fashion",
+                "Beauty",
+                "Tech",
+                "Fitness",
+                "Luxury",
+                "Trending",
+                "Local"
+              ].map((chip) => {
+                const isSelected = selectedCategory === chip;
+                return (
+                  <TouchableOpacity 
+                    key={chip} 
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 20,
+                      backgroundColor: isSelected ? "#111111" : "#F5F5F7",
+                      borderWidth: 1,
+                      borderColor: isSelected ? "#111111" : "#EAEAEA",
+                    }}
+                    onPress={() => {
+                      triggerHaptic("light");
+                      setSelectedCategory(chip);
+                      if (chip === "For You") {
+                        fetchFeedItems("", "For You", true);
+                      } else if (chip === "Following") {
+                        fetchFeedItems("", "Following", true);
+                      } else {
+                        fetchFeedItems(chip, "For You", true);
+                      }
+                    }}
+                  >
+                    <Text style={{
+                      color: isSelected ? "#FFFFFF" : "#111111",
+                      fontSize: 13,
+                      fontWeight: "600",
+                    }}>{chip}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
         {/* 📺 SWITCH MAIN FEED CONTENT */}
-        <View style={styles.feedWrapper}>
+        <View style={[styles.feedWrapper, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }]}>
           
           {/* REELS TABS */}
           {activeFeedTab === "reels" ? (
             (loadingFeed && stories.length === 0) ? (
               <View style={styles.centerContainer}>
-                <ActivityIndicator size="large" color="#00f5ff" />
+                <ShimmerFeedList count={2} />
               </View>
             ) : (
               <View style={{ flex: 1, position: "relative" }}>
@@ -1166,119 +2085,22 @@ export default function ReelsScreen() {
               </View>
             )
           ) : (
-            /* DEFAULT: UNIFIED POSTS FEED (Serving as the Homepage Instagram Main Feed!) */
-            <FlatList
-              data={displayStories}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 52 + insets.bottom + 40 }}
-              ListHeaderComponent={
-                <View style={{ marginBottom: 12 }}>
-                  {/* Dynamic Active Streams */}
-                  {activeSessions.length > 0 && (
-                    <View style={{ marginBottom: 16 }}>
-                      <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>
-                        Active Live Showrooms
-                      </Text>
-                      {activeSessions.map((session) => {
-                        const pinnedProductDetails = products.find(p => p.id === session.pinnedProductId);
-                        const coverImg = pinnedProductDetails?.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400";
-                        return (
-                          <TouchableOpacity
-                            key={session.id}
-                            style={styles.showroomCard}
-                            onPress={() => {
-                              triggerHaptic("medium");
-                              setShowroomMode("viewer");
-                              setShowroomMaisonId(session.maisonId);
-                              setShowroomMaisonName(session.maisonName);
-                              setShowroomSessionId(session.id);
-                              setShowLiveShowroom(true);
-                            }}
-                            activeOpacity={0.9}
-                          >
-                            <Image
-                              source={{ uri: coverImg }}
-                              style={styles.showroomImg}
-                            />
-                            <LinearGradient
-                              colors={["rgba(0,0,0,0.1)", "rgba(0,0,0,0.75)"]}
-                              style={StyleSheet.absoluteFillObject}
-                            />
-                            <View style={styles.showroomBadgeRow}>
-                              <View style={styles.showroomLiveBadge}>
-                                <Text style={styles.showroomLiveText}>LIVE</Text>
-                              </View>
-                              <View style={styles.showroomViewerBadge}>
-                                <Lucide name="people" size={12} color="#fff" />
-                                <Text style={styles.showroomViewerText}>{formatCompactNumber(session.viewerCount)}</Text>
-                              </View>
-                            </View>
-                            <View style={styles.showroomFooter}>
-                              <Text style={styles.showroomTitle}>{session.title}</Text>
-                              <Text style={styles.showroomHost}>by {session.maisonName}</Text>
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
-
-                  {/* Standard Studio Banner */}
-                  <View style={styles.liveBannerContainer}>
-                    <TouchableOpacity
-                      style={styles.liveBannerCard}
-                      onPress={() => {
-                        triggerHaptic("medium");
-                        setShowroomMode("lobby");
-                        setShowroomMaisonId(activeMaisonId);
-                        setShowroomMaisonName(currentMaisonName);
-                        setShowroomSessionId(undefined);
-                        setShowLiveShowroom(true);
-                      }}
-                      activeOpacity={0.85}
-                    >
-                      <LinearGradient
-                        colors={["#a78bfa", "#fb923c"]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.liveBannerGradient}
-                      >
-                        <View style={styles.liveBannerLeft}>
-                          <View style={styles.liveBannerLiveBadge}>
-                            <Text style={styles.liveBannerLiveText}>LIVE STUDIO</Text>
-                          </View>
-                          <Text style={styles.liveBannerTitle}>Maison Broadcast Studio</Text>
-                          <Text style={styles.liveBannerDesc}>Tap to enter lobby, start a stream or discover coordinate nodes</Text>
-                        </View>
-                        <View style={styles.liveBannerRight}>
-                          <Lucide name="videocam-outline" size={30} color="#fff" />
-                        </View>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              }
-              renderItem={({ item }) => (
-                <PostCard
-                  item={item}
-                  currentMaisonName={currentMaisonName}
-                  feedMuted={feedMuted}
-                  setFeedMuted={setFeedMuted}
-                  likedPosts={likedReels}
-                  savedPosts={savedPosts}
-                  handleMaisonProfilePress={handleMaisonProfilePress}
-                  handleLikePress={handleLikePress}
-                  handleCommentsPress={handleCommentsPress}
-                  handleShare={handleShare}
-                  handleSavePress={handleSavePress}
-                  handleThreeDotsPress={handleThreeDotsPress}
-                />
-              )}
-              onEndReached={loadMoreStories}
-              onEndReachedThreshold={0.5}
-              ListFooterComponent={renderFeedFooter}
-            />
+            (loadingFeedItems && feedItems.length === 0) ? (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: bottomBarHeight + 40, paddingHorizontal: 12, paddingTop: 12 }}>
+                <ShimmerFeedList count={2} />
+              </ScrollView>
+            ) : (
+              <FlatList
+                data={listData}
+                renderItem={renderFeedItem}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                onEndReached={loadMoreStories}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={renderFeedFooter}
+                contentContainerStyle={{ paddingBottom: bottomBarHeight + 40 }}
+              />
+            )
           )}
 
         </View>
@@ -1308,67 +2130,146 @@ export default function ReelsScreen() {
 
       {/* 💬 Individual conversation is now handled inside ChatDrawer */}
 
-      {/* 🏠 GLOBAL PERSISTENT Bottom Navigation tabs replica */}
-      <View style={[styles.instagramBottomBar, { height: 52 + insets.bottom, paddingBottom: insets.bottom }]}>
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { 
-          triggerHaptic("light"); 
-          setShowDMs(false); 
-          setShowExploreGrid(false); 
-          setIsReelsFullScreen(false);
-          setActiveFeedTab("posts");
-          router.push("/"); 
-        }}>
-          <Lucide name="home-outline" size={28} color={(!showDMs && !showExploreGrid && (!isReelsFullScreen || activeFeedTab !== "reels")) ? "#00f5ff" : "#fff"} />
+      {/* ──────────────────────────────────────────────────── */}
+      {/* 🏠 AURA BOTTOM NAVIGATION — 5 tabs with elevated Create */}
+      {/* ──────────────────────────────────────────────────── */}
+      <View style={[styles.auraBottomBar, { paddingBottom: insets.bottom, height: 62 + insets.bottom }]}>
+
+        {/* TAB 1 — Home */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            setShowDMs(false);
+            setShowExploreGrid(false);
+            setIsReelsFullScreen(false);
+            setActiveFeedTab("posts");
+            router.push("/");
+          }}
+        >
+          <Lucide
+            name="home-outline"
+            size={26}
+            color={(!showDMs && (!isReelsFullScreen || activeFeedTab !== "reels")) ? "#00f5ff" : "rgba(255,255,255,0.45)"}
+          />
+          <Text style={[styles.auraTabLabel, { color: (!showDMs && (!isReelsFullScreen || activeFeedTab !== "reels")) ? "#00f5ff" : "rgba(255,255,255,0.35)" }]}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { 
-          triggerHaptic("light"); 
-          setShowDMs(false); 
-          setShowExploreGrid(false); 
-          setIsReelsFullScreen(true);
-          setActiveFeedTab("reels");
-        }}>
-          <Lucide name="film-outline" size={28} color={(activeFeedTab === "reels" && isReelsFullScreen && !showDMs) ? "#00f5ff" : "#fff"} />
+        {/* TAB 2 — Reel */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            setShowDMs(false);
+            setShowExploreGrid(false);
+            setIsReelsFullScreen(true);
+            setActiveFeedTab("reels");
+          }}
+        >
+          <Lucide
+            name="film-outline"
+            size={26}
+            color={(!showDMs && isReelsFullScreen && activeFeedTab === "reels") ? "#00f5ff" : "rgba(255,255,255,0.45)"}
+          />
+          <Text style={[styles.auraTabLabel, { color: (!showDMs && isReelsFullScreen && activeFeedTab === "reels") ? "#00f5ff" : "rgba(255,255,255,0.35)" }]}>Reel</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { 
-          triggerHaptic("light"); 
-          setShowDMs(true); 
-          setShowExploreGrid(false); 
-        }}>
-          <Lucide name="paper-plane-outline" size={28} color={showDMs ? "#00f5ff" : "#fff"} />
+        {/* TAB 3 — Inbox */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            setShowDMs(true);
+            setShowExploreGrid(false);
+            setIsReelsFullScreen(false);
+          }}
+        >
+          <Lucide
+            name="paper-plane-outline"
+            size={26}
+            color={showDMs ? "#00f5ff" : "rgba(255,255,255,0.45)"}
+          />
+          <Text style={[styles.auraTabLabel, { color: showDMs ? "#00f5ff" : "rgba(255,255,255,0.35)" }]}>Inbox</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { 
-          triggerHaptic("light"); 
-          setShowDMs(false); 
-          setShowExploreGrid(false); 
-          router.push("/shop" as any); 
-        }}>
-          <Lucide name="play-outline" size={28} color="#fff" />
+        {/* TAB 4 — Products */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            setShowDMs(false);
+            setShowExploreGrid(false);
+            router.push("/shop");
+          }}
+        >
+          <Lucide
+            name="bag-handle-outline"
+            size={26}
+            color="rgba(255,255,255,0.45)"
+          />
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Products</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabBtn} onPress={() => { 
-          triggerHaptic("light"); 
-          setShowDMs(false); 
-          setShowExploreGrid(false); 
-          router.push("/account"); 
-        }}>
-          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "#00f5ff", overflow: "hidden" }]}>
+        {/* TAB 5 — Profile */}
+        <TouchableOpacity
+          style={styles.auraTabBtn}
+          onPress={() => {
+            triggerHaptic("light");
+            setShowDMs(false);
+            setShowExploreGrid(false);
+            router.push("/account");
+          }}
+        >
+          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", overflow: "hidden" }]}>
             {activeMaisonId === "aloksingh" ? (
-              <Image 
-                source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80" }} 
-                style={styles.profileTabImg} 
+              <Image
+                source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80" }}
+                style={styles.profileTabImg}
               />
             ) : (
               <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
-                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId?.[0]?.toUpperCase() || "R"}</Text>
+                <Text style={{ color: "#000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId?.[0]?.toUpperCase() || "R"}</Text>
               </View>
             )}
-            <View style={styles.profileActiveIndicator} />
           </View>
+          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Profile</Text>
         </TouchableOpacity>
+
       </View>
+
+      {/* 🛍️ PRODUCT PREVIEW SHEET */}
+      {/* ──────────────────────────────────────────────────── */}
+      {selectedProductForPreview && (
+        <ProductPreviewSheet
+          visible={previewSheetVisible}
+          product={selectedProductForPreview}
+          feedItemId={previewFeedItemId}
+          onClose={() => {
+            setPreviewSheetVisible(false);
+            setSelectedProductForPreview(null);
+            setPreviewFeedItemId(undefined);
+          }}
+        />
+      )}
+
+      {/* 🎨 PREMIUM IMAGE FILTER EDITOR */}
+      {/* ──────────────────────────────────────────────────── */}
+      <ImageEditor
+        visible={showImageEditor}
+        imageUri={selectedMediaUri || ""}
+        onClose={() => {
+          setShowImageEditor(false);
+          setSelectedMediaUri(null);
+        }}
+        onSave={(finalUri, appliedFilter) => {
+          setSelectedMediaUri(finalUri);
+          setShowImageEditor(false);
+          if (appliedFilter && appliedFilter !== "normal") {
+            const presetName = FILTER_PRESETS.find(f => f.id === appliedFilter)?.name || appliedFilter;
+            setNewPostCaption(`[Filter: ${presetName}] `);
+          }
+        }}
+      />
 
       {/* 🔍 INSTAGRAM-STYLE EXPLORE GRID SCREEN OVERLAY */}
       {showExploreGrid && (
@@ -1408,7 +2309,7 @@ export default function ReelsScreen() {
                       setActiveFeedTab("reels");
                     }}
                   >
-                    <Image source={{ uri: thumbnail }} style={styles.exploreGridImg} />
+                    <Image source={{ uri: thumbnail }} style={styles.exploreGridImg} contentFit="cover" placeholder="L184i9ofbHof00ayjZay~qj[ayof" transition={300} />
                     <View style={styles.exploreGridPlayBadge}>
                       <Lucide name="play" size={15} color="#fff" />
                     </View>
@@ -1989,33 +2890,41 @@ export default function ReelsScreen() {
           onRequestClose={() => setSelectedStoriesGroup(null)}
         >
           <View style={styles.storyModalContainer}>
-            {/* Tap controls left/right */}
+            {/* Tap controls left/right — long press to pause story */}
             <TouchableOpacity 
               style={[styles.storyTapDetector, { left: 0 }]} 
               activeOpacity={1}
               onPress={handleStoryPrev}
+              onPressIn={() => setStoryPaused(true)}
+              onPressOut={() => setStoryPaused(false)}
+              delayLongPress={150}
             />
             <TouchableOpacity 
               style={[styles.storyTapDetector, { right: 0 }]} 
               activeOpacity={1}
               onPress={handleStoryNext}
+              onPressIn={() => setStoryPaused(true)}
+              onPressOut={() => setStoryPaused(false)}
+              delayLongPress={150}
             />
 
             <SafeAreaView style={styles.storyModalSafe}>
-              {/* Progress bars strip */}
-              <View style={styles.storyProgressStrip}>
-                {(selectedStoriesGroup.slides || []).map((slide: any, idx: number) => {
-                  let widthPercent = 0;
-                  if (idx < activeSlideIndex) widthPercent = 100;
-                  else if (idx === activeSlideIndex) widthPercent = storyProgress;
-                  
-                  return (
-                    <View key={slide.id} style={styles.storyProgressBarBg}>
-                      <View style={[styles.storyProgressBarFill, { width: `${widthPercent}%` }]} />
-                    </View>
-                  );
-                })}
-              </View>
+              {/* Progress bars strip — hidden when story is paused (hold-to-inspect) */}
+              {!storyPaused && (
+                <View style={styles.storyProgressStrip}>
+                  {(selectedStoriesGroup.slides || []).map((slide: any, idx: number) => {
+                    let widthPercent = 0;
+                    if (idx < activeSlideIndex) widthPercent = 100;
+                    else if (idx === activeSlideIndex) widthPercent = storyProgress;
+                    
+                    return (
+                      <View key={slide.id} style={styles.storyProgressBarBg}>
+                        <View style={[styles.storyProgressBarFill, { width: `${widthPercent}%` }]} />
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
 
               {/* Story Header */}
               <View style={styles.storyModalHeader}>
@@ -2055,20 +2964,22 @@ export default function ReelsScreen() {
                 )}
               </View>
 
-              {/* Message Reply Keyboard footer */}
-              <View style={styles.storyReplyFooter}>
-                <TextInput
-                  style={styles.storyReplyInput}
-                  placeholder={`Reply to ${selectedStoriesGroup.username}...`}
-                  placeholderTextColor="rgba(255,255,255,0.6)"
-                  value={storyReplyText}
-                  onChangeText={setStoryReplyText}
-                  onSubmitEditing={handleSendStoryReply}
-                />
-                <TouchableOpacity onPress={handleSendStoryReply} style={styles.storyReplySendBtn}>
-                  <Lucide name="paper-plane-outline" size={23} color="#fff" />
-                </TouchableOpacity>
-              </View>
+              {/* Message Reply Keyboard footer — hidden when paused */}
+              {!storyPaused && (
+                <View style={styles.storyReplyFooter}>
+                  <TextInput
+                    style={styles.storyReplyInput}
+                    placeholder={`Reply to ${selectedStoriesGroup.username}...`}
+                    placeholderTextColor="rgba(255,255,255,0.6)"
+                    value={storyReplyText}
+                    onChangeText={setStoryReplyText}
+                    onSubmitEditing={handleSendStoryReply}
+                  />
+                  <TouchableOpacity onPress={handleSendStoryReply} style={styles.storyReplySendBtn}>
+                    <Lucide name="paper-plane-outline" size={23} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              )}
 
             </SafeAreaView>
           </View>
@@ -3815,6 +4726,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginTop: 4,
   },
+  // ─── Legacy (kept for DM slide-panel bottom offset reference) ───
   instagramBottomBar: {
     position: "absolute",
     bottom: 0,
@@ -3824,13 +4736,62 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-around",
     alignItems: "center",
-    height: 52,
-    backgroundColor: "rgba(8,4,21,0.88)", // Premium glassmorphic background
+    height: 62,
+    backgroundColor: "rgba(8,4,21,0.92)",
     borderTopWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.06)",
   },
   tabBtn: {
     padding: 8,
+  },
+  // ─── AURA 5-Tab Navigation ────────────────────────────────────────
+  auraBottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "flex-end",
+    backgroundColor: "rgba(5,3,15,0.94)",
+    borderTopWidth: 0.5,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
+  auraTabBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingBottom: 10,
+    paddingTop: 8,
+    gap: 3,
+  },
+  auraTabLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+    letterSpacing: 0.2,
+  },
+  // ─── Elevated Create Button ───────────────────────────────────────
+  auraCreateWrapper: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    // Lift the create button above the nav bar
+    marginBottom: 14,
+  },
+  auraCreateBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: "#00f5ff",
+    alignItems: "center",
+    justifyContent: "center",
+    // Glow shadow
+    shadowColor: "#00f5ff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 12,
   },
   profileTabCircle: {
     width: 28,
@@ -3855,7 +4816,7 @@ const styles = StyleSheet.create({
   dmSlidePanel: {
     position: "absolute",
     top: 0,
-    bottom: 52,
+    bottom: 62,
     left: 0,
     right: 0,
     backgroundColor: "#080415",

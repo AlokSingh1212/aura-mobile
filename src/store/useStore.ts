@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { API_BASE } from "@/constants/api";
 import * as Notifications from "expo-notifications";
@@ -47,7 +48,7 @@ async function registerForPushNotificationsAsync() {
       console.warn("Failed to get push token for push notification!");
       return null;
     }
-    
+
     // Resolve projectId dynamically from EAS config
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
@@ -62,11 +63,23 @@ async function syncDevicePushToken(userId: string) {
   try {
     const token = await registerForPushNotificationsAsync();
     if (token) {
+      // 1. Sync token to User table
       await fetch(`${API_BASE}/notifications/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, pushToken: token })
       });
+
+      // 2. Sync token to Profile table if we have an active profile
+      const activeProfile = useStore.getState().activeProfile;
+      const username = activeProfile?.username;
+      if (username) {
+        await fetch(`${API_BASE}/profile/notifications/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, token })
+        });
+      }
     }
   } catch (error) {
     console.warn("Could not sync push token to backend registry:", error);
@@ -80,7 +93,7 @@ interface StoreState {
   cart: any[];
   warehouses: any[];
   orders: any[];
-  
+
   currency: { code: string; symbol: string; rate: number };
   countryCode: string;
   detectLocation: () => Promise<void>;
@@ -102,18 +115,18 @@ interface StoreState {
   brandDeals: any[];
   loadingDeals: boolean;
   influencers: any[];
-  
+
   loadingProducts: boolean;
   loadingFeed: boolean;
   loadingWarehouses: boolean;
   loadingOrders: boolean;
-  
+
   // New Loaders
   loadingAds: boolean;
   loadingRepricer: boolean;
   loadingWMS: boolean;
   loadingLoyalty: boolean;
-  
+
   // Actions
   fetchProducts: () => Promise<void>;
   fetchFeed: (reset?: boolean) => Promise<void>;
@@ -154,7 +167,7 @@ interface StoreState {
   // New Loyalty Matrix Reward points ledger actions
   fetchLoyaltyInfo: (userId: string) => Promise<void>;
   redeemPoints: (payload: any) => Promise<any>;
-  
+
   // Global Profile Sync Parameters
   activeMaisonId: string;
   setActiveMaisonId: (id: string) => void;
@@ -194,6 +207,17 @@ interface StoreState {
   wishlist: any[];
   fetchWishlist: (userId: string) => Promise<void>;
   toggleWishlist: (userId: string, artifactId: string) => Promise<{ success: boolean; wishlisted?: boolean }>;
+
+  // AURA Home Feed & Discovery System Expansion
+  feedItems: any[];
+  loadingFeedItems: boolean;
+  fetchFeedItems: (category?: string, tab?: "For You" | "Following", reset?: boolean) => Promise<void>;
+  logEngagement: (feedItemId: string, type: "view" | "like" | "save" | "share" | "cart_add" | "purchase") => Promise<void>;
+  toggleFeedSave: (feedItemId: string) => Promise<void>;
+  logFeedShare: (feedItemId: string) => Promise<string | null>;
+  logFeedCartAdd: (feedItemId: string, productId: string) => Promise<void>;
+  isSubscribed: boolean;
+  setSubscribed: (subscribed: boolean) => void;
 }
 
 const MOCK_PRODUCTS = [
@@ -250,10 +274,12 @@ export const useStore = create<StoreState>((set, get) => ({
   warehouses: [],
   orders: [],
   wishlist: [],
-  
+  feedItems: [],
+  loadingFeedItems: false,
+
   currency: CURRENCY_MAP['IN'],
   countryCode: 'IN',
-  
+
   // Advanced States
   adBids: [],
   adMetrics: null,
@@ -269,43 +295,43 @@ export const useStore = create<StoreState>((set, get) => ({
   brandDeals: [],
   loadingDeals: false,
   influencers: [],
-  
+
   activeMaisonId: "aloksingh",
   setActiveMaisonId: (id) => set({ activeMaisonId: id }),
 
   instaStories: [
-    { 
-      id: "ys", 
-      username: "Your story", 
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150", 
+    {
+      id: "ys",
+      username: "Your story",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150",
       isYourStory: true,
       slides: [
         { id: "ys_1", url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400", caption: "Securing next-gen luxury blueprints..." }
       ]
     },
-    { 
-      id: "g1", 
-      username: "garimahuja05", 
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150", 
+    {
+      id: "g1",
+      username: "garimahuja05",
+      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150",
       active: true,
       slides: [
         { id: "g1_1", url: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=400", caption: "Atelier Paris Spring Showcase" },
         { id: "g1_2", url: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400", caption: "Bespoke fabrics, pure sovereign details" }
       ]
     },
-    { 
-      id: "m1", 
-      username: "mahima.unfilter...", 
-      avatar: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150", 
+    {
+      id: "m1",
+      username: "mahima.unfilter...",
+      avatar: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150",
       active: true,
       slides: [
         { id: "m1_1", url: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=400", caption: "Milan high-fidelity runways." }
       ]
     },
-    { 
-      id: "i1", 
-      username: "_._issue", 
-      avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150", 
+    {
+      id: "i1",
+      username: "_._issue",
+      avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150",
       active: true,
       slides: [
         { id: "i1_1", url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=400", caption: "Atelier Street coordinates" }
@@ -327,6 +353,19 @@ export const useStore = create<StoreState>((set, get) => ({
   hasMoreFeed: true,
 
   fetchProducts: async () => {
+    // 💾 Hydrate from AsyncStorage disk cache immediately
+    try {
+      const cached = await AsyncStorage.getItem("aura_products_cache");
+      if (cached) {
+        const cachedProducts = JSON.parse(cached);
+        if (cachedProducts && cachedProducts.length > 0) {
+          set({ products: cachedProducts });
+        }
+      }
+    } catch (err) {
+      console.warn("Products cache load failed:", err);
+    }
+
     if (get().products.length === MOCK_PRODUCTS.length) {
       set({ loadingProducts: true });
     }
@@ -335,9 +374,15 @@ export const useStore = create<StoreState>((set, get) => ({
       const url = user ? `${API_BASE}/products?userId=${user.id}` : `${API_BASE}/products`;
       const res = await fetch(url);
       const data = await res.json();
-      if (data.success) {
+      if (data.success && data.products) {
         if (JSON.stringify(data.products) !== JSON.stringify(get().products)) {
           set({ products: data.products });
+        }
+        // 💾 Persist to disk cache
+        try {
+          await AsyncStorage.setItem("aura_products_cache", JSON.stringify(data.products));
+        } catch (err) {
+          console.warn("Failed to save products cache:", err);
         }
       }
     } catch (e) {
@@ -358,6 +403,18 @@ export const useStore = create<StoreState>((set, get) => ({
 
     if (reset) {
       set({ stories: [], feedCursor: null, hasMoreFeed: true });
+      // 💾 Hydrate from AsyncStorage disk cache immediately to show feed offline
+      try {
+        const cachedData = await AsyncStorage.getItem("aura_feed_cache");
+        if (cachedData) {
+          const cachedStories = JSON.parse(cachedData);
+          if (cachedStories && cachedStories.length > 0) {
+            set({ stories: cachedStories });
+          }
+        }
+      } catch (err) {
+        console.warn("Offline cache load failed:", err);
+      }
     }
 
     if (!get().hasMoreFeed && !reset) {
@@ -369,28 +426,39 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const user = get().currentUser;
       const cursor = reset ? "" : get().feedCursor;
-      const url = user 
-        ? `${API_BASE}/feed?userId=${user.id}&limit=10${cursor ? "&cursor=" + cursor : ""}` 
+      const url = user
+        ? `${API_BASE}/feed?userId=${user.id}&limit=10${cursor ? "&cursor=" + cursor : ""}`
         : `${API_BASE}/feed?limit=10${cursor ? "&cursor=" + cursor : ""}`;
-        
+
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
         const loadedStories = data.stories || [];
         const nextCursor = data.nextCursor;
-        
+
+        let finalUnique: any[] = [];
         set((state) => {
           const merged = reset ? loadedStories : [...state.stories, ...loadedStories];
           // deduplicate just in case
-          const unique = merged.filter((item: any, idx: number, self: any[]) => 
+          const unique = merged.filter((item: any, idx: number, self: any[]) =>
             self.findIndex((t) => t.id === item.id) === idx
           );
+          finalUnique = unique;
           return {
             stories: unique,
             feedCursor: nextCursor || null,
             hasMoreFeed: !!nextCursor
           };
         });
+
+        // 💾 Persist successful fetch back to AsyncStorage disk cache
+        if (finalUnique.length > 0) {
+          try {
+            await AsyncStorage.setItem("aura_feed_cache", JSON.stringify(finalUnique));
+          } catch (err) {
+            console.warn("Failed to write to offline cache:", err);
+          }
+        }
       }
     } catch (e) {
       console.warn("Could not query visual feed from local host. Using simulated stories fallback.", e);
@@ -602,7 +670,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const query = new URLSearchParams();
       if (filters.creatorId) query.append("creatorId", filters.creatorId);
       if (filters.maisonId) query.append("maisonId", filters.maisonId);
-      
+
       const res = await fetch(`${API_BASE}/brand-deals?${query.toString()}`);
       const data = await res.json();
       if (data.success) {
@@ -828,7 +896,9 @@ export const useStore = create<StoreState>((set, get) => ({
   userProfiles: [],
   currentUser: null,
   setCurrentUser: (user) => set({ currentUser: user }),
-  
+  isSubscribed: false,
+  setSubscribed: (subscribed) => set({ isSubscribed: subscribed }),
+
   authSignUp: async (payload) => {
     try {
       const res = await fetch(`${API_BASE}/auth/signup`, {
@@ -972,17 +1042,17 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("success");
-        set({ 
-          userProfiles: data.profiles, 
+        set({
+          userProfiles: data.profiles,
           activeProfile: data.activeProfile,
           currentUser: data.user,
           activeMaisonId: data.user.maisonId || "aloksingh"
         });
-        
+
         // Force dynamic algorithmic feed and product reload matching the switched profile category
         get().fetchProducts();
         get().fetchFeed();
-        
+
         return { success: true };
       }
       return { success: false, error: data.message || data.error };
@@ -1215,6 +1285,114 @@ export const useStore = create<StoreState>((set, get) => ({
   setCurrency: (code: string) => {
     if (CURRENCY_MAP[code]) {
       set({ countryCode: code, currency: CURRENCY_MAP[code] });
+    }
+  },
+
+  fetchFeedItems: async (category = "", tab = "For You", reset = false) => {
+    if (get().loadingFeedItems) return;
+
+    if (reset || get().feedItems.length === 0) {
+      // 💾 Hydrate from AsyncStorage disk cache immediately
+      try {
+        const cached = await AsyncStorage.getItem(`aura_feeditems_cache_${tab}_${category}`);
+        if (cached) {
+          const cachedItems = JSON.parse(cached);
+          if (cachedItems && cachedItems.length > 0) {
+            set({ feedItems: cachedItems });
+          }
+        }
+      } catch (err) {
+        console.warn("FeedItems cache load failed:", err);
+      }
+    }
+
+    set({ loadingFeedItems: true });
+    try {
+      const user = get().currentUser;
+      const userId = user?.id || "";
+      const url = `${API_BASE}/feed?userId=${userId}&category=${encodeURIComponent(category)}&tab=${tab}&limit=15`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success && data.feedItems) {
+        set({ feedItems: data.feedItems });
+        // 💾 Persist to disk cache
+        try {
+          await AsyncStorage.setItem(`aura_feeditems_cache_${tab}_${category}`, JSON.stringify(data.feedItems));
+        } catch (err) {
+          console.warn("Failed to save feed items cache:", err);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not query visual feedItems. Using database fallback", e);
+    } finally {
+      set({ loadingFeedItems: false });
+    }
+  },
+
+  logEngagement: async (feedItemId, type) => {
+    const user = get().currentUser;
+    if (!user) return;
+    try {
+      await fetch(`${API_BASE}/feed/engagement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, postId: feedItemId, type }),
+      });
+    } catch (e) {
+      console.warn("logEngagement failed", e);
+    }
+  },
+
+  toggleFeedSave: async (feedItemId) => {
+    const user = get().currentUser;
+    if (!user) return;
+    try {
+      const res = await fetch(`${API_BASE}/feed/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, postId: feedItemId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        get().triggerHaptic("medium");
+      }
+    } catch (e) {
+      console.warn("toggleFeedSave failed", e);
+    }
+  },
+
+  logFeedShare: async (feedItemId) => {
+    const user = get().currentUser;
+    const userId = user?.id || "";
+    try {
+      const res = await fetch(`${API_BASE}/feed/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, postId: feedItemId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        get().triggerHaptic("light");
+        return data.shareUrl;
+      }
+    } catch (e) {
+      console.warn("logFeedShare failed", e);
+    }
+    return null;
+  },
+
+  logFeedCartAdd: async (feedItemId, productId) => {
+    const user = get().currentUser;
+    if (!user) return;
+    try {
+      await fetch(`${API_BASE}/feed/cart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, productId, postId: feedItemId }),
+      });
+      get().triggerHaptic("success");
+    } catch (e) {
+      console.warn("logFeedCartAdd failed", e);
     }
   }
 }));

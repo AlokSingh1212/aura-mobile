@@ -69,7 +69,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   onOpenStoryGroup,
   initialConversationId = null,
 }) => {
-  const { triggerHaptic, currentUser } = useStore();
+  const { triggerHaptic, currentUser, activeProfile } = useStore();
   const currentUserId = currentUser?.id || "user_2pk5xskr";
 
   // Chat states
@@ -393,7 +393,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       senderId: isSeller ? activeMaisonId : currentUserId,
       senderName: currentSenderName,
       createdAt: new Date().toISOString(),
-      isAdmin: isSeller
+      isAdmin: isSeller,
+      status: "sending" as const
     };
 
     setActiveChat((prev: any) => ({
@@ -423,14 +424,29 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       });
       const data = await res.json();
       if (data.success) {
-        const realMsg = data.message;
+        const realMsg = { ...data.message, status: "sent" };
         setActiveChat((prev: any) => ({
           ...prev,
           messages: prev.messages.map((m: any) => m.id === tempMessage.id ? realMsg : m)
         }));
+        setConversations(prev => prev.map(c => c.id === activeChat.id ? {
+          ...c,
+          messages: c.messages.map((m: any) => m.id === tempMessage.id ? realMsg : m)
+        } : c));
+      } else {
+        throw new Error("API responded with success=false");
       }
     } catch (e) {
       console.warn("Could not sync message to server.", e);
+      const failedMsg = { ...tempMessage, status: "error" as const };
+      setActiveChat((prev: any) => ({
+        ...prev,
+        messages: prev.messages.map((m: any) => m.id === tempMessage.id ? failedMsg : m)
+      }));
+      setConversations(prev => prev.map(c => c.id === activeChat.id ? {
+        ...c,
+        messages: c.messages.map((m: any) => m.id === tempMessage.id ? failedMsg : m)
+      } : c));
     }
   };
 
@@ -524,7 +540,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                               justifyContent: "center",
                               alignItems: "center",
                             }}>
-                              <Image source={{ uri: story.avatar }} style={{ width: 48, height: 48, borderRadius: 24 }} />
+                              <Image source={{ uri: story.isYourStory ? (activeProfile?.logo || currentUser?.avatar || story.avatar) : story.avatar }} style={{ width: 48, height: 48, borderRadius: 24 }} />
                             </View>
                           </LinearGradient>
                         ) : (
@@ -538,7 +554,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                             justifyContent: "center",
                             alignItems: "center"
                           }}>
-                            <Image source={{ uri: story.avatar }} style={{ width: 50, height: 50, borderRadius: 25 }} />
+                            <Image source={{ uri: story.isYourStory ? (activeProfile?.logo || currentUser?.avatar || story.avatar) : story.avatar }} style={{ width: 50, height: 50, borderRadius: 25 }} />
                             {story.isYourStory && (
                               <View style={{
                                 position: "absolute", bottom: -1, right: -1,
@@ -1059,7 +1075,20 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                       </View>
                     )}
                     <View style={[styles.msgBubble, isMine ? styles.msgBubbleRight : styles.msgBubbleLeft]}>
-                      <Text style={[styles.msgText, isMine ? styles.msgTextRight : styles.msgTextLeft]}>{msg.content}</Text>
+                      <View style={{ flexDirection: "row", alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <Text style={[styles.msgText, isMine ? styles.msgTextRight : styles.msgTextLeft]}>{msg.content}</Text>
+                        {isMine && (
+                          <View style={{ marginLeft: 6, bottom: -1 }}>
+                            {msg.status === "sending" ? (
+                              <Lucide name="time-outline" size={11} color="rgba(255,255,255,0.4)" />
+                            ) : msg.status === "error" ? (
+                              <Lucide name="alert-circle" size={12} color="#ff4a4a" />
+                            ) : (
+                              <Lucide name="checkmark-done" size={13} color="#00f5ff" />
+                            )}
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </View>
                 );

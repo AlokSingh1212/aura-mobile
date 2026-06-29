@@ -67,10 +67,33 @@ export const PostCard: React.FC<PostCardProps> = ({
           onPress={() => handleMaisonProfilePress(item)}
           activeOpacity={0.85}
         >
-          <View style={styles.photoCardAvatar}>
-            <Text style={{ color: "#000", fontSize: 13, fontWeight: "bold" }}>
-              {(item.profile?.name || item.user?.name || currentMaisonName)[0]?.toUpperCase() || "A"}
-            </Text>
+          <View style={[styles.photoCardAvatar, { overflow: "hidden" }]}>
+            {(() => {
+              const activeProfile = useStore.getState().activeProfile;
+              const currentUser = useStore.getState().currentUser;
+              const isCurrentUser = (item.profile?.username === activeProfile?.username) || 
+                                    (item.profile?.id === activeProfile?.id) || 
+                                    (item.user?.id === currentUser?.id);
+              
+              const logoUrl = isCurrentUser 
+                ? (activeProfile?.logo || currentUser?.avatar)
+                : (item.profile?.logo || item.user?.avatar || item.maison?.logo || item.creator?.avatar);
+
+              if (logoUrl) {
+                return (
+                  <Image 
+                    source={{ uri: logoUrl }} 
+                    style={{ width: "100%", height: "100%" }} 
+                  />
+                );
+              }
+
+              return (
+                <Text style={{ color: "#000", fontSize: 13, fontWeight: "bold" }}>
+                  {(item.profile?.name || item.user?.name || currentMaisonName)[0]?.toUpperCase() || "A"}
+                </Text>
+              );
+            })()}
           </View>
           <View>
             <Text style={styles.photoCardAuthor}>
