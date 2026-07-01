@@ -1501,12 +1501,22 @@ export default function AccountScreen() {
                 <Text style={styles.actionBtnText}>Share profile</Text>
               </TouchableOpacity>
 
+              <TouchableOpacity 
+                style={[styles.actionBtn, { backgroundColor: "rgba(0,245,255,0.08)", borderWidth: 1, borderColor: "rgba(0,245,255,0.25)" }]} 
+                onPress={() => {
+                  triggerHaptic("medium");
+                  router.push("/maison/business-suite");
+                }}
+              >
+                <Text style={[styles.actionBtnText, { color: "#00f5ff" }]}>AURA Suite</Text>
+              </TouchableOpacity>
+
               {(isCreatorProfile || isBusinessProfile) && (
                 <TouchableOpacity 
-                  style={[styles.actionBtn, { backgroundColor: "rgba(0,245,255,0.08)", borderWidth: 1, borderColor: "rgba(0,245,255,0.25)" }]} 
+                  style={[styles.actionBtn, { backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }]} 
                   onPress={() => { triggerHaptic("medium"); router.push("/sponsorships" as any); }}
                 >
-                  <Text style={[styles.actionBtnText, { color: "#00f5ff" }]}>Sponsorships</Text>
+                  <Text style={styles.actionBtnText}>Sponsors</Text>
                 </TouchableOpacity>
               )}
             </View>
