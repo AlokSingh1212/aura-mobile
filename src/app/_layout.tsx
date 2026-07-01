@@ -1,8 +1,12 @@
 import { Stack } from "expo-router";
-import React from "react";
+import React, { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { initDatabase } from "@/utils/localDb";
+
+import NetInfo from "@react-native-community/netinfo";
+import { useStore } from "@/store/useStore";
 
 // Suppress expo-av deprecation warnings
 LogBox.ignoreLogs([
@@ -12,6 +16,23 @@ LogBox.ignoreLogs([
 
 
 export default function RootLayout() {
+  useEffect(() => {
+    initDatabase();
+
+    // Subscribe to network connection state changes
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      if (state.isConnected && state.isInternetReachable !== false) {
+        useStore.getState().flushPendingActions().catch((err) => {
+          console.warn("Failed to flush offline pending actions queue:", err);
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="light" />

@@ -56,7 +56,8 @@
           "microphonePermission": "AURA needs your microphone to record audio with your Reels.",
           "recordAudioAndroid": true
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,

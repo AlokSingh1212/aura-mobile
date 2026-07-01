@@ -6,6 +6,19 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import { 
+  getLocalProducts, 
+  cacheProducts, 
+  getLocalFeedItems, 
+  cacheFeedItems, 
+  addPendingAction, 
+  getPendingActions, 
+  deletePendingAction,
+  getSyncPointer,
+  setSyncPointer,
+  cacheConversations,
+  cacheMessages
+} from "@/utils/localDb";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -216,6 +229,8 @@ interface StoreState {
   toggleFeedSave: (feedItemId: string) => Promise<void>;
   logFeedShare: (feedItemId: string) => Promise<string | null>;
   logFeedCartAdd: (feedItemId: string, productId: string) => Promise<void>;
+  flushPendingActions: () => Promise<void>;
+  syncDeltaPointer: () => Promise<void>;
   isSubscribed: boolean;
   setSubscribed: (subscribed: boolean) => void;
 }
@@ -353,17 +368,14 @@ export const useStore = create<StoreState>((set, get) => ({
   hasMoreFeed: true,
 
   fetchProducts: async () => {
-    // 💾 Hydrate from AsyncStorage disk cache immediately
+    // 💾 Hydrate from SQLite disk cache immediately
     try {
-      const cached = await AsyncStorage.getItem("aura_products_cache");
-      if (cached) {
-        const cachedProducts = JSON.parse(cached);
-        if (cachedProducts && cachedProducts.length > 0) {
-          set({ products: cachedProducts });
-        }
+      const cachedProducts = getLocalProducts();
+      if (cachedProducts && cachedProducts.length > 0) {
+        set({ products: cachedProducts });
       }
     } catch (err) {
-      console.warn("Products cache load failed:", err);
+      console.warn("SQLite Products cache load failed:", err);
     }
 
     if (get().products.length === MOCK_PRODUCTS.length) {
@@ -378,11 +390,11 @@ export const useStore = create<StoreState>((set, get) => ({
         if (JSON.stringify(data.products) !== JSON.stringify(get().products)) {
           set({ products: data.products });
         }
-        // 💾 Persist to disk cache
+        // 💾 Persist to SQLite disk cache
         try {
-          await AsyncStorage.setItem("aura_products_cache", JSON.stringify(data.products));
+          cacheProducts(data.products);
         } catch (err) {
-          console.warn("Failed to save products cache:", err);
+          console.warn("Failed to save products in SQLite:", err);
         }
       }
     } catch (e) {
@@ -1292,17 +1304,14 @@ export const useStore = create<StoreState>((set, get) => ({
     if (get().loadingFeedItems) return;
 
     if (reset || get().feedItems.length === 0) {
-      // 💾 Hydrate from AsyncStorage disk cache immediately
+      // 💾 Hydrate from SQLite disk cache immediately
       try {
-        const cached = await AsyncStorage.getItem(`aura_feeditems_cache_${tab}_${category}`);
-        if (cached) {
-          const cachedItems = JSON.parse(cached);
-          if (cachedItems && cachedItems.length > 0) {
-            set({ feedItems: cachedItems });
-          }
+        const cachedItems = getLocalFeedItems(category, tab);
+        if (cachedItems && cachedItems.length > 0) {
+          set({ feedItems: cachedItems });
         }
       } catch (err) {
-        console.warn("FeedItems cache load failed:", err);
+        console.warn("SQLite FeedItems cache load failed:", err);
       }
     }
 
@@ -1315,11 +1324,11 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (data.success && data.feedItems) {
         set({ feedItems: data.feedItems });
-        // 💾 Persist to disk cache
+        // 💾 Persist to SQLite disk cache
         try {
-          await AsyncStorage.setItem(`aura_feeditems_cache_${tab}_${category}`, JSON.stringify(data.feedItems));
+          cacheFeedItems(data.feedItems, category, tab);
         } catch (err) {
-          console.warn("Failed to save feed items cache:", err);
+          console.warn("Failed to cache feed items in SQLite:", err);
         }
       }
     } catch (e) {
@@ -1333,13 +1342,15 @@ export const useStore = create<StoreState>((set, get) => ({
     const user = get().currentUser;
     if (!user) return;
     try {
-      await fetch(`${API_BASE}/feed/engagement`, {
+      const res = await fetch(`${API_BASE}/feed/engagement`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id, postId: feedItemId, type }),
       });
+      if (!res.ok) throw new Error("Server returned error status");
     } catch (e) {
-      console.warn("logEngagement failed", e);
+      console.warn("logEngagement failed, queuing action offline:", e);
+      addPendingAction("logEngagement", { userId: user.id, postId: feedItemId, type });
     }
   },
 
@@ -1393,6 +1404,81 @@ export const useStore = create<StoreState>((set, get) => ({
       get().triggerHaptic("success");
     } catch (e) {
       console.warn("logFeedCartAdd failed", e);
+    }
+  },
+
+  flushPendingActions: async () => {
+    const actions = getPendingActions();
+    if (actions.length === 0) return;
+    
+    console.log(`Processing ${actions.length} offline pending actions...`);
+    
+    for (const action of actions) {
+      try {
+        if (action.actionType === "logEngagement") {
+          const res = await fetch(`${API_BASE}/feed/engagement`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(action.payload),
+          });
+          if (res.ok) {
+            deletePendingAction(action.id);
+          } else {
+            throw new Error(`Server returned non-ok status: ${res.status}`);
+          }
+        } else if (action.actionType === "sendMessage") {
+          const res = await fetch(`${API_BASE}/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(action.payload),
+          });
+          if (res.ok) {
+            deletePendingAction(action.id);
+          } else {
+            throw new Error(`Server returned non-ok status for chat: ${res.status}`);
+          }
+        }
+      } catch (err) {
+        console.warn(`Retry failed for action ${action.id}:`, err);
+        break; // Stop flushing if connection is still offline
+      }
+    }
+  },
+
+  syncDeltaPointer: async () => {
+    try {
+      const pointerKey = "global_delta_pointer";
+      const currentPointer = getSyncPointer(pointerKey);
+      
+      const res = await fetch(`${API_BASE}/sync/deltas?since=${currentPointer}`);
+      const data = await res.json();
+      
+      if (data.success && data.deltas && data.deltas.length > 0) {
+        console.log(`[SyncEngine] Received ${data.deltas.length} delta updates from server pointer ${currentPointer}`);
+        
+        let maxPointer = currentPointer;
+        for (const delta of data.deltas) {
+          const payload = typeof delta.payload === "string" ? JSON.parse(delta.payload) : delta.payload;
+          
+          if (delta.type === "POST_CREATED") {
+            cacheFeedItems([payload]);
+          } else if (delta.type === "LIKE_TOGGLED") {
+            // Local state updates for likes
+          } else if (delta.type === "MESSAGE_SENT") {
+            cacheConversations([payload]);
+          }
+          
+          maxPointer = Math.max(maxPointer, delta.id);
+        }
+        
+        setSyncPointer(pointerKey, maxPointer);
+        
+        // Refresh local cache representations in Zustand state
+        await get().fetchFeedItems("", "For You", true);
+        await get().fetchProducts();
+      }
+    } catch (err) {
+      console.warn("[SyncEngine] Pointer catch-up sync connection failed:", err);
     }
   }
 }));

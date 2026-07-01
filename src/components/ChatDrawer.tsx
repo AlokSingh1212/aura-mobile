@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
 import { API_HOST } from "@/constants/api";
+import { getLocalConversations, cacheConversations, addPendingAction } from "@/utils/localDb";
 
 const { width } = Dimensions.get("window");
 
@@ -76,6 +77,9 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [activeChat, setActiveChat] = useState<any>(null);
   const [loadingChats, setLoadingChats] = useState(false);
   const [chatReplyText, setChatReplyText] = useState("");
+  const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
+  const [isTypingSent, setIsTypingSent] = useState(false);
+  const typingTimeoutRef = React.useRef<any>(null);
   const [conversations, setConversations] = useState<any[]>(CHAT_THREADS);
   const [dmSearch, setDmSearch] = useState("");
   const [activeDmFilter, setActiveDmFilter] = useState("Primary");
@@ -119,6 +123,16 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   }, [initialConversationId, conversations, visible]);
 
   const fetchChats = async () => {
+    // 💾 Hydrate instantly from local SQLite DB
+    try {
+      const localConvs = getLocalConversations();
+      if (localConvs && localConvs.length > 0) {
+        setConversations(localConvs);
+      }
+    } catch (err) {
+      console.warn("Failed to load local SQLite conversations:", err);
+    }
+
     setLoadingChats(true);
     try {
       const res = await fetch(`${API_HOST}/api/mobile/chat?userId=${currentUserId}&maisonId=${activeMaisonId}&mode=${isSeller ? "seller" : "buyer"}`);
@@ -128,6 +142,12 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           return { ...c, category: "Primary" };
         });
         setConversations(mapped);
+        // 💾 Cache updated conversations and messages in SQLite
+        try {
+          cacheConversations(mapped);
+        } catch (err) {
+          console.warn("Failed to cache conversations in SQLite:", err);
+        }
       } else {
         // Auto-seed a starter conversation if none exist yet
         try {
@@ -135,16 +155,16 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           const retryRes = await fetch(`${API_HOST}/api/mobile/chat?userId=${currentUserId}&maisonId=${activeMaisonId}&mode=${isSeller ? "seller" : "buyer"}`);
           const retryData = await retryRes.json();
           if (retryData.success && retryData.conversations.length > 0) {
-            setConversations(retryData.conversations.map((c: any) => ({ ...c, category: "Primary" })));
-          } else {
-            setConversations(CHAT_THREADS);
+            const mappedRetry = retryData.conversations.map((c: any) => ({ ...c, category: "Primary" }));
+            setConversations(mappedRetry);
+            cacheConversations(mappedRetry);
           }
         } catch {
-          setConversations(CHAT_THREADS);
+          // Keep local state if we have it, otherwise fallback
         }
       }
     } catch (e) {
-      setConversations(CHAT_THREADS);
+      console.warn("fetchChats API call failed:", e);
     } finally {
       setLoadingChats(false);
     }
@@ -356,6 +376,21 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   } catch (err) {
                     console.warn("[ChatDrawer] Error parsing SSE payload:", err);
                   }
+                } else if (eventName === "TYPING") {
+                  try {
+                    const eventData = JSON.parse(dataStr);
+                    setTypingUsers((prev) => {
+                      const updated = { ...prev };
+                      if (eventData.isTyping) {
+                        updated[eventData.conversationId] = eventData.username;
+                      } else {
+                        delete updated[eventData.conversationId];
+                      }
+                      return updated;
+                    });
+                  } catch (err) {
+                    console.warn("[ChatDrawer] Error parsing TYPING payload:", err);
+                  }
                 }
               }
             }
@@ -377,9 +412,47 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     };
   }, [visible, activeMaisonId, isSeller, activeChat?.id]);
 
+  const sendTypingStatus = async (typing: boolean) => {
+    if (!activeChat) return;
+    const username = isSeller 
+      ? (activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId))
+      : (currentUser?.name || "Alok Singh");
+    
+    if (typing === isTypingSent) return;
+    setIsTypingSent(typing);
+
+    try {
+      await fetch(`${API_HOST}/api/mobile/chat/typing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeChat.id,
+          username,
+          isTyping: typing
+        })
+      });
+    } catch (err) {
+      console.warn("Failed to send typing status:", err);
+    }
+  };
+
+  const handleTextChange = (text: string) => {
+    setChatReplyText(text);
+    sendTypingStatus(true);
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      sendTypingStatus(false);
+    }, 2000);
+  };
+
   const handleSendChatMessage = async () => {
     if (!chatReplyText.trim() || !activeChat) return;
     triggerHaptic("medium");
+    
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    sendTypingStatus(false);
+
     const textToSend = chatReplyText;
     setChatReplyText("");
 
@@ -429,15 +502,27 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           ...prev,
           messages: prev.messages.map((m: any) => m.id === tempMessage.id ? realMsg : m)
         }));
-        setConversations(prev => prev.map(c => c.id === activeChat.id ? {
-          ...c,
-          messages: c.messages.map((m: any) => m.id === tempMessage.id ? realMsg : m)
-        } : c));
+        
+        let updatedList: any[] = [];
+        setConversations(prev => {
+          updatedList = prev.map(c => c.id === activeChat.id ? {
+            ...c,
+            messages: c.messages.map((m: any) => m.id === tempMessage.id ? realMsg : m),
+            lastMessage: textToSend
+          } : c);
+          return updatedList;
+        });
+
+        // 💾 Cache sent message details in SQLite
+        try {
+          cacheConversations(updatedList);
+        } catch {}
+
       } else {
         throw new Error("API responded with success=false");
       }
     } catch (e) {
-      console.warn("Could not sync message to server.", e);
+      console.warn("Could not sync message to server, queuing offline.", e);
       const failedMsg = { ...tempMessage, status: "error" as const };
       setActiveChat((prev: any) => ({
         ...prev,
@@ -445,8 +530,23 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       }));
       setConversations(prev => prev.map(c => c.id === activeChat.id ? {
         ...c,
-        messages: c.messages.map((m: any) => m.id === tempMessage.id ? failedMsg : m)
+        messages: c.messages.map((m: any) => m.id === tempMessage.id ? failedMsg : m),
+        lastMessage: textToSend
       } : c));
+
+      // 💾 Queue sendMessage request to sync queue
+      try {
+        addPendingAction("sendMessage", {
+          conversationId: activeChat.id,
+          senderId: isSeller ? activeMaisonId : currentUserId,
+          senderName: currentSenderName,
+          content: textToSend,
+          type: activeChat.type || "MAISON",
+          isAdmin: isSeller
+        });
+      } catch (err) {
+        console.warn("Offline action queue write error:", err);
+      }
     }
   };
 
@@ -1095,6 +1195,19 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               })}
             </ScrollView>
 
+            {activeChat && typingUsers[activeChat.id] && (
+              <View style={styles.typingContainer}>
+                <View style={styles.typingDotWrap}>
+                  <View style={styles.typingDot} />
+                  <View style={[styles.typingDot, { opacity: 0.6 }]} />
+                  <View style={[styles.typingDot, { opacity: 0.3 }]} />
+                </View>
+                <Text style={styles.typingText}>
+                  {typingUsers[activeChat.id]} is typing...
+                </Text>
+              </View>
+            )}
+
             {/* Input keyboard bar */}
             <View style={styles.chatInputBar}>
               <TouchableOpacity style={styles.paperclipBtn}>
@@ -1105,7 +1218,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                 placeholder="Message..."
                 placeholderTextColor="rgba(255,255,255,0.3)"
                 value={chatReplyText}
-                onChangeText={setChatReplyText}
+                onChangeText={handleTextChange}
                 onSubmitEditing={handleSendChatMessage}
               />
               <TouchableOpacity 
@@ -1561,5 +1674,27 @@ const styles = StyleSheet.create({
     color: "#000",
     fontWeight: "bold",
     fontSize: 15,
+  },
+  typingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  typingDotWrap: {
+    flexDirection: "row",
+    gap: 3,
+  },
+  typingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#00f5ff",
+  },
+  typingText: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 13,
+    fontStyle: "italic",
   },
 });

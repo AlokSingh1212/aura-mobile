@@ -12,6 +12,7 @@ import { Image } from "expo-image";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
 import { router } from "expo-router";
+import { SlideToPayCheckout } from "./SlideToPayCheckout";
 
 const { height, width } = Dimensions.get("window");
 
@@ -39,6 +40,7 @@ export const ProductPreviewSheet: React.FC<ProductPreviewSheetProps> = ({
   const [selectedSize, setSelectedSize] = useState("M");
   const [selectedColor, setSelectedColor] = useState(AVAILABLE_COLORS[0]);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [checkoutVisible, setCheckoutVisible] = useState(false);
 
   if (!product) return null;
 
@@ -74,29 +76,15 @@ export const ProductPreviewSheet: React.FC<ProductPreviewSheetProps> = ({
     onClose();
   };
 
-  const handleBuyNow = async () => {
+  const handleBuyNow = () => {
     triggerHaptic("heavy");
-    addToCart({
-      ...product,
-      id: product.id,
-      title,
-      price,
-      images,
-      selectedSize,
-      selectedColor: selectedColor.name
-    });
-
-    if (feedItemId) {
-      await logEngagement(feedItemId, "purchase");
-    }
-
     onClose();
-    // Redirect to checkout or Cart
-    router.push("/cart");
+    setCheckoutVisible(true);
   };
 
   return (
-    <Modal
+    <>
+      <Modal
       animationType="slide"
       transparent={true}
       visible={visible}
@@ -252,6 +240,32 @@ export const ProductPreviewSheet: React.FC<ProductPreviewSheetProps> = ({
         </View>
       </View>
     </Modal>
+    
+    <SlideToPayCheckout
+      visible={checkoutVisible}
+      onClose={() => setCheckoutVisible(false)}
+      product={{
+        id: product.id,
+        title,
+        price,
+        images,
+        selectedSize,
+        selectedColor: selectedColor.name
+      }}
+      onSuccess={() => {
+        addToCart({
+          ...product,
+          id: product.id,
+          title,
+          price,
+          images,
+          selectedSize,
+          selectedColor: selectedColor.name
+        });
+        router.push("/cart");
+      }}
+    />
+    </>
   );
 };
 

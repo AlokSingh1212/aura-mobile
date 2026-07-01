@@ -67,6 +67,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
 
   // Agora Engine instance ref
   const engineRef = useRef<any>(null);
+  const liveInputRef = useRef<any>(null);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
 
   // Showroom states
@@ -390,6 +391,11 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
     // Add locally for latency compensation
     setLiveComments((prev) => [...prev, { id: Date.now().toString(), user: userHandle, text: commentBody }]);
     setLiveCommentText("");
+    
+    // Maintain keyboard focus
+    setTimeout(() => {
+      liveInputRef.current?.focus();
+    }, 50);
 
     if (activeSessionId) {
       fetch(`${API_HOST}/api/mobile/live`, {
@@ -671,6 +677,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
             {/* Controls Input Bar */}
             <View style={styles.controlsFooter}>
               <TextInput
+                ref={liveInputRef}
                 style={styles.commentInput}
                 placeholder="Share coordinates..."
                 placeholderTextColor="rgba(255,255,255,0.4)"
