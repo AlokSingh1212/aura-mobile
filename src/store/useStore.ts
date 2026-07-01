@@ -627,10 +627,11 @@ export const useStore = create<StoreState>((set, get) => ({
 
   createAdBid: async (payload) => {
     try {
+      const user = get().currentUser;
       const res = await fetch(`${API_BASE}/ads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, userId: user?.id }),
       });
       const data = await res.json();
       if (data.success) {
@@ -638,6 +639,7 @@ export const useStore = create<StoreState>((set, get) => ({
         get().fetchAdBids(payload.maisonId);
         return true;
       }
+      console.warn("createAdBid failed:", data.error);
       return false;
     } catch (e) {
       console.warn("Could not place ad bid on local host.", e);

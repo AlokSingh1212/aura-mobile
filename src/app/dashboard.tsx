@@ -282,7 +282,7 @@ export default function DashboardScreen() {
             style={styles.b2bCard}
             onPress={() => {
               triggerHaptic("medium");
-              router.push("/maison/ads-studio");
+              router.push("/maison/business-suite");
             }}
           >
             <View style={styles.b2bIconCircle}>
