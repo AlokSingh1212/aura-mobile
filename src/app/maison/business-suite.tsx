@@ -61,6 +61,9 @@ export default function BusinessSuiteScreen() {
   const [campLocation, setCampLocation] = useState("");
   const [campPlacements, setCampPlacements] = useState<string[]>(["FEED", "REELS", "SEARCH", "WEB"]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fundLoading, setFundLoading] = useState(false);
+  const [fundAmount, setFundAmount] = useState("500");
+  const [fundModalVisible, setFundModalVisible] = useState(false);
 
   const PLACEMENT_OPTIONS = [
     { id: "FEED", label: "Feed" },
@@ -176,6 +179,70 @@ export default function BusinessSuiteScreen() {
   useEffect(() => {
     fetchSuiteDetails();
   }, [userId]);
+
+  const handleFundAdAccount = async () => {
+    if (!activeAcc?.id || !userId) return;
+    const amount = parseFloat(fundAmount);
+    if (!amount || amount <= 0) {
+      Alert.alert("Invalid amount", "Enter a positive credit amount.");
+      return;
+    }
+
+    setFundLoading(true);
+    triggerHaptic("medium");
+    try {
+      const initRes = await fetch(`${API_BASE}/business-suite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "initiate-ad-top-up",
+          adAccountId: activeAcc.id,
+          amount,
+          countryCode: "IN",
+          userId,
+        }),
+      });
+      const initData = await initRes.json();
+
+      if (!initData.success || !initData.topUpId) {
+        Alert.alert("Top-up failed", initData.error || "Could not start payment.");
+        return;
+      }
+
+      if (initData.gateway === "SANDBOX" || initData.gateway === "STRIPE") {
+        const verifyRes = await fetch(`${API_BASE}/business-suite`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "verify-ad-top-up",
+            topUpId: initData.topUpId,
+            razorpayOrderId: initData.orderId,
+            razorpayPaymentId: `pay_sim_${initData.topUpId}`,
+            userId,
+          }),
+        });
+        const verifyData = await verifyRes.json();
+        if (verifyData.success) {
+          Alert.alert("Credits added", `New balance: $${verifyData.newBalance?.toLocaleString() || "0"}`);
+          setFundModalVisible(false);
+          if (activeP) await loadPortfolioDetails(activeP);
+        } else {
+          Alert.alert("Verification failed", verifyData.error || "Try again.");
+        }
+        return;
+      }
+
+      Alert.alert(
+        "Complete payment on web",
+        "Live Razorpay checkout is available on the AURA web dashboard (Billing or Business Suite).",
+      );
+    } catch (err) {
+      console.warn("Fund ad account failed:", err);
+      Alert.alert("Error", "Could not process top-up.");
+    } finally {
+      setFundLoading(false);
+    }
+  };
 
   const handleCreatePortfolio = async () => {
     if (!newPortfolioName) return;
@@ -459,6 +526,15 @@ export default function BusinessSuiteScreen() {
                   <Text style={styles.balanceVal}>${activeAcc?.balance?.toLocaleString() || "0.00"}</Text>
                 </View>
               </View>
+              {(myRole === "ADMIN" || myRole === "ADVERTISER") && activeAcc?.id && (
+                <TouchableOpacity
+                  style={styles.fundBtn}
+                  onPress={() => setFundModalVisible(true)}
+                >
+                  <Lucide name="add-circle-outline" size={18} color="#D4AF37" />
+                  <Text style={styles.fundBtnText}>Add Ad Credits</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* 🛒 Shopify Sync & Pixel */}
@@ -563,6 +639,44 @@ export default function BusinessSuiteScreen() {
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveBtn} onPress={handleCreatePortfolio}>
                 <Text style={styles.saveText}>Establish</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: Fund Ad Account */}
+      <Modal
+        visible={fundModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setFundModalVisible(false)}
+      >
+        <View style={styles.modalBg}>
+          <View style={styles.modalBody}>
+            <Text style={styles.modalTitle}>Add Ad Credits</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Amount (USD credits)"
+              placeholderTextColor="#555"
+              value={fundAmount}
+              onChangeText={setFundAmount}
+              keyboardType="numeric"
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setFundModalVisible(false)}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={handleFundAdAccount}
+                disabled={fundLoading}
+              >
+                {fundLoading ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.saveText}>Pay</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -871,6 +985,24 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "300",
     marginTop: 2
+  },
+  fundBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(212,175,55,0.4)",
+    backgroundColor: "rgba(212,175,55,0.08)",
+  },
+  fundBtnText: {
+    color: "#D4AF37",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
   syncRow: {
     flexDirection: "row",
