@@ -2527,6 +2527,28 @@ export default function AccountScreen() {
                 </TouchableOpacity>
               </View>
 
+              {/* 💼 AURA BUSINESS SUITE SECTION */}
+              <Text style={styles.accountsCenterSectionTitle}>AURA Business & Marketing</Text>
+              <View style={styles.accountsCenterCard}>
+                <TouchableOpacity 
+                  style={[styles.accountsCenterProfileRow, { paddingVertical: 4 }]}
+                  onPress={() => {
+                    triggerHaptic("medium");
+                    setShowAccountsCenter(false);
+                    router.push("/maison/business-suite");
+                  }}
+                >
+                  <View style={styles.accountsCenterIconWrapper}>
+                    <Lucide name="business-outline" size={20} color="#00f5ff" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold" }}>AURA Business Suite</Text>
+                    <Text style={{ color: "#8e8e8e", fontSize: 10, marginTop: 2 }}>Manage e-commerce catalogs, billing ad accounts, team members, and pixel conversion stats.</Text>
+                  </View>
+                  <Lucide name="chevron-forward-outline" size={16} color="#8e8e8e" />
+                </TouchableOpacity>
+              </View>
+
               {/* 2. DATA SOVEREIGNITY & GOVERNANCE */}
               <Text style={styles.accountsCenterSectionTitle}>Sovereign Data & Portability</Text>
               <View style={styles.accountsCenterCard}>
