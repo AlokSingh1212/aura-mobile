@@ -59,7 +59,25 @@ export default function BusinessSuiteScreen() {
   const [campMedia, setCampMedia] = useState("");
   const [campSku, setCampSku] = useState("");
   const [campLocation, setCampLocation] = useState("");
+  const [campPlacements, setCampPlacements] = useState<string[]>(["FEED", "REELS", "SEARCH", "WEB"]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const PLACEMENT_OPTIONS = [
+    { id: "FEED", label: "Feed" },
+    { id: "REELS", label: "Reels" },
+    { id: "SEARCH", label: "Search" },
+    { id: "WEB", label: "Web" },
+  ] as const;
+
+  const toggleCampPlacement = (id: string) => {
+    setCampPlacements((prev) => {
+      if (prev.includes(id)) {
+        const next = prev.filter((p) => p !== id);
+        return next.length > 0 ? next : [id];
+      }
+      return [...prev, id];
+    });
+  };
 
   const userId = currentUser?.id;
 
@@ -240,6 +258,7 @@ export default function BusinessSuiteScreen() {
             minAge: 18,
             maxAge: 65,
             targetLocations: campLocation ? [campLocation] : [],
+            placements: campPlacements,
             maxCpc: 0.50,
             creativeTitle: campTitle || campName,
             creativeDescription: campDesc || "Curated showcase collection.",
@@ -604,6 +623,21 @@ export default function BusinessSuiteScreen() {
 
               <Text style={styles.inputLabel}>Location Target (Optional)</Text>
               <TextInput style={styles.input} value={campLocation} onChangeText={setCampLocation} placeholder="e.g. Milan, London" placeholderTextColor="#555" />
+
+              <Text style={styles.inputLabel}>Placements</Text>
+              <View style={styles.objectiveRow}>
+                {PLACEMENT_OPTIONS.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[styles.objBtn, campPlacements.includes(p.id) && styles.objBtnActive] as any}
+                    onPress={() => toggleCampPlacement(p.id)}
+                  >
+                    <Text style={[styles.objBtnText, campPlacements.includes(p.id) && styles.objBtnTextActive] as any}>
+                      {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               <View style={styles.modalActions}>
                 <TouchableOpacity style={styles.cancelBtn} onPress={() => setCampaignModalVisible(false)}>

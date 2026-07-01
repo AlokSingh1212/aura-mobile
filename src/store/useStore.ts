@@ -224,8 +224,10 @@ interface StoreState {
 
   // AURA Home Feed & Discovery System Expansion
   feedItems: any[];
+  reelsSponsoredAd: any | null;
   loadingFeedItems: boolean;
   fetchFeedItems: (category?: string, tab?: "For You" | "Following", reset?: boolean) => Promise<void>;
+  fetchSearchResults: (query: string) => Promise<void>;
   logEngagement: (feedItemId: string, type: "view" | "like" | "save" | "share" | "cart_add" | "purchase") => Promise<void>;
   toggleFeedSave: (feedItemId: string) => Promise<void>;
   logFeedShare: (feedItemId: string) => Promise<string | null>;
@@ -291,6 +293,7 @@ export const useStore = create<StoreState>((set, get) => ({
   orders: [],
   wishlist: [],
   feedItems: [],
+  reelsSponsoredAd: null,
   loadingFeedItems: false,
 
   currency: CURRENCY_MAP['IN'],
@@ -1341,7 +1344,10 @@ export const useStore = create<StoreState>((set, get) => ({
       const res = await fetch(url);
       const data = await res.json();
       if (data.success && data.feedItems) {
-        set({ feedItems: data.feedItems });
+        set({
+          feedItems: data.feedItems,
+          reelsSponsoredAd: data.reelsSponsoredAd || null,
+        });
         // 💾 Persist to SQLite disk cache
         try {
           cacheFeedItems(data.feedItems, category, tab);
@@ -1351,6 +1357,32 @@ export const useStore = create<StoreState>((set, get) => ({
       }
     } catch (e) {
       console.warn("Could not query visual feedItems. Using database fallback", e);
+    } finally {
+      set({ loadingFeedItems: false });
+    }
+  },
+
+  fetchSearchResults: async (query: string) => {
+    if (get().loadingFeedItems) return;
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      await get().fetchFeedItems("", "For You", true);
+      return;
+    }
+
+    set({ loadingFeedItems: true });
+    try {
+      const user = get().currentUser;
+      const userId = user?.id || "";
+      const url = `${API_BASE}/search?q=${encodeURIComponent(trimmed)}&userId=${userId}&limit=20`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success && data.results) {
+        set({ feedItems: data.results, reelsSponsoredAd: null });
+      }
+    } catch (e) {
+      console.warn("Search failed, falling back to feed filter.", e);
+      await get().fetchFeedItems(trimmed, "For You", true);
     } finally {
       set({ loadingFeedItems: false });
     }

@@ -506,8 +506,10 @@ export default function ReelsScreen() {
     hasMoreFeed, 
     detectLocation,
     feedItems,
+    reelsSponsoredAd,
     loadingFeedItems,
     fetchFeedItems,
+    fetchSearchResults,
     logEngagement,
     toggleFeedSave,
     logFeedShare,
@@ -1447,6 +1449,27 @@ export default function ReelsScreen() {
       }
     });
 
+    // Prepend dedicated REELS placement ad if not already in feed
+    if (reelsSponsoredAd) {
+      const reelsAdItem = {
+        id: reelsSponsoredAd.id,
+        url: reelsSponsoredAd.content?.videoUrl || reelsSponsoredAd.content?.mediaUrl || reelsSponsoredAd.sponsoredMetadata?.creativeMediaUrl || "",
+        caption: reelsSponsoredAd.content?.caption || reelsSponsoredAd.sponsoredMetadata?.ctaText || "",
+        creator: reelsSponsoredAd.creator,
+        music: "Sponsored",
+        likes: 0,
+        commentsCount: 0,
+        comments: [],
+        isVideo: true,
+        product: reelsSponsoredAd.product,
+        type: "SPONSORED_AD",
+        sponsoredMetadata: reelsSponsoredAd.sponsoredMetadata,
+      };
+      if (!combined.some((s) => s.id === reelsAdItem.id)) {
+        combined.unshift(reelsAdItem);
+      }
+    }
+
     // If we have a tappedReelItem, we want to make sure it's present in the list
     if (tappedReelItem) {
       const existsIndex = combined.findIndex((s) => s.id === tappedReelItem.id);
@@ -1468,7 +1491,7 @@ export default function ReelsScreen() {
     }
 
     return combined;
-  }, [tappedReelItem, localReels, stories, simulatedStories, feedItems]);
+  }, [tappedReelItem, localReels, stories, simulatedStories, feedItems, reelsSponsoredAd]);
 
   const handleOpenFeedReel = (item: any) => {
     triggerHaptic("medium");
@@ -2075,8 +2098,8 @@ export default function ReelsScreen() {
                     setSelectedCategory(text);
                     if (text.trim() === "") {
                       fetchFeedItems("", "For You", true);
-                    } else {
-                      fetchFeedItems(text, "For You", true);
+                    } else if (text.trim().length >= 2) {
+                      fetchSearchResults(text);
                     }
                   }}
                 />
