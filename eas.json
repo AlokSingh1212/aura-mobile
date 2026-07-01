@@ -13,7 +13,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_HOST": "https://YOUR_STAGING_API.vercel.app"
+        "EXPO_PUBLIC_API_HOST": "https://ai-marketplace-delta-five.vercel.app"
       },
       "android": {
         "buildType": "apk"
@@ -24,7 +24,7 @@
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_API_HOST": "https://YOUR_PRODUCTION_API.vercel.app"
+        "EXPO_PUBLIC_API_HOST": "https://ai-marketplace-delta-five.vercel.app"
       },
       "android": {
         "buildType": "app-bundle"
