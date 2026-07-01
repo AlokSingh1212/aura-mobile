@@ -25,13 +25,16 @@ import { API_BASE } from "@/constants/api";
 const { width } = Dimensions.get("window");
 
 export default function BusinessSuiteScreen() {
-  const { triggerHaptic, activeMaisonId, products } = useStore();
+  const { triggerHaptic, activeMaisonId, products, currentUser } = useStore();
   
   // State management
   const [loading, setLoading] = useState(true);
   const [portfolios, setPortfolios] = useState<any[]>([]);
   const [activeP, setActiveP] = useState<any>(null);
   const [activeAcc, setActiveAcc] = useState<any>(null);
+  const [linkedMaisons, setLinkedMaisons] = useState<any[]>([]);
+  const [availableMaisons, setAvailableMaisons] = useState<any[]>([]);
+  const [myRole, setMyRole] = useState<string>("EMPLOYEE");
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [stats, setStats] = useState({
     impressions: 0,
@@ -58,16 +61,22 @@ export default function BusinessSuiteScreen() {
   const [campLocation, setCampLocation] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const userId = "cmpctrlqn000004ktfuqga0td"; // Mock user profile anchor matching test ledger
+  const userId = currentUser?.id;
 
   const fetchSuiteDetails = async () => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/business-suite?userId=${userId}`);
       const data = await res.json();
       if (data.success && data.portfolios) {
         setPortfolios(data.portfolios);
-        const p = data.portfolios[0] || null;
+        const p = activeP && data.portfolios.find((x: any) => x.id === activeP.id)
+          ? activeP
+          : data.portfolios[0] || null;
         setActiveP(p);
         if (p) {
           await loadPortfolioDetails(p);
@@ -83,60 +92,72 @@ export default function BusinessSuiteScreen() {
   const loadPortfolioDetails = async (portfolio: any) => {
     const adAcc = portfolio.adAccounts?.[0] || null;
     setActiveAcc(adAcc);
-    
-    if (adAcc) {
-      // Calculate metrics
-      let totalImp = 0;
-      let totalClk = 0;
-      let totalConv = 0;
-      let totalSpt = 0;
-      let activeCampaigns: any[] = [];
 
-      try {
-        // Fetch campaigns of this AdAccount
-        const cRes = await fetch(`${API_BASE}/business-suite`, {
+    if (!adAcc) return;
+
+    let totalImp = 0;
+    let totalClk = 0;
+    let totalConv = 0;
+    let totalSpt = 0;
+    let activeCampaigns: any[] = [];
+
+    try {
+      const detailsRes = await fetch(`${API_BASE}/business-suite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "get-portfolio-details", portfolioId: portfolio.id, userId }),
+      });
+      const detailsData = await detailsRes.json();
+
+      if (detailsData.success && detailsData.portfolio) {
+        const freshAcc = detailsData.portfolio.adAccounts?.[0];
+        setActiveP(detailsData.portfolio);
+        setActiveAcc(freshAcc);
+        if (detailsData.membership?.role) setMyRole(detailsData.membership.role);
+
+        const linkRes = await fetch(`${API_BASE}/business-suite`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "sync-shopify", portfolioId: portfolio.id }) // Touch sync to keep state hot
+          body: JSON.stringify({ action: "get-linkable-maisons", portfolioId: portfolio.id, userId }),
         });
-        
-        // Query details directly
-        const freshPortfoliosRes = await fetch(`${API_BASE}/business-suite?userId=${userId}`);
-        const freshData = await freshPortfoliosRes.json();
-        if (freshData.success) {
-          const freshP = freshData.portfolios.find((f: any) => f.id === portfolio.id);
-          if (freshP) {
-            setActiveP(freshP);
-            const freshAcc = freshP.adAccounts?.[0];
-            setActiveAcc(freshAcc);
-            if (freshAcc && freshAcc.campaigns) {
-              activeCampaigns = freshAcc.campaigns;
-              activeCampaigns.forEach((c: any) => {
-                totalSpt += c.spent || 0;
-                totalImp += Math.floor((c.spent || 0) * 18); // Simulated metrics correlation
-                totalClk += Math.floor((c.spent || 0) * 1.2);
-                totalConv += Math.floor((c.spent || 0) * 0.15);
-              });
-            }
-          }
+        const linkData = await linkRes.json();
+        if (linkData.success) {
+          setLinkedMaisons(linkData.linked || detailsData.portfolio.maisons || []);
+          setAvailableMaisons(linkData.available || []);
+        } else {
+          setLinkedMaisons(detailsData.portfolio.maisons || []);
         }
-      } catch (err) {
-        console.warn("Error resolving metrics:", err);
-      }
 
-      setCampaigns(activeCampaigns);
-      setStats({
-        impressions: totalImp,
-        clicks: totalClk,
-        conversions: totalConv,
-        spent: totalSpt
-      });
+        if (freshAcc?.campaigns) {
+          activeCampaigns = freshAcc.campaigns;
+          activeCampaigns.forEach((c: any) => {
+            totalSpt += c.spent || 0;
+            c.adSets?.forEach((adSet: any) => {
+              adSet.ads?.forEach((ad: any) => {
+                totalImp += ad.impressions || 0;
+                totalClk += ad.clicks || 0;
+                totalConv += ad.conversions || 0;
+              });
+            });
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("Error resolving metrics:", err);
     }
+
+    setCampaigns(activeCampaigns);
+    setStats({
+      impressions: totalImp,
+      clicks: totalClk,
+      conversions: totalConv,
+      spent: totalSpt,
+    });
   };
 
   useEffect(() => {
     fetchSuiteDetails();
-  }, []);
+  }, [userId]);
 
   const handleCreatePortfolio = async () => {
     if (!newPortfolioName) return;
@@ -174,6 +195,7 @@ export default function BusinessSuiteScreen() {
         body: JSON.stringify({
           action: "sync-shopify",
           portfolioId: activeP.id,
+          userId,
           isSimulator: true
         })
       });
@@ -204,9 +226,10 @@ export default function BusinessSuiteScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "create-campaign",
+          userId,
           campaignData: {
             adAccountId: activeAcc.id,
-            maisonId: activeMaisonId,
+            maisonId: linkedMaisons[0]?.id || activeMaisonId,
             name: campName,
             objective: campObjective,
             budgetLimit: parseFloat(campBudget),
@@ -255,6 +278,51 @@ export default function BusinessSuiteScreen() {
     Alert.alert("Copied", "Pixel ID copied to clipboard.");
   };
 
+  const handleLinkMaison = async (maisonId: string) => {
+    if (!activeP || !userId) return;
+    try {
+      const res = await fetch(`${API_BASE}/business-suite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "link-maison", portfolioId: activeP.id, maisonId, userId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert("Linked", "Maison connected to portfolio.");
+        await loadPortfolioDetails(activeP);
+      } else {
+        Alert.alert("Error", data.error || "Could not link Maison.");
+      }
+    } catch {
+      Alert.alert("Error", "Network failure.");
+    }
+  };
+
+  const handleUnlinkMaison = async (maisonId: string) => {
+    if (!activeP || !userId) return;
+    try {
+      const res = await fetch(`${API_BASE}/business-suite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unlink-maison", portfolioId: activeP.id, maisonId, userId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        Alert.alert("Unlinked", "Maison removed from portfolio.");
+        await loadPortfolioDetails(activeP);
+      } else {
+        Alert.alert("Error", data.error || "Could not unlink.");
+      }
+    } catch {
+      Alert.alert("Error", "Network failure.");
+    }
+  };
+
+  const handleSwitchPortfolio = async (portfolio: any) => {
+    setActiveP(portfolio);
+    await loadPortfolioDetails(portfolio);
+  };
+
   const ctr = stats.impressions > 0 
     ? parseFloat(((stats.clicks / stats.impressions) * 100).toFixed(2)) 
     : 0.0;
@@ -289,7 +357,21 @@ export default function BusinessSuiteScreen() {
               </View>
               
               <View style={styles.portfolioRow}>
-                <Text style={styles.portfolioName}>{activeP?.name || "No Business Found"}</Text>
+                {portfolios.length > 1 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+                    {portfolios.map((p: any) => (
+                      <TouchableOpacity
+                        key={p.id}
+                        onPress={() => handleSwitchPortfolio(p)}
+                        style={[styles.portfolioChip, activeP?.id === p.id && styles.portfolioChipActive]}
+                      >
+                        <Text style={[styles.portfolioChipText, activeP?.id === p.id && styles.portfolioChipTextActive]}>{p.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <Text style={styles.portfolioName}>{activeP?.name || "No Business Found"}</Text>
+                )}
                 <TouchableOpacity 
                   style={styles.plusBtn} 
                   onPress={() => { triggerHaptic("light"); setPortfolioModalVisible(true); }}
@@ -297,6 +379,32 @@ export default function BusinessSuiteScreen() {
                   <Lucide name="add-circle-outline" size={24} color="#00f5ff" />
                 </TouchableOpacity>
               </View>
+              <Text style={styles.roleBadge}>Role: {myRole}</Text>
+            </View>
+
+            {/* 🏪 Connected Maisons */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Connected Maisons</Text>
+              {linkedMaisons.length === 0 ? (
+                <Text style={styles.emptyAssetsText}>No stores linked. Connect a Maison to run ads.</Text>
+              ) : (
+                linkedMaisons.map((m: any) => (
+                  <View key={m.id} style={styles.assetRow}>
+                    <Text style={styles.assetName}>{m.name}</Text>
+                    {(myRole === "ADMIN") && (
+                      <TouchableOpacity onPress={() => handleUnlinkMaison(m.id)}>
+                        <Lucide name="unlink-outline" size={18} color="#ff6b6b" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))
+              )}
+              {myRole === "ADMIN" && availableMaisons.map((m: any) => (
+                <TouchableOpacity key={m.id} style={styles.linkAssetBtn} onPress={() => handleLinkMaison(m.id)}>
+                  <Lucide name="link-outline" size={16} color="#00f5ff" />
+                  <Text style={styles.linkAssetText}>Link {m.name}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
             {/* 📊 Metrics Overview Grid */}
@@ -599,6 +707,63 @@ const styles = StyleSheet.create({
   },
   plusBtn: {
     padding: 4
+  },
+  portfolioChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    marginRight: 8,
+  },
+  portfolioChipActive: {
+    backgroundColor: "rgba(0,245,255,0.15)",
+    borderColor: "#00f5ff",
+  },
+  portfolioChipText: {
+    color: "#8e8e8e",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  portfolioChipTextActive: {
+    color: "#00f5ff",
+  },
+  roleBadge: {
+    color: "#8e8e8e",
+    fontSize: 10,
+    marginTop: 8,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  emptyAssetsText: {
+    color: "#8e8e8e",
+    fontSize: 12,
+    marginVertical: 8,
+  },
+  assetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.04)",
+  },
+  assetName: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  linkAssetBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+    paddingVertical: 10,
+  },
+  linkAssetText: {
+    color: "#00f5ff",
+    fontSize: 12,
+    fontWeight: "600",
   },
   statsContainer: {
     flexDirection: "row",

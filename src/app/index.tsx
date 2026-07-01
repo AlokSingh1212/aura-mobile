@@ -1247,7 +1247,23 @@ export default function ReelsScreen() {
   };
 
   // ── Sponsored Ad CTA Handler ──
-  const handleAdCtaPress = (ctaType: string, metadata: any) => {
+  const handleAdCtaPress = async (ctaType: string, metadata: any) => {
+    if (metadata.creativeId) {
+      try {
+        await fetch(`${API_HOST}/api/mobile/ads/click`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            creativeId: metadata.creativeId,
+            userId: currentUser?.id,
+            cpcPrice: metadata.cpcPrice,
+          }),
+        });
+      } catch (err) {
+        console.warn("Ad click tracking failed:", err);
+      }
+    }
+
     switch (ctaType) {
       case "APPLY_NOW":
       case "LEARN_MORE":
@@ -1401,18 +1417,20 @@ export default function ReelsScreen() {
   const displayStories = React.useMemo(() => {
     // 1. Get all video posts from the Home feed (feedItems) and translate them to reels/stories format
     const feedReels = feedItems
-      .filter((item: any) => item.type === "CREATOR_COMMERCE" || item.content?.videoUrl)
+      .filter((item: any) => item.type === "CREATOR_COMMERCE" || item.type === "SPONSORED_AD" || item.content?.videoUrl)
       .map((item: any) => ({
         id: item.id,
-        url: item.content?.videoUrl || item.content?.mediaUrl || "",
-        caption: item.content?.caption || "",
+        url: item.content?.videoUrl || item.content?.mediaUrl || item.sponsoredMetadata?.creativeMediaUrl || "",
+        caption: item.content?.caption || item.sponsoredMetadata?.ctaText || "",
         creator: item.creator,
         music: "AURA Original Sound",
         likes: item.content?.likesCount || 0,
         commentsCount: item.content?.commentsCount || 0,
         comments: item.comments || [],
         isVideo: true,
-        product: item.product
+        product: item.product,
+        type: item.type,
+        sponsoredMetadata: item.sponsoredMetadata,
       }));
 
     // 2. Get base stories
@@ -1879,6 +1897,42 @@ export default function ReelsScreen() {
             </View>
           </View>
         </TouchableOpacity>
+      );
+    }
+
+    if (item.type === "SPONSORED_AD") {
+      const media = item.content?.mediaUrl || item.sponsoredMetadata?.creativeMediaUrl || "";
+      const caption = item.content?.caption || "";
+      return (
+        <View style={{ backgroundColor: "#FFFFFF", marginBottom: 24, borderBottomWidth: 1, borderBottomColor: "#F5F5F7", paddingBottom: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Image source={{ uri: creatorAvatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+              <View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={{ fontWeight: "700", fontSize: 14, color: "#111111" }}>{creatorName}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: "#8E8E93", backgroundColor: "#F0F0F0", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>Ad</Text>
+                </View>
+                <Text style={{ fontSize: 11, color: "#8E8E93" }}>Sponsored</Text>
+              </View>
+            </View>
+          </View>
+          {media ? (
+            <Image source={{ uri: media }} style={{ width: "100%", height: 380 }} contentFit="cover" />
+          ) : null}
+          {caption ? (
+            <Text style={{ paddingHorizontal: 16, paddingTop: 12, fontSize: 14, color: "#111111" }} numberOfLines={3}>{caption}</Text>
+          ) : null}
+          <TouchableOpacity
+            style={{ marginHorizontal: 16, marginTop: 12, height: 44, borderRadius: 10, backgroundColor: "#111111", justifyContent: "center", alignItems: "center", flexDirection: "row", gap: 6 }}
+            onPress={() => handleAdCtaPress(item.sponsoredMetadata?.ctaType || "LEARN_MORE", item.sponsoredMetadata || {})}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF" }}>
+              {item.sponsoredMetadata?.ctaText || "Learn more"}
+            </Text>
+            <Lucide name="chevron-forward" size={16} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       );
     }
 
