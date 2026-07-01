@@ -31,7 +31,7 @@ The application uses dynamic parameters (such as the WebRTC API host and Agora A
 Configure these values in the Expo Dashboard under **Project Settings → Secrets**, or define them in your local `eas.json` build profiles:
 
 ### Required Secrets
-- `API_HOST`: The base URL of the AURA marketplace backend (e.g. `https://aura.luxury`).
+- `EXPO_PUBLIC_API_HOST`: The base URL of the AURA marketplace backend (e.g. `https://aura.luxury`).
 - `NEXT_PUBLIC_AGORA_APP_ID`: Your production Agora App ID.
 - `AGORA_APP_CERTIFICATE`: Agora primary App Certificate (used on backend server nodes for secure tokens).
 
@@ -43,18 +43,18 @@ Example `eas.json` configuration snippet:
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "API_HOST": "https://staging.aura.luxury"
+        "EXPO_PUBLIC_API_HOST": "https://staging.aura.luxury"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "API_HOST": "https://staging.aura.luxury"
+        "EXPO_PUBLIC_API_HOST": "https://staging.aura.luxury"
       }
     },
     "production": {
       "env": {
-        "API_HOST": "https://aura.luxury"
+        "EXPO_PUBLIC_API_HOST": "https://aura.luxury"
       }
     }
   }

@@ -10,13 +10,15 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  ScrollView
+  ScrollView,
+  Linking,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useStore } from "../store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
+import { API_HOST } from "../constants/api";
 
 const { width } = Dimensions.get("window");
 
@@ -255,8 +257,20 @@ export default function LoginScreen() {
                   {agreedToTerms && <Lucide name="checkmark" size={14} color="#FFFFFF" />}
                 </View>
                 <Text style={styles.termsText}>
-                  I agree to the <Text style={styles.termsLink}>Terms of Service</Text> and{" "}
-                  <Text style={styles.termsLink}>Privacy Policy</Text>
+                  I agree to the{" "}
+                  <Text
+                    style={styles.termsLink}
+                    onPress={() => Linking.openURL(`${API_HOST}/terms`)}
+                  >
+                    Terms of Service
+                  </Text>{" "}
+                  and{" "}
+                  <Text
+                    style={styles.termsLink}
+                    onPress={() => Linking.openURL(`${API_HOST}/privacy`)}
+                  >
+                    Privacy Policy
+                  </Text>
                 </Text>
               </TouchableOpacity>
 

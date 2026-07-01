@@ -14,7 +14,8 @@ import {
   ActivityIndicator,
   StatusBar,
   Linking,
-  Share
+  Share,
+  Platform,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -542,21 +543,83 @@ export default function AccountScreen() {
     );
   };
 
+  const performDeleteAccount = async (confirmEmail: string) => {
+    const userId = currentUser?.id;
+    if (!userId) {
+      Alert.alert("Error", "Sign in required to delete account.");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/auth/delete-account`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, confirmEmail: confirmEmail.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerHaptic("success");
+        authLogOut();
+        Alert.alert("Account Deleted", "Your account has been permanently removed.", [
+          { text: "OK", onPress: () => router.replace("/login") },
+        ]);
+      } else {
+        Alert.alert("Deletion Failed", data.error || "Could not delete account.");
+      }
+    } catch {
+      Alert.alert("Network Error", "Could not reach the server.");
+    }
+  };
+
   const handleDeactivateMaison = () => {
     triggerHaptic("heavy");
     Alert.alert(
-      "Deactivate Identity Node",
-      `Are you sure you want to temporarily suspend Maison '${profileName}'? This will halt e-commerce acquisitions across the ledger.`,
+      "Account & Node Management",
+      `Manage Maison '${profileName}' or permanently delete your AURA account.`,
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Deactivate", 
+        {
+          text: "Suspend Node",
           style: "destructive",
           onPress: () => {
             triggerHaptic("success");
-            Alert.alert("Identity Suspended", "Maison state suspended inside PostgreSQL. Re-activate anytime from settings.");
-          }
-        }
+            Alert.alert(
+              "Identity Suspended",
+              "Maison state suspended. Re-activate anytime from settings."
+            );
+          },
+        },
+        {
+          text: "Delete Account",
+          style: "destructive",
+          onPress: () => {
+            if (Platform.OS === "ios") {
+              Alert.prompt(
+                "Confirm Account Deletion",
+                "Type your email to permanently delete your account.",
+                (confirmEmail) => {
+                  if (confirmEmail?.trim()) performDeleteAccount(confirmEmail);
+                },
+                "plain-text",
+                currentUser?.email || ""
+              );
+            } else {
+              Alert.alert(
+                "Confirm Account Deletion",
+                `Your account (${currentUser?.email || "signed-in user"}) will be permanently deleted.`,
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Delete Permanently",
+                    style: "destructive",
+                    onPress: () => {
+                      if (currentUser?.email) performDeleteAccount(currentUser.email);
+                    },
+                  },
+                ]
+              );
+            }
+          },
+        },
       ]
     );
   };
