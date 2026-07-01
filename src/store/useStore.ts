@@ -19,6 +19,7 @@ import {
   cacheConversations,
   cacheMessages
 } from "@/utils/localDb";
+import { AuraPixel } from "@/lib/auraPixel";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -557,6 +558,14 @@ export const useStore = create<StoreState>((set, get) => ({
 
   addToCart: (product) => {
     get().triggerHaptic("medium");
+    const user = get().currentUser;
+    AuraPixel.addToCart({
+      userId: user?.id,
+      contentId: product.id,
+      sku: product.id,
+      val: product.price,
+      currency: "INR",
+    });
     set((state) => {
       const existing = state.cart.find((item) => item.id === product.id);
       if (existing) {
@@ -999,8 +1008,8 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (data.success) {
         set({ userProfiles: data.profiles, activeProfile: data.activeProfile });
-        // Sync push token automatically
         syncDevicePushToken(userId);
+        AuraPixel.loadConfig(userId);
       }
     } catch (e) {
       console.warn("Could not fetch sovereign profiles:", e);
@@ -1216,6 +1225,15 @@ export const useStore = create<StoreState>((set, get) => ({
         body: JSON.stringify(payload)
       });
       const data = await res.json();
+      if (data.success) {
+        const user = get().currentUser;
+        const total = get().cart.reduce((s, i) => s + (i.price || 0) * i.quantity, 0);
+        AuraPixel.purchase({
+          userId: user?.id,
+          val: total,
+          currency: "INR",
+        });
+      }
       return data;
     } catch (e) {
       console.warn("verifyPayment failed.", e);

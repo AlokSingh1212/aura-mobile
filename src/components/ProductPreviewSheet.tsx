@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   StyleSheet, 
   Text, 
@@ -11,6 +11,7 @@ import {
 import { Image } from "expo-image";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
+import { AuraPixel } from "@/lib/auraPixel";
 import { router } from "expo-router";
 import { SlideToPayCheckout } from "./SlideToPayCheckout";
 
@@ -36,7 +37,7 @@ export const ProductPreviewSheet: React.FC<ProductPreviewSheetProps> = ({
   product,
   feedItemId
 }) => {
-  const { addToCart, logEngagement, logFeedCartAdd, formatPrice, triggerHaptic } = useStore();
+  const { addToCart, logEngagement, logFeedCartAdd, formatPrice, triggerHaptic, currentUser } = useStore();
   const [selectedSize, setSelectedSize] = useState("M");
   const [selectedColor, setSelectedColor] = useState(AVAILABLE_COLORS[0]);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -53,6 +54,16 @@ export const ProductPreviewSheet: React.FC<ProductPreviewSheetProps> = ({
   const images = product.images && product.images.length > 0 
     ? product.images 
     : ["https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400"];
+
+  useEffect(() => {
+    if (!visible || !product?.id) return;
+    AuraPixel.viewContent({
+      userId: currentUser?.id,
+      contentId: String(product.id),
+      val: price,
+      currency: "INR",
+    });
+  }, [visible, product?.id, price, currentUser?.id]);
 
   const handleAddToCart = async () => {
     triggerHaptic("success");
@@ -78,6 +89,12 @@ export const ProductPreviewSheet: React.FC<ProductPreviewSheetProps> = ({
 
   const handleBuyNow = () => {
     triggerHaptic("heavy");
+    AuraPixel.initiateCheckout({
+      userId: currentUser?.id,
+      contentId: String(product.id),
+      val: price,
+      currency: "INR",
+    });
     onClose();
     setCheckoutVisible(true);
   };

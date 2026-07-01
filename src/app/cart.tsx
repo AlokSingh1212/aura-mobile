@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "@/store/useStore";
+import { AuraPixel } from "@/lib/auraPixel";
 import { API_HOST } from "@/constants/api";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
@@ -231,6 +232,12 @@ export default function CartScreen() {
   const handleCheckout = async () => {
     setIsCheckingOut(true);
     triggerHaptic("heavy");
+    const checkoutTotal = calculateTotal();
+    AuraPixel.initiateCheckout({
+      userId: currentUser?.id || activeProfile?.userId,
+      val: checkoutTotal,
+      currency: "INR",
+    });
     try {
       const payloadCartItems = cart.map(item => ({
         artifactId: item.id,
