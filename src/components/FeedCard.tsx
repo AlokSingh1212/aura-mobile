@@ -13,6 +13,8 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
 import { router } from "expo-router";
 import { formatCompactNumber } from "@/constants/format";
+import { getCachedVideo } from "@/utils/videoCache";
+import { PeekPreviewModal } from "./PeekPreviewModal";
 
 const { height, width } = Dimensions.get("window");
 
@@ -20,6 +22,7 @@ export interface FeedCardProps {
   item: any;
   index: number;
   activeReelIndex: number;
+  isScreenFocused: boolean;
   feedMuted: boolean;
   products: any[];
   likedPosts: Record<string, boolean>;
@@ -32,12 +35,15 @@ export interface FeedCardProps {
   handleShare: (item: any) => void;
   handleSavePress: (id: string) => void;
   handleThreeDotsPress: (item: any) => void;
+  commentsCount?: number;
+  onCtaPress?: (ctaType: string, metadata: any) => void;
 }
 
 export const FeedCard: React.FC<FeedCardProps> = ({
   item,
   index,
   activeReelIndex,
+  isScreenFocused,
   feedMuted,
   products,
   likedPosts,
@@ -50,10 +56,13 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   handleShare,
   handleSavePress,
   handleThreeDotsPress,
+  commentsCount,
+  onCtaPress,
 }) => {
   const { triggerHaptic, formatPrice, activeProfile, currentUser } = useStore();
   const isPlayed = index === activeReelIndex;
   const isLiked = likedPosts[item.id] || false;
+  const [peekVisible, setPeekVisible] = useState(false);
 
   // ── Double-Tap Heart Animation ──────────────────────────
   const heartScale = useRef(new Animated.Value(0)).current;
@@ -134,14 +143,34 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   };
 
   const mockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4";
-  const videoUrl = item.url && item.url.endsWith(".mp4") ? item.url : mockVideoUrl;
+  const videoUrl = item.url && (item.url.endsWith(".mp4") || item.url.includes(".m3u8")) ? item.url : mockVideoUrl;
 
   // Optimize player resources: only initialize video player for the active or adjacent screens
   const isAdjacent = Math.abs(index - activeReelIndex) <= 1;
-  const player = useVideoPlayer(isAdjacent ? videoUrl : null, (p) => {
+
+  // Local state to hold resolved (cached or remote) video source
+  const [videoSource, setVideoSource] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (isAdjacent) {
+      getCachedVideo(videoUrl).then((cached) => {
+        if (active) {
+          setVideoSource(cached || videoUrl);
+        }
+      });
+    } else {
+      setVideoSource(null);
+    }
+    return () => {
+      active = false;
+    };
+  }, [isAdjacent, videoUrl]);
+
+  const player = useVideoPlayer(videoSource, (p) => {
     p.loop = true;
     p.muted = feedMuted;
-    if (isPlayed) {
+    if (isPlayed && isScreenFocused) {
       p.play();
     } else {
       p.pause();
@@ -153,14 +182,14 @@ export const FeedCard: React.FC<FeedCardProps> = ({
     player.muted = feedMuted;
   }, [feedMuted, player]);
 
-  // Sync play/pause setting based on visibility
+  // Sync play/pause setting based on visibility and screen focus
   useEffect(() => {
-    if (isPlayed) {
+    if (isPlayed && isScreenFocused) {
       player.play();
     } else {
       player.pause();
     }
-  }, [isPlayed, player]);
+  }, [isPlayed, isScreenFocused, player]);
 
   return (
     <View style={[styles.reelContainer, { height: reelHeight }]}>
@@ -253,7 +282,15 @@ export const FeedCard: React.FC<FeedCardProps> = ({
       {/* Creator Metadata Overlay (Bottom Left) */}
       <View style={[styles.metaContainer, { bottom: floatingBottomOffset }]}>
         <View style={styles.creatorRow}>
-          <TouchableOpacity onPress={() => handleMaisonProfilePress(item)} activeOpacity={0.85}>
+          <TouchableOpacity 
+            onPress={() => handleMaisonProfilePress(item)} 
+            onLongPress={() => {
+              triggerHaptic("heavy");
+              setPeekVisible(true);
+            }}
+            delayLongPress={300}
+            activeOpacity={0.85}
+          >
             <View style={[styles.avatar, { overflow: "hidden" }]}>
               {(() => {
                 const isCurrentUser = (item.profile?.username === activeProfile?.username) ||
@@ -295,7 +332,11 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                 <Text style={styles.creatorName} numberOfLines={1}>
                   {(item.profile?.name || item.user?.name || "aura_curator").toLowerCase().replace(/\s+/g, "")}
                 </Text>
-                <Text style={styles.saptashiText}>and saptashi...</Text>
+                {item.type === "SPONSORED_AD" || item.sponsoredMetadata ? (
+                  <Text style={styles.adTag}>Ad</Text>
+                ) : (
+                  <Text style={styles.saptashiText}>and saptashi...</Text>
+                )}
               </TouchableOpacity>
               <TouchableOpacity style={styles.followBtn} onPress={() => triggerHaptic("medium")}>
                 <Text style={styles.followBtnText}>Follow</Text>
@@ -327,7 +368,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             <Lucide name="chatbubble-outline" size={24} color="#fff" />
           </View>
           <Text style={styles.iconLabel}>
-            {formatCompactNumber(item.comments?.length || 18)}
+            {formatCompactNumber(commentsCount !== undefined ? commentsCount : (item.comments?.length || 18))}
           </Text>
         </TouchableOpacity>
 
@@ -356,6 +397,50 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           </View>
         </TouchableOpacity>
       </View>
+
+      {/* ── Sponsored Ad CTA Banner ─── */}
+      {(item.type === "SPONSORED_AD" || item.sponsoredMetadata) && (
+        <TouchableOpacity
+          style={[styles.ctaBanner, { bottom: floatingBottomOffset + 85 }]}
+          activeOpacity={0.9}
+          onPress={() => {
+            triggerHaptic("medium");
+            if (onCtaPress) {
+              onCtaPress(
+                item.sponsoredMetadata?.ctaType || "LEARN_MORE",
+                item.sponsoredMetadata || {}
+              );
+            }
+          }}
+        >
+          <Text style={styles.ctaBannerText}>
+            {item.sponsoredMetadata?.ctaText || "Learn more"}
+          </Text>
+          <Lucide name="chevron-forward" size={16} color="#fff" />
+        </TouchableOpacity>
+      )}
+
+      <PeekPreviewModal
+        visible={peekVisible}
+        onClose={() => setPeekVisible(false)}
+        type="PROFILE"
+        data={{
+          id: item.id,
+          title: item.title,
+          thumbnail: item.thumbnail || (item.artifact || {}).images?.[0] || item.videoUrl || "",
+          caption: item.caption,
+          maisonName: item.profile?.name || item.user?.name || item.maison?.name || "AURA Designer",
+          maisonAvatar: item.profile?.logo || item.user?.avatar || item.maison?.logo || "",
+          about: item.profile?.about || item.maison?.about || "AURA Curator",
+          followersCount: item.profile?.followersCount || 14200,
+          designType: item.profile?.designType || item.maison?.designType || "Brutalist"
+        }}
+        onActionPress={(action) => {
+          if (action === "VIEW") {
+            handleMaisonProfilePress(item);
+          }
+        }}
+      />
     </View>
   );
 };
@@ -510,5 +595,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "bold",
     marginTop: 4,
+  },
+  adTag: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    fontWeight: "400" as const,
+  },
+  ctaBanner: {
+    position: "absolute" as const,
+    left: 16,
+    right: 80,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    zIndex: 15,
+  },
+  ctaBannerText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600" as const,
+    letterSpacing: 0.3,
   },
 });

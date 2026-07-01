@@ -29,6 +29,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
 import * as ImagePicker from "expo-image-picker";
 import { CameraView } from "expo-camera";
@@ -43,7 +44,12 @@ import { PostCard } from "@/components/PostCard";
 import { LiveShowroom } from "@/components/LiveShowroom";
 import { ProductPreviewSheet } from "@/components/ProductPreviewSheet";
 import { ShimmerFeedList } from "@/components/ui/ShimmerLoader";
+import { prefetchVideo } from "@/utils/videoCache";
+import { useLayoutCache } from "@/utils/useLayoutCache";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { InAppBrowserModal } from "@/components/InAppBrowserModal";
+import { ExploreProductsSheet } from "@/components/ExploreProductsSheet";
+import { LeadGenSheet } from "@/components/LeadGenSheet";
 
 const MOCK_PRODUCTS = [
   {
@@ -359,6 +365,8 @@ interface CreatorCommerceCardProps {
   setPreviewFeedItemId: (id: any) => void;
   setPreviewSheetVisible: (visible: boolean) => void;
   formatPrice: (price: number) => string;
+  onPressVideo?: () => void;
+  handleThreeDotsPress: (item: any) => void;
 }
 
 const CreatorCommerceCard: React.FC<CreatorCommerceCardProps> = ({
@@ -370,6 +378,8 @@ const CreatorCommerceCard: React.FC<CreatorCommerceCardProps> = ({
   setPreviewFeedItemId,
   setPreviewSheetVisible,
   formatPrice,
+  onPressVideo,
+  handleThreeDotsPress,
 }) => {
   const prod = item.product || {};
   const video = item.content?.videoUrl || "";
@@ -390,15 +400,24 @@ const CreatorCommerceCard: React.FC<CreatorCommerceCardProps> = ({
 
   return (
     <View style={{ backgroundColor: "#FFFFFF", marginBottom: 24, borderBottomWidth: 1, borderBottomColor: "#F5F5F7", paddingBottom: 16 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12 }}>
-        <Image source={{ uri: creatorAvatar }} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 8 }} />
-        <View>
-          <Text style={{ fontWeight: "700", fontSize: 14, color: "#111111" }}>{creatorName}</Text>
-          <Text style={{ fontSize: 11, color: "#8E8E93" }}>@{creatorUsername} • Commerce</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Image source={{ uri: creatorAvatar }} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 8 }} />
+          <View>
+            <Text style={{ fontWeight: "700", fontSize: 14, color: "#111111" }}>{creatorName}</Text>
+            <Text style={{ fontSize: 11, color: "#8E8E93" }}>@{creatorUsername} • Commerce</Text>
+          </View>
         </View>
+        <TouchableOpacity onPress={() => handleThreeDotsPress(item)}>
+          <Lucide name="ellipsis-horizontal" size={20} color="#8E8E93" />
+        </TouchableOpacity>
       </View>
 
-      <View style={{ width: "100%", height: 380, position: "relative", backgroundColor: "#000000" }}>
+      <TouchableOpacity 
+        activeOpacity={0.95} 
+        onPress={onPressVideo}
+        style={{ width: "100%", height: 380, position: "relative", backgroundColor: "#000000" }}
+      >
         <VideoView
           player={videoPlayer}
           style={{ width: "100%", height: "100%" }}
@@ -417,11 +436,14 @@ const CreatorCommerceCard: React.FC<CreatorCommerceCardProps> = ({
             alignItems: "center",
             justifyContent: "center"
           }}
-          onPress={() => setFeedMuted(!feedMuted)}
+          onPress={(e) => {
+            e.stopPropagation();
+            setFeedMuted(!feedMuted);
+          }}
         >
           <Lucide name={feedMuted ? "volume-mute" : "volume-high"} size={16} color="#FFFFFF" />
         </TouchableOpacity>
-      </View>
+      </TouchableOpacity>
 
       <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
         <Text style={{ fontSize: 13, color: "#111111", lineHeight: 18 }}>
@@ -497,9 +519,28 @@ export default function ReelsScreen() {
   const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : (activeMaisonId ? activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "AURA Client"));
   const params = useLocalSearchParams<{ openDMs?: string; openSearch?: string; activeTab?: string; openCamera?: string; conversationId?: string }>();
   const insets = useSafeAreaInsets();
+  const { getLayoutHeight } = useLayoutCache();
+  const isScreenFocused = useIsFocused();
+
+  const getItemLayout = (data: any, index: number) => {
+    const item = data[index];
+    if (!item) return { length: 0, offset: 0, index };
+    const height = getLayoutHeight(item.id, item.caption || "", item.imageRatio || 1);
+    let offset = 0;
+    for (let i = 0; i < index; i++) {
+      const prevItem = data[i];
+      if (prevItem) {
+        offset += getLayoutHeight(prevItem.id, prevItem.caption || "", prevItem.imageRatio || 1);
+      }
+    }
+    return { length: height, offset, index };
+  };
+
   const [chatConversationId, setChatConversationId] = useState<string | null>(null);
   const bottomBarHeight = 62 + insets.bottom;
   const [activeStoryIndex, setActiveStoryIndex] = useState(0);
+  const [tappedReelItem, setTappedReelItem] = useState<any>(null);
+  const reelsFlatListRef = useRef<FlatList>(null);
 
   const loadMoreStories = () => {
     if (hasMoreFeed && !loadingFeed) {
@@ -571,22 +612,39 @@ export default function ReelsScreen() {
   }, [activeProfile]);
 
   useEffect(() => {
+    let changed = false;
+    const cleanParams: Record<string, string | undefined> = {};
+
     if (params?.openDMs === "true") {
       setShowDMs(true);
+      cleanParams.openDMs = undefined;
+      changed = true;
     }
     if (params?.conversationId) {
       setChatConversationId(params.conversationId);
       setShowDMs(true);
+      cleanParams.conversationId = undefined;
+      changed = true;
     }
     if (params?.openSearch === "true") {
       setShowExploreGrid(true);
+      cleanParams.openSearch = undefined;
+      changed = true;
     }
     if (params?.activeTab === "reels") {
       setActiveFeedTab("reels");
       setIsReelsFullScreen(true);
+      cleanParams.activeTab = undefined;
+      changed = true;
     }
     if (params?.openCamera === "true") {
       setShowReelCamera(true);
+      cleanParams.openCamera = undefined;
+      changed = true;
+    }
+
+    if (changed) {
+      router.setParams(cleanParams as any);
     }
   }, [params]);
   const [showDMs, setShowDMs] = useState(false);
@@ -665,6 +723,13 @@ export default function ReelsScreen() {
   
   // Sound states and reels camera overlay states
   const [feedMuted, setFeedMuted] = useState(true);
+  // ── Sponsored Ad Modal State ──
+  const [browserModalVisible, setBrowserModalVisible] = useState(false);
+  const [browserUrl, setBrowserUrl] = useState("");
+  const [productsSheetVisible, setProductsSheetVisible] = useState(false);
+  const [productsSheetItems, setProductsSheetItems] = useState<any[]>([]);
+  const [leadGenVisible, setLeadGenVisible] = useState(false);
+  const [leadGenMeta, setLeadGenMeta] = useState<any>({});
   const [showReelCamera, setShowReelCamera] = useState(false);
 
   // Reels created locally by the user
@@ -789,14 +854,21 @@ export default function ReelsScreen() {
   const [savedPosts, setSavedPosts] = useState<Record<string, boolean>>({});
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [shareTargetPost, setShareTargetPost] = useState<any>(null);
+  const [shareSearch, setShareSearch] = useState("");
   const [showThreeDotsModal, setShowThreeDotsModal] = useState(false);
   const [threeDotsTargetPost, setThreeDotsTargetPost] = useState<any>(null);
   const [showCommentsModal, setShowCommentsModal] = useState(false);
   const [commentsTargetPost, setCommentsTargetPost] = useState<any>(null);
   const [newCommentText, setNewCommentText] = useState("");
+  const [likedComments, setLikedComments] = useState<Record<string, boolean>>({});
+  const [commentLikeCounts, setCommentLikeCounts] = useState<Record<string, number>>({});
+  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
+  const [replyingTo, setReplyingTo] = useState<{ commentId: string; username: string } | null>(null);
+  const commentInputRef = useRef<any>(null);
   const [postComments, setPostComments] = useState<Record<string, any[]>>({
     s1: [
       { id: "1", username: "julian_rossi", text: "Stunning! The liquid metal design flows so naturally.", time: "2h" },
+      { id: "1_r1", username: "alok_curator", text: "@julian_rossi Agreed! The chrome finish is breathtaking.", time: "1h", parentId: "1" },
       { id: "2", username: "namita.thapar", text: "Is this limited edition? Need early access reservation.", time: "1h" },
     ],
     s2: [
@@ -813,6 +885,13 @@ export default function ReelsScreen() {
   const handleCommentsPress = (item: any) => {
     triggerHaptic("medium");
     setCommentsTargetPost(item);
+    if (!postComments[item.id]) {
+      const defaultComms = item.comments || [
+        { id: "mock_1", username: "dylan_v", text: "Incredible craftsmanship here.", time: "1h" },
+        { id: "mock_2", username: "sara.k", text: "Absolutely stunning style!", time: "45m" }
+      ];
+      setPostComments(prev => ({ ...prev, [item.id]: defaultComms }));
+    }
     setShowCommentsModal(true);
   };
 
@@ -1167,8 +1246,70 @@ export default function ReelsScreen() {
     });
   };
 
+  // ── Sponsored Ad CTA Handler ──
+  const handleAdCtaPress = (ctaType: string, metadata: any) => {
+    switch (ctaType) {
+      case "APPLY_NOW":
+      case "LEARN_MORE":
+      case "SIGN_UP":
+        // Open in-app browser for website traffic ads
+        if (metadata.targetUrl) {
+          setBrowserUrl(metadata.targetUrl);
+          setBrowserModalVisible(true);
+        }
+        break;
+      case "SHOP_NOW":
+        // Open explore products sheet
+        if (metadata.associatedProducts?.length > 0) {
+          const matchedProducts = products.filter((p: any) =>
+            metadata.associatedProducts.includes(p.id)
+          );
+          setProductsSheetItems(
+            matchedProducts.length > 0
+              ? matchedProducts.map((p: any) => ({
+                  id: p.id,
+                  title: p.title || p.name,
+                  image: p.images?.[0] || p.image || "",
+                  price: p.price || 0,
+                }))
+              : products.slice(0, 6).map((p: any) => ({
+                  id: p.id,
+                  title: p.title || p.name,
+                  image: p.images?.[0] || p.image || "",
+                  price: p.price || 0,
+                }))
+          );
+          setProductsSheetVisible(true);
+        } else {
+          // Fallback: show all products
+          setProductsSheetItems(
+            products.slice(0, 6).map((p: any) => ({
+              id: p.id,
+              title: p.title || p.name,
+              image: p.images?.[0] || p.image || "",
+              price: p.price || 0,
+            }))
+          );
+          setProductsSheetVisible(true);
+        }
+        break;
+      case "FOLLOW":
+        // Follow action — just show a toast
+        triggerHaptic("heavy");
+        Alert.alert("Followed!", "You are now following this brand.");
+        break;
+      default:
+        if (metadata.targetUrl) {
+          setBrowserUrl(metadata.targetUrl);
+          setBrowserModalVisible(true);
+        }
+        break;
+    }
+  };
+
   const handleShare = (item: any) => {
     triggerHaptic("medium");
+    setShareSearch("");
     setShareTargetPost(item);
     setShowShareSheet(true);
   };
@@ -1179,12 +1320,19 @@ export default function ReelsScreen() {
 
   const floatingBottomOffset = isReelsFullScreen ? 65 : 20;
 
+  const getReelItemLayout = (data: any, index: number) => ({
+    length: reelHeight,
+    offset: reelHeight * index,
+    index,
+  });
+
   const renderReelItem = ({ item, index }: { item: any; index: number }) => {
     return (
       <FeedCard
         item={item}
         index={index}
         activeReelIndex={activeStoryIndex}
+        isScreenFocused={isScreenFocused}
         feedMuted={feedMuted}
         products={products}
         likedPosts={likedReels}
@@ -1197,6 +1345,8 @@ export default function ReelsScreen() {
         handleShare={handleShare}
         handleSavePress={handleSavePress}
         handleThreeDotsPress={handleThreeDotsPress}
+        commentsCount={postComments[item.id] ? postComments[item.id].length : (item.comments?.length || 18)}
+        onCtaPress={handleAdCtaPress}
       />
     );
   };
@@ -1248,10 +1398,81 @@ export default function ReelsScreen() {
     }
   ];
 
-  const displayStories = [
-    ...localReels,
-    ...(stories.length > 0 ? stories.filter((s: any) => s.music !== "STORY_ONLY") : simulatedStories)
-  ];
+  const displayStories = React.useMemo(() => {
+    // 1. Get all video posts from the Home feed (feedItems) and translate them to reels/stories format
+    const feedReels = feedItems
+      .filter((item: any) => item.type === "CREATOR_COMMERCE" || item.content?.videoUrl)
+      .map((item: any) => ({
+        id: item.id,
+        url: item.content?.videoUrl || item.content?.mediaUrl || "",
+        caption: item.content?.caption || "",
+        creator: item.creator,
+        music: "AURA Original Sound",
+        likes: item.content?.likesCount || 0,
+        commentsCount: item.content?.commentsCount || 0,
+        comments: item.comments || [],
+        isVideo: true,
+        product: item.product
+      }));
+
+    // 2. Get base stories
+    const baseStories = [
+      ...localReels,
+      ...(stories.length > 0 ? stories.filter((s: any) => s.music !== "STORY_ONLY") : simulatedStories)
+    ];
+
+    // Combine them, avoiding duplicates
+    const combined = [...baseStories];
+    feedReels.forEach((fr) => {
+      if (!combined.some((s) => s.id === fr.id)) {
+        combined.push(fr);
+      }
+    });
+
+    // If we have a tappedReelItem, we want to make sure it's present in the list
+    if (tappedReelItem) {
+      const existsIndex = combined.findIndex((s) => s.id === tappedReelItem.id);
+      if (existsIndex === -1) {
+        const translatedTapped = {
+          id: tappedReelItem.id,
+          url: tappedReelItem.content?.videoUrl || tappedReelItem.content?.mediaUrl || "",
+          caption: tappedReelItem.content?.caption || "",
+          creator: tappedReelItem.creator,
+          music: "AURA Original Sound",
+          likes: tappedReelItem.content?.likesCount || 0,
+          commentsCount: tappedReelItem.content?.commentsCount || 0,
+          comments: tappedReelItem.comments || [],
+          isVideo: true,
+          product: tappedReelItem.product
+        };
+        combined.unshift(translatedTapped);
+      }
+    }
+
+    return combined;
+  }, [tappedReelItem, localReels, stories, simulatedStories, feedItems]);
+
+  const handleOpenFeedReel = (item: any) => {
+    triggerHaptic("medium");
+    setTappedReelItem(item);
+    
+    // Switch feed tab to reels
+    setActiveFeedTab("reels");
+    setIsReelsFullScreen(true);
+
+    setTimeout(() => {
+      // Find the index in displayStories
+      const targetIndex = displayStories.findIndex(s => s.id === item.id);
+      if (targetIndex !== -1) {
+        setActiveStoryIndex(targetIndex);
+        reelsFlatListRef.current?.scrollToIndex({ index: targetIndex, animated: false });
+      } else {
+        // If prepended dynamically: index 0
+        setActiveStoryIndex(0);
+        reelsFlatListRef.current?.scrollToIndex({ index: 0, animated: false });
+      }
+    }, 120);
+  };
 
   // Synchronized real-time soundtrack player for active feeds
   const feedSoundRef = useRef<any>(null);
@@ -1295,6 +1516,26 @@ export default function ReelsScreen() {
       }
     };
   }, [activeStoryIndex, activeFeedTab, feedMuted, showReelCamera, displayStories]);
+
+  // 🎥 Predictive Video Prefetching Effect
+  useEffect(() => {
+    if (activeFeedTab === "reels" && displayStories.length > 0) {
+      // Prefetch next 2 items ahead of current activeStoryIndex
+      const start = activeStoryIndex + 1;
+      const end = Math.min(activeStoryIndex + 2, displayStories.length - 1);
+      
+      for (let i = start; i <= end; i++) {
+        const item = displayStories[i];
+        if (item) {
+          const mockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4";
+          const videoUrl = item.url && item.url.endsWith(".mp4") ? item.url : mockVideoUrl;
+          prefetchVideo(videoUrl).catch(e => {
+            console.warn("Reel prefetch error for index", i, e);
+          });
+        }
+      }
+    }
+  }, [activeStoryIndex, displayStories, activeFeedTab]);
 
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems && viewableItems.length > 0) {
@@ -1447,7 +1688,7 @@ export default function ReelsScreen() {
       const media = item.content?.mediaUrl || "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=600";
       const caption = item.content?.caption || "";
       const likesCount = item.content?.likesCount || 128;
-      const commentsCount = item.content?.commentsCount || 18;
+      const commentsCount = postComments[item.id] ? postComments[item.id].length : (item.comments?.length || item.content?.commentsCount || 18);
 
       let lastTap = 0;
       const handleDoubleTap = () => {
@@ -1472,7 +1713,7 @@ export default function ReelsScreen() {
                 <Text style={{ fontSize: 11, color: "#8E8E93" }}>@{creatorUsername} • Creator</Text>
               </View>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => triggerHaptic("light")}>
+            <TouchableOpacity onPress={() => handleThreeDotsPress(item)}>
               <Lucide name="ellipsis-horizontal" size={20} color="#8E8E93" />
             </TouchableOpacity>
           </View>
@@ -1499,10 +1740,10 @@ export default function ReelsScreen() {
               <TouchableOpacity onPress={() => handleFeedItemLike(item.id)}>
                 <Lucide name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#FF3B30" : "#111111"} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => triggerHaptic("light")}>
+              <TouchableOpacity onPress={() => handleCommentsPress(item)}>
                 <Lucide name="chatbubble-outline" size={23} color="#111111" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleFeedItemShare(item.id)}>
+              <TouchableOpacity onPress={() => handleShare(item)}>
                 <Lucide name="paper-plane-outline" size={23} color="#111111" />
               </TouchableOpacity>
             </View>
@@ -1519,9 +1760,11 @@ export default function ReelsScreen() {
               <Text style={{ fontWeight: "700" }}>{creatorUsername} </Text>
               {caption}
             </Text>
-            <Text style={{ fontSize: 12, color: "#8E8E93", marginTop: 6 }}>
-              View all {commentsCount} comments
-            </Text>
+            <TouchableOpacity onPress={() => handleCommentsPress(item)}>
+              <Text style={{ fontSize: 12, color: "#8E8E93", marginTop: 6 }}>
+                View all {commentsCount} comments
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       );
@@ -1552,6 +1795,21 @@ export default function ReelsScreen() {
             setPreviewSheetVisible(true);
           }}
         >
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F5F5F7" }}>
+            <TouchableOpacity 
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              onPress={() => router.push(`/profile/${item.creator?.id || "aria.sterling"}`)}
+            >
+              <Image source={{ uri: creatorAvatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+              <View>
+                <Text style={{ fontWeight: "700", fontSize: 14, color: "#111111" }}>{creatorName}</Text>
+                <Text style={{ fontSize: 11, color: "#8E8E93" }}>@{creatorUsername} • Brand Shop</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleThreeDotsPress(item); }}>
+              <Lucide name="ellipsis-horizontal" size={20} color="#8E8E93" />
+            </TouchableOpacity>
+          </View>
           <Image source={{ uri: prodImg }} style={{ width: "100%", height: 320 }} contentFit="cover" placeholder="L184i9ofbHof00ayjZay~qj[ayof" transition={300} />
           
           {discount > 0 && (
@@ -1635,6 +1893,8 @@ export default function ReelsScreen() {
           setPreviewFeedItemId={setPreviewFeedItemId}
           setPreviewSheetVisible={setPreviewSheetVisible}
           formatPrice={formatPrice}
+          onPressVideo={() => handleOpenFeedReel(item)}
+          handleThreeDotsPress={handleThreeDotsPress}
         />
       );
     }
@@ -2059,6 +2319,7 @@ export default function ReelsScreen() {
             ) : (
               <View style={{ flex: 1, position: "relative" }}>
                 <FlatList
+                  ref={reelsFlatListRef}
                   data={displayStories}
                   renderItem={renderReelItem}
                   keyExtractor={(item) => item.id}
@@ -2070,6 +2331,7 @@ export default function ReelsScreen() {
                   viewabilityConfig={{ itemVisiblePercentThreshold: 75 }}
                   onEndReached={loadMoreStories}
                   onEndReachedThreshold={0.5}
+                  getItemLayout={getReelItemLayout}
                 />
 
                 {/* Floating top-left camera button to record a Reel */}
@@ -2099,6 +2361,7 @@ export default function ReelsScreen() {
                 onEndReachedThreshold={0.5}
                 ListFooterComponent={renderFeedFooter}
                 contentContainerStyle={{ paddingBottom: bottomBarHeight + 40 }}
+                getItemLayout={getItemLayout}
               />
             )
           )}
@@ -3091,6 +3354,8 @@ export default function ReelsScreen() {
                     placeholder="Search"
                     placeholderTextColor="rgba(255,255,255,0.3)"
                     keyboardAppearance="dark"
+                    value={shareSearch}
+                    onChangeText={setShareSearch}
                   />
                 </View>
                 <TouchableOpacity style={styles.shareAddFriendBtn} onPress={() => { triggerHaptic("light"); alert("Syncing your contact nodes..."); }}>
@@ -3100,47 +3365,53 @@ export default function ReelsScreen() {
 
               {/* Direct Message Contacts Grid */}
               <View style={styles.shareContactsContainer}>
-                <View style={styles.shareContactsRow}>
-                  {[
-                    { id: "c1", name: "Kiran Soni", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150" },
-                    { id: "c2", name: "S U R A J", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150" },
-                    { id: "c3", name: "Dr. Rashneet ✨", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150" },
-                  ].map((contact) => (
-                    <TouchableOpacity 
-                      key={contact.id} 
-                      style={styles.shareContactCard} 
-                      onPress={() => {
-                        triggerHaptic("success");
-                        setShowShareSheet(false);
-                        alert(`Direct message sent successfully to ${contact.name}!`);
-                      }}
-                    >
-                      <Image source={{ uri: contact.avatar }} style={styles.shareContactAvatar} />
-                      <Text style={styles.shareContactName} numberOfLines={1}>{contact.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {(() => {
+                  const allShareContacts = [
+                    { id: "c1", name: "Kiran Soni", username: "kiran_soni", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150" },
+                    { id: "c2", name: "S U R A J", username: "suraj_official", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150" },
+                    { id: "c3", name: "Dr. Rashneet ✨", username: "dr_rashneet", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150" },
+                    { id: "c4", name: "Rhythm Bhatia", username: "rhythm_bhatia", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150" },
+                    { id: "c5", name: "the.priyas...", username: "priya_luxury", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150" },
+                    { id: "c6", name: "Mandy", username: "mandy_c", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=150" },
+                  ];
 
-                <View style={styles.shareContactsRow}>
-                  {[
-                    { id: "c4", name: "Rhythm Bhatia", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150" },
-                    { id: "c5", name: "the.priyas...", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150" },
-                    { id: "c6", name: "Mandy", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=150" },
-                  ].map((contact) => (
-                    <TouchableOpacity 
-                      key={contact.id} 
-                      style={styles.shareContactCard} 
-                      onPress={() => {
-                        triggerHaptic("success");
-                        setShowShareSheet(false);
-                        alert(`Direct message sent successfully to ${contact.name}!`);
-                      }}
-                    >
-                      <Image source={{ uri: contact.avatar }} style={styles.shareContactAvatar} />
-                      <Text style={styles.shareContactName} numberOfLines={1}>{contact.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                  const filtered = allShareContacts.filter(
+                    c => c.name.toLowerCase().includes(shareSearch.toLowerCase()) ||
+                         c.username.toLowerCase().includes(shareSearch.toLowerCase())
+                  );
+
+                  const chunked = [];
+                  for (let i = 0; i < filtered.length; i += 3) {
+                    chunked.push(filtered.slice(i, i + 3));
+                  }
+
+                  if (chunked.length === 0) {
+                    return (
+                      <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                        <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>No results found</Text>
+                      </View>
+                    );
+                  }
+
+                  return chunked.map((row, rowIndex) => (
+                    <View key={`row-${rowIndex}`} style={styles.shareContactsRow}>
+                      {row.map((contact) => (
+                        <TouchableOpacity 
+                          key={contact.id} 
+                          style={styles.shareContactCard} 
+                          onPress={() => {
+                            triggerHaptic("success");
+                            setShowShareSheet(false);
+                            alert(`Direct message sent successfully to ${contact.name}!`);
+                          }}
+                        >
+                          <Image source={{ uri: contact.avatar }} style={styles.shareContactAvatar} />
+                          <Text style={styles.shareContactName} numberOfLines={1}>{contact.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ));
+                })()}
               </View>
 
               <View style={styles.shareHorizontalDivider} />
@@ -3433,70 +3704,332 @@ export default function ReelsScreen() {
                 contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }}
               >
                 {/* Author original post caption as the pinned first comment */}
-                <View style={styles.commentRow}>
-                  <TouchableOpacity 
-                    onPress={() => {
-                      const authorName = commentsTargetPost.profile?.name || commentsTargetPost.user?.name || currentMaisonName;
-                      navigateToUserProfile(authorName);
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.commentAvatar}>
-                      <Text style={styles.commentAvatarText}>
-                        {(commentsTargetPost.profile?.name || commentsTargetPost.user?.name || "A")[0]?.toUpperCase()}
-                      </Text>
+                {(() => {
+                  const authorUsername = (commentsTargetPost.profile?.name || commentsTargetPost.user?.name || currentMaisonName).toLowerCase().replace(/\s+/g, "");
+                  const authorCommentId = `${commentsTargetPost.id}_author`;
+                  const isAuthorLiked = likedComments[authorCommentId] || false;
+                  const authorLikeCount = commentLikeCounts[authorCommentId] || 0;
+
+                  return (
+                    <View style={styles.commentRow}>
+                      <TouchableOpacity 
+                        onPress={() => {
+                          const authorName = commentsTargetPost.profile?.name || commentsTargetPost.user?.name || currentMaisonName;
+                          navigateToUserProfile(authorName);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <View style={styles.commentAvatar}>
+                          <Text style={styles.commentAvatarText}>
+                            {(commentsTargetPost.profile?.name || commentsTargetPost.user?.name || "A")[0]?.toUpperCase()}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      <View style={{ flex: 1 }}>
+                        <TouchableOpacity 
+                          onPress={() => {
+                            const authorName = commentsTargetPost.profile?.name || commentsTargetPost.user?.name || currentMaisonName;
+                            navigateToUserProfile(authorName);
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.commentUsername}>
+                            {authorUsername} <Text style={styles.commentBadge}>Author</Text>
+                          </Text>
+                        </TouchableOpacity>
+                        <Text style={styles.commentTextContent}>
+                          {commentsTargetPost.caption || "Atelier Masterpiece Collection."}
+                        </Text>
+                        
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginTop: 4 }}>
+                          <Text style={styles.commentTime}>Pinned • 1d</Text>
+                          {authorLikeCount > 0 && (
+                            <Text style={[styles.commentTime, { fontWeight: "600" }]}>
+                              {authorLikeCount} {authorLikeCount === 1 ? "like" : "likes"}
+                            </Text>
+                          )}
+                          <TouchableOpacity onPress={() => {
+                            triggerHaptic("medium");
+                            setLikedComments(prev => ({ ...prev, [authorCommentId]: !isAuthorLiked }));
+                            setCommentLikeCounts(prev => ({
+                              ...prev,
+                              [authorCommentId]: (prev[authorCommentId] || 0) + (isAuthorLiked ? -1 : 1)
+                            }));
+                          }}>
+                            <Text style={[styles.commentTime, { fontWeight: "700", color: isAuthorLiked ? "#FF3B30" : "rgba(255,255,255,0.6)" }]}>
+                              {isAuthorLiked ? "Liked" : "Like"}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => {
+                            triggerHaptic("light");
+                            setReplyingTo({ commentId: "author", username: authorUsername });
+                            setNewCommentText(`@${authorUsername} `);
+                            if (commentInputRef.current) {
+                              commentInputRef.current.focus();
+                            }
+                          }}>
+                            <Text style={[styles.commentTime, { fontWeight: "700", color: "rgba(255,255,255,0.6)" }]}>Reply</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => {
+                            triggerHaptic("light");
+                            Share.share({
+                              message: `Caption from @${authorUsername}: "${commentsTargetPost.caption || "Atelier Masterpiece Collection."}" on AURA.`,
+                            });
+                          }}>
+                            <Text style={[styles.commentTime, { fontWeight: "700", color: "rgba(255,255,255,0.6)" }]}>Share</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {/* Comment Heart Toggle */}
+                      <TouchableOpacity onPress={() => {
+                        triggerHaptic("medium");
+                        setLikedComments(prev => ({ ...prev, [authorCommentId]: !isAuthorLiked }));
+                        setCommentLikeCounts(prev => ({
+                          ...prev,
+                          [authorCommentId]: (prev[authorCommentId] || 0) + (isAuthorLiked ? -1 : 1)
+                        }));
+                      }}>
+                        <Lucide 
+                          name={isAuthorLiked ? "heart" : "heart-outline"} 
+                          size={15} 
+                          color={isAuthorLiked ? "#FF3B30" : "rgba(255,255,255,0.4)"} 
+                        />
+                      </TouchableOpacity>
                     </View>
-                  </TouchableOpacity>
-                  <View style={{ flex: 1 }}>
-                    <TouchableOpacity 
-                      onPress={() => {
-                        const authorName = commentsTargetPost.profile?.name || commentsTargetPost.user?.name || currentMaisonName;
-                        navigateToUserProfile(authorName);
-                      }}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={styles.commentUsername}>
-                        {(commentsTargetPost.profile?.name || commentsTargetPost.user?.name || currentMaisonName).toLowerCase().replace(/\s+/g, "")} <Text style={styles.commentBadge}>Author</Text>
-                      </Text>
-                    </TouchableOpacity>
-                    <Text style={styles.commentTextContent}>
-                      {commentsTargetPost.caption || "Atelier Masterpiece Collection."}
-                    </Text>
-                    <Text style={styles.commentTime}>Pinned • 1d</Text>
-                  </View>
-                </View>
+                  );
+                })()}
                 
                 <View style={styles.commentsSeparator} />
 
                 {/* Additional user comments */}
-                {(postComments[commentsTargetPost.id] || []).map((comm: any) => (
-                  <View key={comm.id} style={styles.commentRow}>
-                    <TouchableOpacity 
-                      onPress={() => navigateToUserProfile(comm.username)}
-                      activeOpacity={0.85}
-                    >
-                      <View style={[styles.commentAvatar, { backgroundColor: "#fb923c" }]}>
-                        <Text style={styles.commentAvatarText}>
-                          {comm.username[0]?.toUpperCase()}
-                        </Text>
+                {(() => {
+                  const allComments = postComments[commentsTargetPost.id] || [];
+                  const parentComments = allComments.filter((c: any) => !c.parentId);
+                  const replies = allComments.filter((c: any) => c.parentId);
+
+                  return parentComments.map((comm: any) => {
+                    const commentId = `${commentsTargetPost.id}_${comm.id}`;
+                    const isCommentLiked = likedComments[commentId] || false;
+                    const likeCount = commentLikeCounts[commentId] || 0;
+                    const commentReplies = replies.filter((r: any) => r.parentId === comm.id);
+                    const isExpanded = expandedComments[commentId] || false;
+
+                    return (
+                      <View key={comm.id} style={{ marginBottom: 12 }}>
+                        {/* Parent Comment */}
+                        <View style={styles.commentRow}>
+                          <TouchableOpacity 
+                            onPress={() => navigateToUserProfile(comm.username)}
+                            activeOpacity={0.85}
+                          >
+                            <View style={[styles.commentAvatar, { backgroundColor: "#fb923c" }]}>
+                              <Text style={styles.commentAvatarText}>
+                                {comm.username[0]?.toUpperCase()}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                          <View style={{ flex: 1 }}>
+                            <TouchableOpacity 
+                              onPress={() => navigateToUserProfile(comm.username)}
+                              activeOpacity={0.85}
+                            >
+                              <Text style={styles.commentUsername}>{comm.username}</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.commentTextContent}>{comm.text}</Text>
+                            
+                            {/* Inline Actions Row (Like, Reply, Share) */}
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginTop: 4 }}>
+                              <Text style={styles.commentTime}>{comm.time || "now"}</Text>
+                              {likeCount > 0 && (
+                                <Text style={[styles.commentTime, { fontWeight: "600" }]}>
+                                  {likeCount} {likeCount === 1 ? "like" : "likes"}
+                                </Text>
+                              )}
+                              <TouchableOpacity onPress={() => {
+                                triggerHaptic("medium");
+                                setLikedComments(prev => ({ ...prev, [commentId]: !isCommentLiked }));
+                                setCommentLikeCounts(prev => ({
+                                  ...prev,
+                                  [commentId]: (prev[commentId] || 0) + (isCommentLiked ? -1 : 1)
+                                }));
+                              }}>
+                                <Text style={[styles.commentTime, { fontWeight: "700", color: isCommentLiked ? "#FF3B30" : "rgba(255,255,255,0.6)" }]}>
+                                  {isCommentLiked ? "Liked" : "Like"}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => {
+                                triggerHaptic("light");
+                                setReplyingTo({ commentId: comm.id, username: comm.username });
+                                setNewCommentText(`@${comm.username} `);
+                                if (commentInputRef.current) {
+                                  commentInputRef.current.focus();
+                                }
+                              }}>
+                                <Text style={[styles.commentTime, { fontWeight: "700", color: "rgba(255,255,255,0.6)" }]}>Reply</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => {
+                                triggerHaptic("light");
+                                Share.share({
+                                  message: `Comment from @${comm.username}: "${comm.text}" on AURA.`,
+                                });
+                              }}>
+                                <Text style={[styles.commentTime, { fontWeight: "700", color: "rgba(255,255,255,0.6)" }]}>Share</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {/* Comment Heart Toggle */}
+                          <TouchableOpacity onPress={() => {
+                            triggerHaptic("medium");
+                            setLikedComments(prev => ({ ...prev, [commentId]: !isCommentLiked }));
+                            setCommentLikeCounts(prev => ({
+                              ...prev,
+                              [commentId]: (prev[commentId] || 0) + (isCommentLiked ? -1 : 1)
+                            }));
+                          }}>
+                            <Lucide 
+                              name={isCommentLiked ? "heart" : "heart-outline"} 
+                              size={15} 
+                              color={isCommentLiked ? "#FF3B30" : "rgba(255,255,255,0.4)"} 
+                            />
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* Accordion / Thread Line Indicator for Replies */}
+                        {commentReplies.length > 0 && (
+                          <View style={{ marginLeft: 44, marginTop: 4 }}>
+                            <TouchableOpacity 
+                              style={{ flexDirection: "row", alignItems: "center", marginBottom: 6, paddingVertical: 4 }}
+                              onPress={() => {
+                                triggerHaptic("light");
+                                setExpandedComments(prev => ({
+                                  ...prev,
+                                  [commentId]: !isExpanded
+                                }));
+                              }}
+                            >
+                              <View style={{ width: 24, height: 1, backgroundColor: "rgba(255,255,255,0.15)", marginRight: 8 }} />
+                              <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 11, fontWeight: "600" }}>
+                                {isExpanded ? "Hide replies" : `View replies (${commentReplies.length})`}
+                              </Text>
+                            </TouchableOpacity>
+
+                            {isExpanded && commentReplies.map((reply: any) => {
+                              const replyCommentId = `${commentsTargetPost.id}_${reply.id}`;
+                              const isReplyLiked = likedComments[replyCommentId] || false;
+                              const replyLikeCount = commentLikeCounts[replyCommentId] || 0;
+
+                              return (
+                                <View key={reply.id} style={[styles.commentRow, { paddingLeft: 8, marginTop: 4, marginBottom: 8 }]}>
+                                  <TouchableOpacity 
+                                    onPress={() => navigateToUserProfile(reply.username)}
+                                    activeOpacity={0.85}
+                                  >
+                                    <View style={[styles.commentAvatar, { width: 24, height: 24, borderRadius: 12, backgroundColor: "#3b82f6" }]}>
+                                      <Text style={[styles.commentAvatarText, { fontSize: 10 }]}>
+                                        {reply.username[0]?.toUpperCase()}
+                                      </Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                  <View style={{ flex: 1 }}>
+                                    <TouchableOpacity 
+                                      onPress={() => navigateToUserProfile(reply.username)}
+                                      activeOpacity={0.85}
+                                    >
+                                      <Text style={styles.commentUsername}>{reply.username}</Text>
+                                    </TouchableOpacity>
+                                    <Text style={styles.commentTextContent}>{reply.text}</Text>
+                                    
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginTop: 4 }}>
+                                      <Text style={styles.commentTime}>{reply.time || "now"}</Text>
+                                      {replyLikeCount > 0 && (
+                                        <Text style={[styles.commentTime, { fontWeight: "600" }]}>
+                                          {replyLikeCount} {replyLikeCount === 1 ? "like" : "likes"}
+                                        </Text>
+                                      )}
+                                      <TouchableOpacity onPress={() => {
+                                        triggerHaptic("medium");
+                                        setLikedComments(prev => ({ ...prev, [replyCommentId]: !isReplyLiked }));
+                                        setCommentLikeCounts(prev => ({
+                                          ...prev,
+                                          [replyCommentId]: (prev[replyCommentId] || 0) + (isReplyLiked ? -1 : 1)
+                                        }));
+                                      }}>
+                                        <Text style={[styles.commentTime, { fontWeight: "700", color: isReplyLiked ? "#FF3B30" : "rgba(255,255,255,0.6)" }]}>
+                                          {isReplyLiked ? "Liked" : "Like"}
+                                        </Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity onPress={() => {
+                                        triggerHaptic("light");
+                                        setReplyingTo({ commentId: comm.id, username: reply.username });
+                                        setNewCommentText(`@${reply.username} `);
+                                        if (commentInputRef.current) {
+                                          commentInputRef.current.focus();
+                                        }
+                                      }}>
+                                        <Text style={[styles.commentTime, { fontWeight: "700", color: "rgba(255,255,255,0.6)" }]}>Reply</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity onPress={() => {
+                                        triggerHaptic("light");
+                                        Share.share({
+                                          message: `Comment from @${reply.username}: "${reply.text}" on AURA.`,
+                                        });
+                                      }}>
+                                        <Text style={[styles.commentTime, { fontWeight: "700", color: "rgba(255,255,255,0.6)" }]}>Share</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  </View>
+
+                                  <TouchableOpacity onPress={() => {
+                                    triggerHaptic("medium");
+                                    setLikedComments(prev => ({ ...prev, [replyCommentId]: !isReplyLiked }));
+                                    setCommentLikeCounts(prev => ({
+                                      ...prev,
+                                      [replyCommentId]: (prev[replyCommentId] || 0) + (isReplyLiked ? -1 : 1)
+                                    }));
+                                  }}>
+                                    <Lucide 
+                                      name={isReplyLiked ? "heart" : "heart-outline"} 
+                                      size={13} 
+                                      color={isReplyLiked ? "#FF3B30" : "rgba(255,255,255,0.4)"} 
+                                    />
+                                  </TouchableOpacity>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        )}
                       </View>
-                    </TouchableOpacity>
-                    <View style={{ flex: 1 }}>
-                      <TouchableOpacity 
-                        onPress={() => navigateToUserProfile(comm.username)}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={styles.commentUsername}>{comm.username}</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.commentTextContent}>{comm.text}</Text>
-                      <Text style={styles.commentTime}>{comm.time || "now"}</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => triggerHaptic("light")}>
-                      <Lucide name="heart-outline" size={17} color="rgba(255,255,255,0.4)" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
+                    );
+                  });
+                })()}
               </ScrollView>
+
+              {/* Replying target header indicator */}
+              {replyingTo && (
+                <View style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  backgroundColor: "rgba(255,255,255,0.03)",
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderTopWidth: 1,
+                  borderTopColor: "rgba(255,255,255,0.04)"
+                }}>
+                  <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 12 }}>
+                    Replying to <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>@{replyingTo.username}</Text>
+                  </Text>
+                  <TouchableOpacity onPress={() => {
+                    triggerHaptic("light");
+                    setReplyingTo(null);
+                    setNewCommentText("");
+                  }}>
+                    <Lucide name="close-circle" size={16} color="rgba(255,255,255,0.5)" />
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Bottom text input row */}
               <View style={[styles.commentsInputRow, { paddingBottom: insets.bottom + 8 }]}>
@@ -3505,6 +4038,7 @@ export default function ReelsScreen() {
                 </View>
                 
                 <TextInput
+                  ref={commentInputRef}
                   style={styles.commentTextInput}
                   placeholder="Add a comment..."
                   placeholderTextColor="rgba(255,255,255,0.4)"
@@ -3517,13 +4051,22 @@ export default function ReelsScreen() {
                       id: `c_${Date.now()}`,
                       username: "alok_curator",
                       text: newCommentText.trim(),
-                      time: "now"
+                      time: "now",
+                      parentId: replyingTo ? replyingTo.commentId : undefined
                     };
                     setPostComments(prev => ({
                       ...prev,
                       [commentsTargetPost.id]: [...(prev[commentsTargetPost.id] || []), newComm]
                     }));
+                    if (replyingTo) {
+                      const parentId = `${commentsTargetPost.id}_${replyingTo.commentId}`;
+                      setExpandedComments(prev => ({ ...prev, [parentId]: true }));
+                    }
                     setNewCommentText("");
+                    setReplyingTo(null);
+                    setTimeout(() => {
+                      commentInputRef.current?.focus();
+                    }, 50);
                   }}
                 />
                 
@@ -3535,13 +4078,22 @@ export default function ReelsScreen() {
                       id: `c_${Date.now()}`,
                       username: "alok_curator",
                       text: newCommentText.trim(),
-                      time: "now"
+                      time: "now",
+                      parentId: replyingTo ? replyingTo.commentId : undefined
                     };
                     setPostComments(prev => ({
                       ...prev,
                       [commentsTargetPost.id]: [...(prev[commentsTargetPost.id] || []), newComm]
                     }));
+                    if (replyingTo) {
+                      const parentId = `${commentsTargetPost.id}_${replyingTo.commentId}`;
+                      setExpandedComments(prev => ({ ...prev, [parentId]: true }));
+                    }
                     setNewCommentText("");
+                    setReplyingTo(null);
+                    setTimeout(() => {
+                      commentInputRef.current?.focus();
+                    }, 50);
                   }}
                   style={{ paddingLeft: 8 }}
                 >
@@ -4392,6 +4944,34 @@ export default function ReelsScreen() {
         </View>
       </Modal>
 
+      {/* ═══ Sponsored Ad Modals ═══ */}
+      <InAppBrowserModal
+        visible={browserModalVisible}
+        url={browserUrl}
+        onClose={() => setBrowserModalVisible(false)}
+      />
+      <ExploreProductsSheet
+        visible={productsSheetVisible}
+        products={productsSheetItems}
+        onClose={() => setProductsSheetVisible(false)}
+        onProductPress={(productId) => {
+          setProductsSheetVisible(false);
+          router.push(`/product/${productId}` as any);
+        }}
+      />
+      <LeadGenSheet
+        visible={leadGenVisible}
+        brandName={leadGenMeta.brandName || "Brand"}
+        brandLogo={leadGenMeta.brandLogo}
+        formTitle={leadGenMeta.formTitle || "Get in Touch"}
+        formDescription={leadGenMeta.formDescription || "Fill in your details and we'll reach out."}
+        customQuestion={leadGenMeta.customQuestion}
+        onClose={() => setLeadGenVisible(false)}
+        onSubmit={(data) => {
+          setLeadGenVisible(false);
+          Alert.alert("Submitted!", "Your information has been sent to the brand.");
+        }}
+      />
     </View>
   );
 }
