@@ -13,6 +13,7 @@ export interface ProfilePost {
 
 export interface NetworkProfile {
   id: string;
+  userId?: string;
   username: string;
   name: string;
   avatar: string | null;
@@ -110,8 +111,16 @@ export async function fetchProfileNetwork(
   const data = await res.json();
   if (data.success && Array.isArray(data.profiles)) {
     return data.profiles.map(
-      (p: { id: string; username: string; name: string; logo?: string | null; isFollowing?: boolean }) => ({
+      (p: {
+        id: string;
+        userId?: string;
+        username: string;
+        name: string;
+        logo?: string | null;
+        isFollowing?: boolean;
+      }) => ({
         id: p.id,
+        userId: p.userId,
         username: p.username,
         name: p.name,
         avatar: p.logo || null,
@@ -134,8 +143,16 @@ export async function fetchSuggestedProfiles(
   const data = await res.json();
   if (data.success && Array.isArray(data.profiles)) {
     return data.profiles.map(
-      (p: { id: string; username: string; name: string; logo?: string | null; isFollowing?: boolean }) => ({
+      (p: {
+        id: string;
+        userId?: string;
+        username: string;
+        name: string;
+        logo?: string | null;
+        isFollowing?: boolean;
+      }) => ({
         id: p.id,
+        userId: p.userId,
         username: p.username,
         name: p.name,
         avatar: p.logo || null,
@@ -170,4 +187,111 @@ export async function deleteProfilePost(
   });
   const data = await res.json();
   return data;
+}
+
+export interface PostComment {
+  id: string;
+  username: string;
+  text: string;
+  time: string;
+  userId?: string;
+}
+
+export async function fetchPostComments(postId: string): Promise<PostComment[]> {
+  const res = await fetch(`${API_HOST}/api/mobile/profile/posts/comments?postId=${encodeURIComponent(postId)}`);
+  const data = await res.json();
+  if (data.success && Array.isArray(data.comments)) return data.comments;
+  return [];
+}
+
+export async function addPostComment(
+  postId: string,
+  userId: string,
+  content: string
+): Promise<{ success: boolean; comment?: PostComment; error?: string }> {
+  const res = await fetch(`${API_HOST}/api/mobile/profile/posts/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ postId, userId, content }),
+  });
+  return res.json();
+}
+
+export async function fetchPostEngagement(
+  postId: string,
+  userId?: string
+): Promise<{
+  likeCount: number;
+  commentCount: number;
+  shareCount: number;
+  liked: boolean;
+  saved: boolean;
+}> {
+  const params = new URLSearchParams({ postId });
+  if (userId) params.set("userId", userId);
+  const res = await fetch(`${API_HOST}/api/mobile/profile/posts/engagement?${params}`);
+  const data = await res.json();
+  if (data.success) {
+    return {
+      likeCount: data.likeCount ?? 0,
+      commentCount: data.commentCount ?? 0,
+      shareCount: data.shareCount ?? 0,
+      liked: !!data.liked,
+      saved: !!data.saved,
+    };
+  }
+  return { likeCount: 0, commentCount: 0, shareCount: 0, liked: false, saved: false };
+}
+
+export async function sharePostToUser(opts: {
+  senderId: string;
+  receiverUserId: string;
+  postId: string;
+  postUrl?: string;
+  caption?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch(`${API_HOST}/api/mobile/chat/share-post`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(opts),
+  });
+  return res.json();
+}
+
+export interface ProfileHighlight {
+  id: string;
+  title: string;
+  avatar: string;
+  storyIds?: string[];
+}
+
+export async function fetchProfileHighlights(profileId: string): Promise<ProfileHighlight[]> {
+  const res = await fetch(
+    `${API_HOST}/api/mobile/profile/highlights?profileId=${encodeURIComponent(profileId)}`
+  );
+  const data = await res.json();
+  if (data.success && Array.isArray(data.highlights)) return data.highlights;
+  return [];
+}
+
+export async function createProfileHighlight(opts: {
+  profileId: string;
+  userId: string;
+  title: string;
+  coverUrl?: string;
+  storyIds?: string[];
+}): Promise<{ success: boolean; highlight?: ProfileHighlight; error?: string }> {
+  const res = await fetch(`${API_HOST}/api/mobile/profile/highlights`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(opts),
+  });
+  return res.json();
+}
+
+export async function fetchProductById(id: string): Promise<any | null> {
+  const res = await fetch(`${API_HOST}/api/mobile/products?id=${encodeURIComponent(id)}`);
+  const data = await res.json();
+  if (data.success && data.product) return data.product;
+  return null;
 }

@@ -200,30 +200,52 @@ export default function ProductDetailScreen() {
   }, [params.payment]);
 
   const [paymentMethod, setPaymentMethod] = useState<"RAZORPAY" | "COD">("RAZORPAY");
+  const [fetchedProduct, setFetchedProduct] = useState<any | null>(null);
+  const [loadingProduct, setLoadingProduct] = useState(false);
 
-  // Hydrate product from global ledger or fallback to mock matching web exactly
-  const product = products.find(p => p.id === id) || {
-    id: id || "kinetic_shell",
-    title: "Aura Kinetic Shell 01",
-    price: 34500,
-    vibe: "Performance Shell",
-    maison: { name: "AURA LUXURY", id: "aura_luxury" },
-    images: [
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuDGxqLsakbkMrGAN_Wq_OmO9kHwY6-jlmK7n8tOQZuUloAXV-92yMJJKce9DoR6Sa0eqE8FmUauTYoq1JChil2D3qVwPDH-DlE8ptu57rc57AYSP_obsj13wwVFc9zLJzLfPu9RfMXNIkDiRElC7OOMYcoCRIGF_zfn6oTvA5sc9OUObynMdFuJBpC2gFguELj5h89RWtRRg22tngXHx_TEy-0gFzS8qMLSmn-RI-puzVmhXx9BSWq9D_qNpF_fk6wg8WTVWeJq4nQ",
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuB6QTYE3VOyWcbxlUM4_XWG2yF5mFsIGewdQP0CSpkeFq1M8C7Xg-wdU_kdHVXwJBrot_cVR8NZ52hjmzMT2Bp3HwS2S57y72MrfWhWv-6H-K6yTsd_tvpTgRG1Q1AR5E24CP8Ti97kMQjGnstOq6rQTCzNPVtRE_3VGo86pNx6mzyBJuc4JdYsEkcq4aFIfZ9HL-DsCJVJo6A2hyteDHDghX5pu_z0_sfgu5ax4I9e3E0CQaIxLN4rDMIpG_ibihHcaAogb96hces"
-    ],
-    arMetadata: {
-      "Category": "Performance Shell",
-      "Subcategory": "Apparel",
-      "Material": "3-layer Gore-Tex / Ultrasonic Welding",
-      "Size": "Custom Fit (Aura Fit™ Available)",
-      "SKU": "AR-KINETIC-01"
-    }
-  };
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingProduct(true);
+      try {
+        const { fetchProductById } = await import("@/lib/profileApi");
+        const remote = await fetchProductById(String(id));
+        if (!cancelled && remote) setFetchedProduct(remote);
+      } catch {
+        /* fallback to store cache */
+      } finally {
+        if (!cancelled) setLoadingProduct(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
-  const images = product.images && product.images.length > 0 ? product.images : [
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuDGxqLsakbkMrGAN_Wq_OmO9kHwY6-jlmK7n8tOQZuUloAXV-92yMJJKce9DoR6Sa0eqE8FmUauTYoq1JChil2D3qVwPDH-DlE8ptu57rc57AYSP_obsj13wwVFc9zLJzLfPu9RfMXNIkDiRElC7OOMYcoCRIGF_zfn6oTvA5sc9OUObynMdFuJBpC2gFguELj5h89RWtRRg22tngXHx_TEy-0gFzS8qMLSmn-RI-puzVmhXx9BSWq9D_qNpF_fk6wg8WTVWeJq4nQ"
-  ];
+  const cachedProduct = products.find((p) => p.id === id);
+  const product = fetchedProduct || cachedProduct;
+
+  if (loadingProduct && !product) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (!product) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 }}>
+        <Text style={{ color: colors.text, fontSize: 18, fontWeight: "600" }}>Product not found</Text>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16 }}>
+          <Text style={{ color: colors.accent }}>Go back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const images = product.images && product.images.length > 0 ? product.images : [];
 
   const calculateDiscount = () => {
     if (!appliedCoupon) return 0;
@@ -464,8 +486,13 @@ export default function ProductDetailScreen() {
 
   const specList = Object.entries(product.arMetadata || {}).map(([key, val]) => ({
     label: key,
-    value: typeof val === "string" ? val : JSON.stringify(val)
+    value: typeof val === "string" ? val : JSON.stringify(val),
   }));
+
+  const sizeOptions =
+    Array.isArray(product.variants) && product.variants.length > 0
+      ? product.variants.map((v: { title: string }) => v.title)
+      : ["XS", "S", "M", "L", "XL"];
 
   const maisonName = product.maison?.name || "AURA LUXURY";
   const maisonId = product.maison?.id || "aura_luxury";
@@ -650,8 +677,8 @@ export default function ProductDetailScreen() {
                 </TouchableOpacity>
               </View>
               <View style={styles.sizePillsRow}>
-                {["XS", "S", "M", "L", "XL"].map((sz) => {
-                  const isXL = sz === "XL"; // XL is disabled
+                {sizeOptions.map((sz: string) => {
+                  const isXL = sz === "XL" && sizeOptions.length === 5;
                   const isSelected = selectedSize === sz;
                   return (
                     <TouchableOpacity

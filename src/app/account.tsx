@@ -46,6 +46,8 @@ import {
   fetchProfileNetwork,
   fetchProfilePosts,
   fetchProfileProducts,
+  fetchProfileHighlights,
+  createProfileHighlight,
   toggleFollowProfile,
   type NetworkProfile,
   type ProfileCatalogProduct,
@@ -122,6 +124,7 @@ export default function AccountScreen() {
   const [postsCount, setPostsCount] = useState<number>(activeProfile?.postsCount || 0);
   const [followersCount, setFollowersCount] = useState<number>(activeProfile?.followersCount || 0);
   const [followingCount, setFollowingCount] = useState<number>(activeProfile?.followingCount || 0);
+  const [auraScore, setAuraScore] = useState<number>(activeProfile?.auraScore || 0);
 
   // Edit profile popup form values
   const [editUsername, setEditUsername] = useState<string>(activeProfile?.username || "");
@@ -148,6 +151,7 @@ export default function AccountScreen() {
     setPostsCount(p.postsCount ?? 0);
     setFollowersCount(p.followersCount ?? 0);
     setFollowingCount(p.followingCount ?? 0);
+    setAuraScore(p.auraScore ?? p.auragramScore ?? 0);
     setLogo(p.logo || null);
     setEditLogo(p.logo || null);
     setEditUsername(p.username || "");
@@ -420,10 +424,11 @@ export default function AccountScreen() {
       loadProfileFromServer();
       loadProfilePosts();
       loadProfileProducts();
+      loadProfileHighlights();
       if (currentUser?.id) {
         loadUserStories(currentUser.id);
       }
-    }, [loadProfileFromServer, loadProfilePosts, loadProfileProducts, loadUserStories, currentUser?.id, activeProfile?.id])
+    }, [loadProfileFromServer, loadProfilePosts, loadProfileProducts, loadProfileHighlights, loadUserStories, currentUser?.id, activeProfile?.id])
   );
 
   // Keep account avatar in sync with global store (bottom tab uses the same activeProfile.logo)
@@ -1222,21 +1227,42 @@ export default function AccountScreen() {
     }
   };
 
+  const loadProfileHighlights = useCallback(async () => {
+    if (!activeProfile?.id) return;
+    try {
+      const list = await fetchProfileHighlights(activeProfile.id);
+      setHighlights(list);
+    } catch {
+      setHighlights([]);
+    }
+  }, [activeProfile?.id]);
+
   const handleAddHighlight = () => {
+    if (!currentUser?.id || !activeProfile?.id) {
+      Alert.alert("Sign in required", "Sign in to create highlights.");
+      return;
+    }
     triggerHaptic("medium");
     showCustomPrompt(
       "New Highlight",
-      "Enter title for your new AURA highlight folder:",
+      "Enter title for your new highlight folder:",
       "e.g. Milan Curation",
-      (title) => {
+      async (title) => {
         if (!title || !title.trim()) return;
         triggerHaptic("success");
-        const newHighlight = {
-          id: `hl_${Date.now()}`,
+        const storyIds = yourStorySlides.map((s) => s.id).filter(Boolean);
+        const result = await createProfileHighlight({
+          profileId: activeProfile.id,
+          userId: currentUser.id,
           title: title.trim(),
-          avatar: yourStorySlides[0]?.url || displayLogo || "",
-        };
-        setHighlights(prev => [...prev, newHighlight]);
+          coverUrl: yourStorySlides[0]?.url || displayLogo || undefined,
+          storyIds,
+        });
+        if (result.success && result.highlight) {
+          setHighlights((prev) => [result.highlight!, ...prev]);
+        } else {
+          Alert.alert("Could not create highlight", result.error || "Try again.");
+        }
       }
     );
   };
@@ -1935,8 +1961,12 @@ export default function AccountScreen() {
                     <Text style={styles.auraBadgeText}>AURA</Text>
                   </View>
                   <View>
-                    <Text style={styles.creatorBannerTitle}>Creator Rank • Global #42</Text>
-                    <Text style={styles.creatorBannerScore}>Aura Score: 9.8/10 ✦ High Influence</Text>
+                    <Text style={styles.creatorBannerTitle}>
+                      Creator Rank • {formatCompactNumber(followersCount)} followers
+                    </Text>
+                    <Text style={styles.creatorBannerScore}>
+                      Aura Score: {(auraScore || 0).toFixed(1)}/10
+                    </Text>
                   </View>
                 </View>
                 <TouchableOpacity 

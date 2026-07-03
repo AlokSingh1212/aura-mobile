@@ -2,7 +2,13 @@ import { useCallback, useState } from "react";
 import { Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { useStore } from "@/store/useStore";
-import { deleteProfilePost } from "@/lib/profileApi";
+import {
+  addPostComment,
+  deleteProfilePost,
+  fetchPostComments,
+  fetchPostEngagement,
+  type PostComment,
+} from "@/lib/profileApi";
 
 export interface EngagementPostItem {
   id: string;
@@ -35,7 +41,8 @@ export function usePostEngagement(opts?: {
   const [likedPosts, setLikedPosts] = useState<Record<string, boolean>>({});
   const [savedPosts, setSavedPosts] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
-  const [postComments, setPostComments] = useState<Record<string, any[]>>({});
+  const [postComments, setPostComments] = useState<Record<string, PostComment[]>>({});
+  const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({});
 
   const [commentsVisible, setCommentsVisible] = useState(false);
   const [commentsTarget, setCommentsTarget] = useState<EngagementPostItem | null>(null);
@@ -46,6 +53,23 @@ export function usePostEngagement(opts?: {
   const [shareVisible, setShareVisible] = useState(false);
   const [shareTarget, setShareTarget] = useState<EngagementPostItem | null>(null);
   const [shareLink, setShareLink] = useState<string | null>(null);
+
+  const hydratePostEngagement = useCallback(
+    async (postId: string) => {
+      if (!postId) return;
+      try {
+        const stats = await fetchPostEngagement(postId, currentUser?.id);
+        setLikeCounts((prev) => ({ ...prev, [postId]: stats.likeCount }));
+        if (currentUser?.id) {
+          setLikedPosts((prev) => ({ ...prev, [postId]: stats.liked }));
+          setSavedPosts((prev) => ({ ...prev, [postId]: stats.saved }));
+        }
+      } catch {
+        /* non-blocking */
+      }
+    },
+    [currentUser?.id]
+  );
 
   const handleLike = useCallback(
     (id: string) => {
@@ -95,19 +119,22 @@ export function usePostEngagement(opts?: {
   );
 
   const handleComments = useCallback(
-    (item: EngagementPostItem) => {
+    async (item: EngagementPostItem) => {
       triggerHaptic("medium");
       setCommentsTarget(item);
-      if (!postComments[item.id]) {
-        setPostComments((prev) => ({
-          ...prev,
-          [item.id]: [
-            { id: "mock_1", username: "dylan_v", text: "Incredible craftsmanship here.", time: "1h" },
-            { id: "mock_2", username: "sara.k", text: "Absolutely stunning style!", time: "45m" },
-          ],
-        }));
-      }
       setCommentsVisible(true);
+
+      if (postComments[item.id]?.length) return;
+
+      setLoadingComments((prev) => ({ ...prev, [item.id]: true }));
+      try {
+        const comments = await fetchPostComments(item.id);
+        setPostComments((prev) => ({ ...prev, [item.id]: comments }));
+      } catch {
+        setPostComments((prev) => ({ ...prev, [item.id]: [] }));
+      } finally {
+        setLoadingComments((prev) => ({ ...prev, [item.id]: false }));
+      }
     },
     [postComments, triggerHaptic]
   );
@@ -153,30 +180,54 @@ export function usePostEngagement(opts?: {
     [currentUser?.id, opts, triggerHaptic]
   );
 
-  const copyPostLink = useCallback(async (item: EngagementPostItem) => {
-    triggerHaptic("light");
-    const link = `https://aura.app/post/${item.id}`;
-    await Clipboard.setStringAsync(link);
-    Alert.alert("Link copied", link);
-  }, [triggerHaptic]);
+  const copyPostLink = useCallback(
+    async (item: EngagementPostItem) => {
+      triggerHaptic("light");
+      const link = `https://aura.app/post/${item.id}`;
+      await Clipboard.setStringAsync(link);
+      Alert.alert("Link copied", link);
+    },
+    [triggerHaptic]
+  );
 
   const addComment = useCallback(
-    (postId: string, text: string, parentId?: string) => {
-      const username = activeProfile?.username || currentUser?.email?.split("@")[0] || "you";
-      const newComm = {
-        id: `c_${Date.now()}`,
-        username,
+    async (postId: string, text: string) => {
+      if (!text.trim()) return;
+      if (!currentUser?.id) {
+        Alert.alert("Sign in required", "Sign in to comment.");
+        return;
+      }
+
+      const optimistic: PostComment = {
+        id: `tmp_${Date.now()}`,
+        username: activeProfile?.username || currentUser.email?.split("@")[0] || "you",
         text: text.trim(),
         time: "now",
-        parentId,
+        userId: currentUser.id,
       };
       setPostComments((prev) => ({
         ...prev,
-        [postId]: [...(prev[postId] || []), newComm],
+        [postId]: [...(prev[postId] || []), optimistic],
       }));
       triggerHaptic("success");
+
+      const result = await addPostComment(postId, currentUser.id, text.trim());
+      if (result.success && result.comment) {
+        setPostComments((prev) => ({
+          ...prev,
+          [postId]: (prev[postId] || [])
+            .filter((c) => c.id !== optimistic.id)
+            .concat(result.comment!),
+        }));
+      } else {
+        setPostComments((prev) => ({
+          ...prev,
+          [postId]: (prev[postId] || []).filter((c) => c.id !== optimistic.id),
+        }));
+        Alert.alert("Could not post comment", result.error || "Try again.");
+      }
     },
-    [activeProfile?.username, currentUser?.email, triggerHaptic]
+    [activeProfile?.username, currentUser?.email, currentUser?.id, triggerHaptic]
   );
 
   return {
@@ -184,6 +235,7 @@ export function usePostEngagement(opts?: {
     savedPosts,
     likeCounts,
     postComments,
+    loadingComments,
     commentsVisible,
     commentsTarget,
     setCommentsVisible,
@@ -192,9 +244,8 @@ export function usePostEngagement(opts?: {
     setOptionsVisible,
     shareVisible,
     shareTarget,
-    shareLink,
     setShareVisible,
-    isOwnPost: !!opts?.isOwnPost,
+    shareLink,
     handleLike,
     handleSave,
     handleShare,
@@ -203,5 +254,6 @@ export function usePostEngagement(opts?: {
     confirmDeletePost,
     copyPostLink,
     addComment,
+    hydratePostEngagement,
   };
 }

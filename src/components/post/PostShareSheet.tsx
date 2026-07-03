@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -11,21 +11,14 @@ import {
   Alert,
   Linking,
   Share,
+  ActivityIndicator,
 } from "react-native";
 import Lucide from "@expo/vector-icons/Ionicons";
 import * as Clipboard from "expo-clipboard";
 import { API_HOST } from "@/constants/api";
 import { useStore } from "@/store/useStore";
 import type { EngagementPostItem } from "@/hooks/usePostEngagement";
-
-const SHARE_CONTACTS = [
-  { id: "c1", name: "Kiran Soni", username: "kiran_soni", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150" },
-  { id: "c2", name: "S U R A J", username: "suraj_official", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150" },
-  { id: "c3", name: "Dr. Rashneet ✨", username: "dr_rashneet", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150" },
-  { id: "c4", name: "Rhythm Bhatia", username: "rhythm_bhatia", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150" },
-  { id: "c5", name: "the.priyas...", username: "priya_luxury", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150" },
-  { id: "c6", name: "Mandy", username: "mandy_c", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=150" },
-];
+import { fetchProfileNetwork, sharePostToUser, type NetworkProfile } from "@/lib/profileApi";
 
 interface PostShareSheetProps {
   visible: boolean;
@@ -35,24 +28,72 @@ interface PostShareSheetProps {
 }
 
 export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareSheetProps) {
-  const { triggerHaptic, addInstaStorySlide } = useStore();
+  const { triggerHaptic, addInstaStorySlide, currentUser, activeProfile } = useStore();
   const [shareSearch, setShareSearch] = useState("");
+  const [contacts, setContacts] = useState<NetworkProfile[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+  const [sendingTo, setSendingTo] = useState<string | null>(null);
 
-  const postUrl = shareLink || post?.url || `${API_HOST}/reel/${post?.id || "s1"}`;
-  const caption = post?.caption || "Check out this luxury curation!";
+  useEffect(() => {
+    if (!visible || !activeProfile?.id) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingContacts(true);
+      try {
+        const list = await fetchProfileNetwork(activeProfile.id, "following", activeProfile.id);
+        if (!cancelled) setContacts(list.filter((c) => c.userId && c.userId !== currentUser?.id));
+      } catch {
+        if (!cancelled) setContacts([]);
+      } finally {
+        if (!cancelled) setLoadingContacts(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, activeProfile?.id, currentUser?.id]);
+
+  const postUrl = shareLink || `https://aura.app/post/${post?.id || ""}`;
+  const caption = post?.caption || "Check out this post on AURA";
 
   const handleClose = () => {
     setShareSearch("");
     onClose();
   };
 
-  const filtered = SHARE_CONTACTS.filter(
+  const sendToContact = async (contact: NetworkProfile) => {
+    if (!currentUser?.id || !contact.userId || !post?.id) {
+      Alert.alert("Sign in required", "Sign in to send direct messages.");
+      return;
+    }
+    setSendingTo(contact.id);
+    try {
+      const result = await sharePostToUser({
+        senderId: currentUser.id,
+        receiverUserId: contact.userId,
+        postId: post.id,
+        postUrl,
+        caption,
+      });
+      if (result.success) {
+        triggerHaptic("success");
+        handleClose();
+        Alert.alert("Sent", `Shared with ${contact.name}`);
+      } else {
+        Alert.alert("Could not send", result.error || "Try again.");
+      }
+    } finally {
+      setSendingTo(null);
+    }
+  };
+
+  const filtered = contacts.filter(
     (c) =>
       c.name.toLowerCase().includes(shareSearch.toLowerCase()) ||
       c.username.toLowerCase().includes(shareSearch.toLowerCase())
   );
 
-  const chunked: typeof SHARE_CONTACTS[] = [];
+  const chunked: NetworkProfile[][] = [];
   for (let i = 0; i < filtered.length; i += 3) {
     chunked.push(filtered.slice(i, i + 3));
   }
@@ -87,9 +128,13 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
           </View>
 
           <View style={styles.contactsContainer}>
-            {chunked.length === 0 ? (
+            {loadingContacts ? (
+              <ActivityIndicator color="#00f5ff" style={{ paddingVertical: 20 }} />
+            ) : chunked.length === 0 ? (
               <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>No results found</Text>
+                <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
+                  {contacts.length === 0 ? "Follow people to share posts via DM" : "No results found"}
+                </Text>
               </View>
             ) : (
               chunked.map((row, rowIndex) => (
@@ -98,13 +143,17 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
                     <TouchableOpacity
                       key={contact.id}
                       style={styles.contactCard}
-                      onPress={() => {
-                        triggerHaptic("success");
-                        handleClose();
-                        Alert.alert("Sent", `Direct message sent successfully to ${contact.name}!`);
-                      }}
+                      disabled={sendingTo === contact.id}
+                      onPress={() => sendToContact(contact)}
                     >
-                      <Image source={{ uri: contact.avatar }} style={styles.contactAvatar} />
+                      <Image
+                        source={{
+                          uri:
+                            contact.avatar ||
+                            "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150",
+                        }}
+                        style={styles.contactAvatar}
+                      />
                       <Text style={styles.contactName} numberOfLines={1}>
                         {contact.name}
                       </Text>

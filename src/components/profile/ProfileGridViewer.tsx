@@ -263,6 +263,14 @@ export function ProfileGridViewer({
   );
 
   useEffect(() => {
+    if (!visible || isProductMode) return;
+    const item = listData[activeIndex];
+    if (item?.id) {
+      engagement.hydratePostEngagement(item.id);
+    }
+  }, [visible, activeIndex, listData, isProductMode, engagement.hydratePostEngagement]);
+
+  useEffect(() => {
     if (!visible || !initialItemId) return;
     const idx = listData.findIndex((item) => item.id === initialItemId);
     const nextIndex = idx >= 0 ? idx : 0;
