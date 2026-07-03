@@ -38,6 +38,7 @@ import * as Clipboard from "expo-clipboard";
 import { API_HOST } from "@/constants/api";
 import { authHeaders, IS_PRODUCTION_APP } from "@/lib/apiClient";
 import { uploadMediaFromUri } from "@/lib/uploadMedia";
+import { fetchPostComments, addPostComment } from "@/lib/profileApi";
 import { formatCompactNumber } from "@/constants/format";
 import { CameraStudio } from "@/components/CameraStudio";
 import { ChatDrawer } from "@/components/ChatDrawer";
@@ -889,34 +890,69 @@ export default function ReelsScreen() {
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [replyingTo, setReplyingTo] = useState<{ commentId: string; username: string } | null>(null);
   const commentInputRef = useRef<any>(null);
-  const [postComments, setPostComments] = useState<Record<string, any[]>>({
-    s1: [
-      { id: "1", username: "julian_rossi", text: "Stunning! The liquid metal design flows so naturally.", time: "2h" },
-      { id: "1_r1", username: "alok_curator", text: "@julian_rossi Agreed! The chrome finish is breathtaking.", time: "1h", parentId: "1" },
-      { id: "2", username: "namita.thapar", text: "Is this limited edition? Need early access reservation.", time: "1h" },
-    ],
-    s2: [
-      { id: "1", username: "garimahuja05", text: "Calfskin stitching is flawless. High fidelity quiet luxury.", time: "4h" }
-    ],
-    s3: [
-      { id: "1", username: "mikai.vid", text: "Absolute masterpiece from Milan! 🔥✨", time: "3h" }
-    ],
-    s4: [
-      { id: "1", username: "priya_mehta", text: "Velvet slit draping is unreal. Ordering ASAP!", time: "50m" }
-    ]
-  });
+  const [postComments, setPostComments] = useState<Record<string, any[]>>({});
 
-  const handleCommentsPress = (item: any) => {
+  const submitFeedComment = useCallback(async () => {
+    if (!newCommentText.trim() || !commentsTargetPost?.id) return;
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required", "Sign in to comment.");
+      return;
+    }
+    triggerHaptic("success");
+    const postId = commentsTargetPost.id;
+    const username =
+      activeProfile?.username || currentUser.email?.split("@")[0] || "you";
+    const optimistic = {
+      id: `c_${Date.now()}`,
+      username,
+      text: newCommentText.trim(),
+      time: "now",
+      parentId: replyingTo ? replyingTo.commentId : undefined,
+    };
+    setPostComments((prev) => ({
+      ...prev,
+      [postId]: [...(prev[postId] || []), optimistic],
+    }));
+    const text = newCommentText.trim();
+    setNewCommentText("");
+    setReplyingTo(null);
+    const result = await addPostComment(postId, currentUser.id, text);
+    if (result.success && result.comment) {
+      setPostComments((prev) => ({
+        ...prev,
+        [postId]: (prev[postId] || [])
+          .filter((c) => c.id !== optimistic.id)
+          .concat(result.comment),
+      }));
+    } else {
+      setPostComments((prev) => ({
+        ...prev,
+        [postId]: (prev[postId] || []).filter((c) => c.id !== optimistic.id),
+      }));
+      Alert.alert("Could not post comment", result.error || "Try again.");
+    }
+    setTimeout(() => commentInputRef.current?.focus(), 50);
+  }, [
+    activeProfile?.username,
+    commentsTargetPost?.id,
+    currentUser?.email,
+    currentUser?.id,
+    newCommentText,
+    replyingTo,
+    triggerHaptic,
+  ]);
+
+  const handleCommentsPress = async (item: any) => {
     triggerHaptic("medium");
     setCommentsTargetPost(item);
-    if (!postComments[item.id]) {
-      const defaultComms = item.comments || [
-        { id: "mock_1", username: "dylan_v", text: "Incredible craftsmanship here.", time: "1h" },
-        { id: "mock_2", username: "sara.k", text: "Absolutely stunning style!", time: "45m" }
-      ];
-      setPostComments(prev => ({ ...prev, [item.id]: defaultComms }));
-    }
     setShowCommentsModal(true);
+    if (postComments[item.id]?.length) return;
+    try {
+      const comments = await fetchPostComments(item.id);
+      setPostComments((prev) => ({ ...prev, [item.id]: comments }));
+    } catch {
+      setPostComments((prev) => ({ ...prev, [item.id]: [] }));
+    }
   };
 
   const navigateToUserProfile = (username: string) => {
@@ -1401,7 +1437,7 @@ export default function ReelsScreen() {
         handleShare={handleShare}
         handleSavePress={handleSavePress}
         handleThreeDotsPress={handleThreeDotsPress}
-        commentsCount={postComments[item.id] ? postComments[item.id].length : (item.comments?.length || 18)}
+        commentsCount={postComments[item.id]?.length ?? item.content?.commentsCount ?? 0}
         onCtaPress={handleAdCtaPress}
       />
     );
@@ -1786,7 +1822,7 @@ export default function ReelsScreen() {
       const media = item.content?.mediaUrl || "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=600";
       const caption = item.content?.caption || "";
       const likesCount = item.content?.likesCount || 128;
-      const commentsCount = postComments[item.id] ? postComments[item.id].length : (item.comments?.length || item.content?.commentsCount || 18);
+      const commentsCount = postComments[item.id]?.length ?? item.content?.commentsCount ?? 0;
 
       let lastTap = 0;
       const handleDoubleTap = () => {
@@ -4229,57 +4265,12 @@ export default function ReelsScreen() {
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   value={newCommentText}
                   onChangeText={setNewCommentText}
-                  onSubmitEditing={() => {
-                    if (!newCommentText.trim()) return;
-                    triggerHaptic("success");
-                    const newComm = {
-                      id: `c_${Date.now()}`,
-                      username: "alok_curator",
-                      text: newCommentText.trim(),
-                      time: "now",
-                      parentId: replyingTo ? replyingTo.commentId : undefined
-                    };
-                    setPostComments(prev => ({
-                      ...prev,
-                      [commentsTargetPost.id]: [...(prev[commentsTargetPost.id] || []), newComm]
-                    }));
-                    if (replyingTo) {
-                      const parentId = `${commentsTargetPost.id}_${replyingTo.commentId}`;
-                      setExpandedComments(prev => ({ ...prev, [parentId]: true }));
-                    }
-                    setNewCommentText("");
-                    setReplyingTo(null);
-                    setTimeout(() => {
-                      commentInputRef.current?.focus();
-                    }, 50);
-                  }}
+                  onSubmitEditing={submitFeedComment}
                 />
                 
                 <TouchableOpacity 
                   disabled={!newCommentText.trim()} 
-                  onPress={() => {
-                    triggerHaptic("success");
-                    const newComm = {
-                      id: `c_${Date.now()}`,
-                      username: "alok_curator",
-                      text: newCommentText.trim(),
-                      time: "now",
-                      parentId: replyingTo ? replyingTo.commentId : undefined
-                    };
-                    setPostComments(prev => ({
-                      ...prev,
-                      [commentsTargetPost.id]: [...(prev[commentsTargetPost.id] || []), newComm]
-                    }));
-                    if (replyingTo) {
-                      const parentId = `${commentsTargetPost.id}_${replyingTo.commentId}`;
-                      setExpandedComments(prev => ({ ...prev, [parentId]: true }));
-                    }
-                    setNewCommentText("");
-                    setReplyingTo(null);
-                    setTimeout(() => {
-                      commentInputRef.current?.focus();
-                    }, 50);
-                  }}
+                  onPress={submitFeedComment}
                   style={{ paddingLeft: 8 }}
                 >
                   <Text style={[
