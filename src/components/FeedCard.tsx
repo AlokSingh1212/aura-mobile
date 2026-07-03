@@ -353,11 +353,21 @@ export const FeedCard: React.FC<FeedCardProps> = ({
               </TouchableOpacity>
             </View>
             <Text style={styles.audioTrackText} numberOfLines={1}>
-              ↗ {item.audioTrack ? `${item.audioTrack.title} • ${item.audioTrack.artist}` : (item.location ? `A.R. Rahman, Vedang Raina • ${item.location}` : "AURA Luxury Runway Vol. 4")}
+              ↗ {item.audioTrack
+                ? `${item.audioTrack.title} • ${item.audioTrack.artist}`
+                : item.content?.location || item.location
+                  ? `📍 ${item.content?.location || item.location}`
+                  : item.music || ""}
             </Text>
           </View>
         </View>
-        <CaptionText caption={item.caption || "Atelier Masterpiece"} style={styles.caption} numberOfLines={2} />
+        {item.content?.aiLabel || item.aiLabel ? (
+          <View style={styles.aiFeedBadge}>
+            <Lucide name="sparkles" size={12} color="#4a90d9" />
+            <Text style={styles.aiFeedBadgeText}>AI-generated</Text>
+          </View>
+        ) : null}
+        <CaptionText caption={item.caption || item.content?.caption || ""} style={styles.caption} numberOfLines={2} />
       </View>
 
       {/* Right Interaction Column (Likes, Comments, Share) */}
@@ -574,6 +584,22 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.5)",
     fontSize: 11.5,
     marginTop: 2,
+  },
+  aiFeedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 6,
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "rgba(74,144,217,0.2)",
+  },
+  aiFeedBadgeText: {
+    color: "#4a90d9",
+    fontSize: 11,
+    fontWeight: "700",
   },
   caption: {
     color: "#fff",

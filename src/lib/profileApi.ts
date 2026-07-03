@@ -17,6 +17,12 @@ export interface ProfilePost {
     images: string[];
     maisonId?: string;
   } | null;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  aiLabel?: boolean;
+  tags?: { profileId: string; username: string; name: string; kind?: string }[];
+  collabs?: { profileId: string; username: string; name: string; kind?: string }[];
 }
 
 export interface NetworkProfile {
@@ -95,6 +101,12 @@ export async function fetchProfilePosts(opts: {
         createdAt?: string;
         artifactId?: string | null;
         product?: ProfilePost["product"];
+        location?: string | null;
+        latitude?: number | null;
+        longitude?: number | null;
+        aiLabel?: boolean;
+        tags?: ProfilePost["tags"];
+        collabs?: ProfilePost["collabs"];
       }) => ({
         id: p.id,
         url: p.url,
@@ -105,6 +117,12 @@ export async function fetchProfilePosts(opts: {
         createdAt: p.createdAt,
         artifactId: p.artifactId ?? null,
         product: p.product ?? null,
+        location: p.location ?? null,
+        latitude: p.latitude ?? null,
+        longitude: p.longitude ?? null,
+        aiLabel: !!p.aiLabel,
+        tags: p.tags || [],
+        collabs: p.collabs || [],
       })
     );
   }

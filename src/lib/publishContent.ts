@@ -21,6 +21,11 @@ export interface PublishOptions {
   caption?: string;
   productId?: string | null;
   location?: string;
+  latitude?: number;
+  longitude?: number;
+  aiLabel?: boolean;
+  tags?: { profileId: string; username: string; name: string }[];
+  collabs?: { profileId: string; username: string; name: string }[];
   music?: string;
   alsoPostToGrid?: boolean;
   audioTrack?: ReelAudioTrack | null;
@@ -71,6 +76,11 @@ async function postToFeedApi(
       thumbnail: carousel ? JSON.stringify(carousel) : publicUrl,
       caption,
       location: opts.location || undefined,
+      latitude: opts.latitude,
+      longitude: opts.longitude,
+      aiLabel: !!opts.aiLabel,
+      tags: opts.tags || [],
+      collabs: opts.collabs || [],
       music: opts.storyOnly ? "STORY_ONLY" : opts.music || undefined,
       mediaUrls: carousel,
     }),

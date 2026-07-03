@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -15,21 +15,23 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { CaptionText } from "@/components/CaptionText";
 import { SearchPickerSheet, type SearchPickerItem } from "@/components/create/SearchPickerSheet";
+import { TagPeopleSheet } from "@/components/create/TagPeopleSheet";
+import { LocationCaptureSheet } from "@/components/create/LocationCaptureSheet";
+import { AddProductSheet, type BrandStoreOption } from "@/components/profile/AddProductSheet";
+import { searchAudio } from "@/lib/postComposerSearch";
 import {
-  searchAudio,
-  searchLocations,
-  searchProducts,
-  searchProfiles,
-  type ProductSearchResult,
-} from "@/lib/postComposerSearch";
+  MAX_POST_PEOPLE,
+  splitPeopleTags,
+  type PostPersonTag,
+  type VerifiedLocation,
+} from "@/lib/postComposerTypes";
 
 export interface NewPostDetails {
   caption: string;
   audio: string;
   audioTrackId: string;
-  taggedPeople: string;
-  location: string;
-  locationId: string;
+  people: PostPersonTag[];
+  verifiedLocation: VerifiedLocation | null;
   aiLabel: boolean;
   productId: string;
   productTitle: string;
@@ -42,9 +44,8 @@ export const defaultPostDetails = (): NewPostDetails => ({
   caption: "",
   audio: "",
   audioTrackId: "",
-  taggedPeople: "",
-  location: "",
-  locationId: "",
+  people: [],
+  verifiedLocation: null,
   aiLabel: false,
   productId: "",
   productTitle: "",
@@ -58,25 +59,21 @@ interface NewPostDetailsFormProps {
   activeIndex: number;
   onActiveIndexChange: (index: number) => void;
   username: string;
-  userId?: string | null;
-  profileId?: string | null;
-  catalogProducts?: ProductSearchResult[];
+  brandStores: BrandStoreOption[];
+  defaultStoreId?: string | null;
   publishing?: boolean;
   onBack: () => void;
   onShare: (details: NewPostDetails) => void;
   onEditPhoto?: () => void;
 }
 
-type PickerKind = "audio" | "tag" | "location" | "product" | null;
-
 export function NewPostDetailsForm({
   mediaUris,
   activeIndex,
   onActiveIndexChange,
   username,
-  userId,
-  profileId,
-  catalogProducts = [],
+  brandStores,
+  defaultStoreId,
   publishing,
   onBack,
   onShare,
@@ -85,10 +82,16 @@ export function NewPostDetailsForm({
   const [details, setDetails] = useState<NewPostDetails>(defaultPostDetails);
   const [showAudience, setShowAudience] = useState(false);
   const [showMore, setShowMore] = useState(false);
-  const [activePicker, setActivePicker] = useState<PickerKind>(null);
+  const [showAudioPicker, setShowAudioPicker] = useState(false);
+  const [showTagSheet, setShowTagSheet] = useState(false);
+  const [showLocationSheet, setShowLocationSheet] = useState(false);
+  const [showAddProduct, setShowAddProduct] = useState(false);
 
   const previewUri = mediaUris[activeIndex] ?? mediaUris[0];
   const patch = (p: Partial<NewPostDetails>) => setDetails((d) => ({ ...d, ...p }));
+
+  const tagCount = details.people.filter((p) => p.kind === "tag").length;
+  const collabCount = details.people.filter((p) => p.kind === "collab").length;
 
   const audienceLabel =
     details.audience === "everyone"
@@ -96,8 +99,6 @@ export function NewPostDetailsForm({
       : details.audience === "followers"
         ? "Followers"
         : "Close Friends";
-
-  const catalogItems = catalogProducts;
 
   const searchAudioItems = useCallback(async (q: string): Promise<SearchPickerItem[]> => {
     const tracks = await searchAudio(q);
@@ -110,100 +111,25 @@ export function NewPostDetailsForm({
     }));
   }, []);
 
-  const searchTagItems = useCallback(async (q: string): Promise<SearchPickerItem[]> => {
-    const profiles = await searchProfiles(q);
-    return profiles.map((p) => ({
-      id: p.id,
-      title: p.name,
-      subtitle: `@${p.username}`,
-      imageUri: p.logo,
-      icon: "person-outline" as const,
-    }));
-  }, []);
-
-  const searchLocationItems = useCallback(async (q: string): Promise<SearchPickerItem[]> => {
-    const locations = await searchLocations(q);
-    return locations.map((loc) => ({
-      id: loc.id,
-      title: loc.label,
-      subtitle: loc.fullName,
-      icon: "location-outline" as const,
-    }));
-  }, []);
-
-  const searchProductItems = useCallback(
-    async (q: string): Promise<SearchPickerItem[]> => {
-      const fromCatalog = q.trim()
-        ? catalogItems.filter((p) => p.title.toLowerCase().includes(q.trim().toLowerCase()))
-        : catalogItems;
-      const remote = await searchProducts(q, userId || undefined);
-      const merged = new Map<string, ProductSearchResult>();
-      for (const p of [...fromCatalog, ...remote]) merged.set(p.id, p);
-      return Array.from(merged.values()).map((p) => ({
-        id: p.id,
-        title: p.title,
-        subtitle: p.price != null ? `₹${p.price.toLocaleString()}` : undefined,
-        imageUri: p.images?.[0] || null,
-        icon: "pricetag-outline" as const,
-      }));
-    },
-    [catalogItems, userId]
-  );
-
-  const handlePickerSelect = (kind: PickerKind, item: SearchPickerItem) => {
-    if (!kind) return;
-    if (kind === "audio") {
-      patch({ audio: item.subtitle ? `${item.title} · ${item.subtitle}` : item.title, audioTrackId: item.id });
-    } else if (kind === "tag") {
-      const usernameTag = item.subtitle?.replace(/^@/, "") || item.title;
-      const existing = details.taggedPeople
-        ? details.taggedPeople.split(",").map((s) => s.trim())
-        : [];
-      if (!existing.includes(usernameTag)) {
-        existing.push(usernameTag);
+  const handlePeopleChange = (people: PostPersonTag[]) => {
+    let caption = details.caption;
+    for (const person of people) {
+      const mention = `@${person.username}`;
+      if (!caption.includes(mention)) {
+        caption = `${caption} ${mention}`.trim();
       }
-      const joined = existing.join(", ");
-      patch({
-        taggedPeople: joined,
-        caption: details.caption.includes(`@${usernameTag}`)
-          ? details.caption
-          : `${details.caption} @${usernameTag}`.trim(),
-      });
-    } else if (kind === "location") {
-      patch({ location: item.title, locationId: item.id });
-    } else if (kind === "product") {
-      patch({ productId: item.id, productTitle: item.title });
     }
+    patch({ people, caption });
   };
 
-  const pickerConfig = {
-    audio: {
-      title: "Add audio",
-      placeholder: "Search songs and sounds…",
-      minQueryLength: 0,
-      search: searchAudioItems,
-    },
-    tag: {
-      title: "Tag people",
-      placeholder: "Search by name or @username",
-      minQueryLength: 1,
-      search: searchTagItems,
-    },
-    location: {
-      title: "Add location",
-      placeholder: "Search places worldwide…",
-      minQueryLength: 2,
-      search: searchLocationItems,
-    },
-    product: {
-      title: "Add product",
-      placeholder: "Search your catalog or marketplace…",
-      minQueryLength: 0,
-      search: searchProductItems,
-    },
-  } as const;
+  const removePerson = (profileId: string) => {
+    handlePeopleChange(details.people.filter((p) => p.profileId !== profileId));
+  };
 
-  const activeConfig = activePicker ? pickerConfig[activePicker] : null;
+  const peopleSummary =
+    details.people.length > 0
+      ? `${tagCount ? `${tagCount} tag${tagCount > 1 ? "s" : ""}` : ""}${tagCount && collabCount ? " · " : ""}${collabCount ? `${collabCount} collab${collabCount > 1 ? "s" : ""}` : ""}`
+      : "";
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
@@ -249,6 +175,13 @@ export function NewPostDetailsForm({
           </View>
         ) : null}
 
+        {details.aiLabel ? (
+          <View style={styles.aiBadge}>
+            <Lucide name="sparkles" size={14} color="#4a90d9" />
+            <Text style={styles.aiBadgeText}>AI-generated content</Text>
+          </View>
+        ) : null}
+
         <View style={styles.chipsRow}>
           <TouchableOpacity
             style={styles.chip}
@@ -278,65 +211,78 @@ export function NewPostDetailsForm({
 
         <View style={styles.divider} />
 
-        <TouchableOpacity style={styles.optionRow} onPress={() => setActivePicker("audio")}>
+        <TouchableOpacity style={styles.optionRow} onPress={() => setShowAudioPicker(true)}>
           <View style={styles.optionLeft}>
             <Lucide name="musical-notes-outline" size={23} color={details.audio ? "#00f5ff" : "#fff"} />
             <Text style={[styles.optionText, details.audio && styles.optionTextActive]}>
               {details.audio || "Add audio"}
             </Text>
           </View>
+          {details.audio ? (
+            <TouchableOpacity onPress={() => patch({ audio: "", audioTrackId: "" })} hitSlop={8}>
+              <Lucide name="close-circle" size={20} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
+          ) : (
+            <Lucide name="chevron-forward" size={21} color="rgba(255,255,255,0.3)" />
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.divider} />
+
+        <TouchableOpacity style={styles.optionRow} onPress={() => setShowTagSheet(true)}>
+          <View style={styles.optionLeft}>
+            <Lucide name="person-outline" size={23} color={details.people.length ? "#ff9500" : "#fff"} />
+            <Text style={[styles.optionText, details.people.length > 0 && { color: "#ff9500" }]}>
+              {peopleSummary || "Tag people"}
+            </Text>
+          </View>
           <Lucide name="chevron-forward" size={21} color="rgba(255,255,255,0.3)" />
         </TouchableOpacity>
 
-        {details.audio ? (
-          <View style={styles.selectionBar}>
-            <Lucide name="musical-note" size={18} color="#00f5ff" />
-            <Text style={styles.selectionText} numberOfLines={1}>
-              {details.audio}
-            </Text>
-            <TouchableOpacity onPress={() => patch({ audio: "", audioTrackId: "" })}>
-              <Lucide name="close-circle" size={18} color="rgba(255,255,255,0.4)" />
-            </TouchableOpacity>
+        {details.people.length > 0 ? (
+          <View style={styles.inlineChips}>
+            {details.people.map((person) => (
+              <View
+                key={person.profileId}
+                style={[styles.personChip, person.kind === "collab" && styles.personChipCollab]}
+              >
+                <Text style={styles.personChipText} numberOfLines={1}>
+                  {person.kind === "collab" ? "Collab · " : ""}@{person.username}
+                </Text>
+                <TouchableOpacity onPress={() => removePerson(person.profileId)} hitSlop={6}>
+                  <Lucide name="close" size={14} color="rgba(255,255,255,0.55)" />
+                </TouchableOpacity>
+              </View>
+            ))}
           </View>
         ) : null}
 
         <View style={styles.divider} />
 
-        <TouchableOpacity style={styles.optionRow} onPress={() => setActivePicker("tag")}>
+        <TouchableOpacity style={styles.optionRow} onPress={() => setShowLocationSheet(true)}>
           <View style={styles.optionLeft}>
-            <Lucide name="person-outline" size={23} color={details.taggedPeople ? "#ff9500" : "#fff"} />
-            <Text style={[styles.optionText, details.taggedPeople && { color: "#ff9500" }]}>
-              {details.taggedPeople
-                ? `Tagged ${details.taggedPeople.split(",").map((u) => `@${u.trim()}`).join(", ")}`
-                : "Tag people"}
+            <Lucide name="location-outline" size={23} color={details.verifiedLocation ? "#00f5ff" : "#fff"} />
+            <Text style={[styles.optionText, details.verifiedLocation && styles.optionTextActive]}>
+              {details.verifiedLocation?.label || "Add location"}
             </Text>
           </View>
-          <Lucide name="chevron-forward" size={21} color="rgba(255,255,255,0.3)" />
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        <TouchableOpacity style={styles.optionRow} onPress={() => setActivePicker("location")}>
-          <View style={styles.optionLeft}>
-            <Lucide name="location-outline" size={23} color={details.location ? "#00f5ff" : "#fff"} />
-            <Text style={[styles.optionText, details.location && styles.optionTextActive]}>
-              {details.location || "Add location"}
-            </Text>
-          </View>
-          <Lucide name="chevron-forward" size={21} color="rgba(255,255,255,0.3)" />
+          {details.verifiedLocation ? (
+            <TouchableOpacity onPress={() => patch({ verifiedLocation: null })} hitSlop={8}>
+              <Lucide name="close-circle" size={20} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
+          ) : (
+            <Lucide name="chevron-forward" size={21} color="rgba(255,255,255,0.3)" />
+          )}
         </TouchableOpacity>
 
         <View style={styles.divider} />
 
         <View style={styles.optionRow}>
           <View style={[styles.optionLeft, { alignItems: "flex-start" }]}>
-            <Lucide name="sparkles-outline" size={23} color="#fff" style={{ marginTop: 2 }} />
+            <Lucide name="sparkles-outline" size={23} color={details.aiLabel ? "#4a90d9" : "#fff"} style={{ marginTop: 2 }} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.optionText}>Add AI Label</Text>
-              <Text style={styles.optionSub}>
-                Label realistic content made with AI.{" "}
-                <Text style={styles.link}>Learn more</Text>
-              </Text>
+              <Text style={styles.optionText}>Add AI label</Text>
+              <Text style={styles.optionSub}>Shows viewers this post includes AI-generated content.</Text>
             </View>
           </View>
           <Switch
@@ -425,9 +371,18 @@ export function NewPostDetailsForm({
               </TouchableOpacity>
             ) : null}
 
-            <TouchableOpacity style={styles.listItem} onPress={() => setActivePicker("product")}>
+            <TouchableOpacity
+              style={styles.listItem}
+              onPress={() => {
+                if (!brandStores.length) {
+                  Alert.alert("Create a brand store first", "Add products from a brand profile store.");
+                  return;
+                }
+                setShowAddProduct(true);
+              }}
+            >
               <Lucide name="bag-handle-outline" size={20} color={details.productId ? "#00f5ff" : "#fff"} />
-              <Text style={[styles.listTitle, { marginLeft: 10, flex: 1 }]}>
+              <Text style={[styles.listTitle, { marginLeft: 10, flex: 1 }]} numberOfLines={1}>
                 {details.productTitle || "Add product"}
               </Text>
               {details.productId ? (
@@ -474,17 +429,46 @@ export function NewPostDetailsForm({
         </TouchableOpacity>
       </View>
 
-      {activeConfig && activePicker ? (
-        <SearchPickerSheet
-          visible
-          title={activeConfig.title}
-          placeholder={activeConfig.placeholder}
-          minQueryLength={activeConfig.minQueryLength}
-          onClose={() => setActivePicker(null)}
-          onSelect={(item) => handlePickerSelect(activePicker, item)}
-          search={activeConfig.search}
-        />
-      ) : null}
+      <SearchPickerSheet
+        visible={showAudioPicker}
+        title="Add audio"
+        placeholder="Search songs and sounds…"
+        minQueryLength={0}
+        onClose={() => setShowAudioPicker(false)}
+        onSelect={(item) => {
+          patch({
+            audio: item.subtitle ? `${item.title} · ${item.subtitle}` : item.title,
+            audioTrackId: item.id,
+          });
+        }}
+        search={searchAudioItems}
+      />
+
+      <TagPeopleSheet
+        visible={showTagSheet}
+        selected={details.people}
+        onClose={() => setShowTagSheet(false)}
+        onChange={handlePeopleChange}
+      />
+
+      <LocationCaptureSheet
+        visible={showLocationSheet}
+        onClose={() => setShowLocationSheet(false)}
+        onConfirm={(verifiedLocation) => patch({ verifiedLocation })}
+      />
+
+      <AddProductSheet
+        visible={showAddProduct}
+        onClose={() => setShowAddProduct(false)}
+        brandStores={brandStores}
+        defaultStoreId={defaultStoreId}
+        showStorePicker={brandStores.length > 1}
+        prefillImageUris={mediaUris.slice(0, 3)}
+        onProductCreated={(artifactId, productTitle) => {
+          patch({ productId: artifactId, productTitle });
+          setShowAddProduct(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -529,6 +513,19 @@ const styles = StyleSheet.create({
   },
   captionPreview: { paddingHorizontal: 16, paddingTop: 8 },
   captionPreviewText: { color: "rgba(255,255,255,0.85)", fontSize: 14, lineHeight: 20 },
+  aiBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: "rgba(74,144,217,0.15)",
+  },
+  aiBadgeText: { color: "#4a90d9", fontSize: 12, fontWeight: "700" },
   chipsRow: { flexDirection: "row", paddingHorizontal: 16, gap: 10, marginTop: 12, marginBottom: 8 },
   chip: {
     flexDirection: "row",
@@ -559,18 +556,24 @@ const styles = StyleSheet.create({
   optionTextActive: { color: "#00f5ff" },
   optionSub: { color: "rgba(255,255,255,0.4)", fontSize: 13, marginTop: 3, lineHeight: 18 },
   optionValue: { color: "rgba(255,255,255,0.45)", fontSize: 15 },
-  link: { color: "#4a90d9" },
-  selectionBar: {
+  inlineChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  personChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 10,
-    padding: 10,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,149,0,0.15)",
   },
-  selectionText: { flex: 1, color: "#fff", fontSize: 14, fontWeight: "600" },
+  personChipCollab: { backgroundColor: "rgba(0,245,255,0.12)" },
+  personChipText: { color: "#fff", fontSize: 12, fontWeight: "600", maxWidth: 140 },
   expandPanel: { marginHorizontal: 16, marginBottom: 8 },
   listItem: {
     flexDirection: "row",

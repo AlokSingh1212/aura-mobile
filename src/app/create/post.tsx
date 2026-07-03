@@ -1,13 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  ScrollView,
 } from "react-native";
 import { router } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -15,7 +13,6 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import { pickMultipleImages } from "@/lib/createMediaPicker";
 import { compressImageForPost } from "@/lib/compressMedia";
 import { uploadAndPublish, uploadCarouselImages } from "@/lib/publishContent";
-import { FilterBakeCanvas, captureFilteredImage, FILTER_PRESETS } from "@/lib/bakeImageFilter";
 import { createEmptyDraft, saveDraft } from "@/lib/createDraft";
 import { resetExportJob } from "@/lib/exportJob";
 import { useCreateAuth, syncAfterPublish } from "@/hooks/useCreateAuth";
@@ -24,43 +21,38 @@ import {
   NewPostDetailsForm,
   type NewPostDetails,
 } from "@/components/create/NewPostDetailsForm";
-import { fetchProfileProducts } from "@/lib/profileApi";
-import type { ProductSearchResult } from "@/lib/postComposerSearch";
+import { ImageEditor } from "@/components/ImageEditor";
+import type { BrandStoreOption } from "@/components/profile/AddProductSheet";
+import { splitPeopleTags } from "@/lib/postComposerTypes";
 
-type Step = "pick" | "compose" | "filters";
+type Step = "pick" | "compose";
 
 export default function PostComposerScreen() {
   const { ready, userId, profileId, profileName } = useCreateAuth();
-  const { triggerHaptic, activeProfile } = useStore();
+  const { triggerHaptic, activeProfile, userProfiles } = useStore();
   const username = activeProfile?.username || "you";
 
   const [step, setStep] = useState<Step>("pick");
   const [localUris, setLocalUris] = useState<string[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [filterId, setFilterId] = useState("normal");
   const [publishing, setPublishing] = useState(false);
   const [picking, setPicking] = useState(false);
-  const [baking, setBaking] = useState(false);
-  const [catalogProducts, setCatalogProducts] = useState<ProductSearchResult[]>([]);
-  const canvasRef = useRef<View>(null);
+  const [editorVisible, setEditorVisible] = useState(false);
   const pickerStarted = useRef(false);
 
-  useEffect(() => {
-    if (!userId && !profileId) return;
-    fetchProfileProducts({ userId, profileId: profileId || undefined })
-      .then(({ products }) =>
-        setCatalogProducts(
-          products.map((p) => ({
-            id: p.id,
-            title: p.title,
-            price: p.price,
-            images: p.images || [],
-            maisonId: p.maisonId,
-          }))
-        )
-      )
-      .catch(() => setCatalogProducts([]));
-  }, [userId, profileId]);
+  const brandStores: BrandStoreOption[] = useMemo(
+    () =>
+      (userProfiles || [])
+        .filter((p: { type?: string }) => p.type === "BUSINESS")
+        .map((p: { id: string; name: string; username: string; maisonId?: string; logo?: string | null }) => ({
+          id: p.id,
+          name: p.name,
+          username: p.username,
+          maisonId: p.maisonId || p.username,
+          logo: p.logo,
+        })),
+    [userProfiles]
+  );
 
   const localUri = localUris[activeIndex] ?? null;
 
@@ -109,32 +101,12 @@ export default function PostComposerScreen() {
     }, [ready, openGallery])
   );
 
-  const applyFilterAndReturn = async () => {
-    if (!localUri) return;
-    setBaking(true);
-    try {
-      if (filterId !== "normal" && canvasRef.current) {
-        const baked = await captureFilteredImage(canvasRef, 1080, 1080);
-        const next = [...localUris];
-        next[activeIndex] = baked;
-        setLocalUris(next);
-      }
-      setStep("compose");
-    } catch (e) {
-      Alert.alert("Filter error", e instanceof Error ? e.message : "Could not apply filter.");
-    } finally {
-      setBaking(false);
-    }
-  };
-
   const buildCaption = (details: NewPostDetails) => {
     let text = details.caption.trim();
-    if (details.taggedPeople) {
-      for (const raw of details.taggedPeople.split(",")) {
-        const tag = raw.trim();
-        if (tag && !text.includes(`@${tag}`)) {
-          text = `${text} @${tag}`.trim();
-        }
+    for (const person of details.people) {
+      const mention = `@${person.username}`;
+      if (!text.includes(mention)) {
+        text = `${text} ${mention}`.trim();
       }
     }
     if (details.aiLabel && !text.toLowerCase().includes("#ai")) {
@@ -154,6 +126,7 @@ export default function PostComposerScreen() {
     }
 
     const caption = buildCaption(details) || `✨ ${profileName || "Your"} on AURA`;
+    const { tags, collabs } = splitPeopleTags(details.people);
 
     setPublishing(true);
     resetExportJob();
@@ -166,7 +139,12 @@ export default function PostComposerScreen() {
         profileName,
         caption,
         productId: details.productId || null,
-        location: details.location || undefined,
+        location: details.verifiedLocation?.label,
+        latitude: details.verifiedLocation?.lat,
+        longitude: details.verifiedLocation?.lon,
+        aiLabel: details.aiLabel,
+        tags,
+        collabs,
         music: details.audio || undefined,
         mediaUrls: uploaded.length > 1 ? uploaded : undefined,
       });
@@ -185,6 +163,13 @@ export default function PostComposerScreen() {
       setPublishing(false);
       resetExportJob();
     }
+  };
+
+  const handleEditorSave = (finalUri: string, _appliedFilter: string) => {
+    const next = [...localUris];
+    next[activeIndex] = finalUri;
+    setLocalUris(next);
+    setEditorVisible(false);
   };
 
   if (!ready) {
@@ -214,58 +199,34 @@ export default function PostComposerScreen() {
 
   if (step === "compose" && localUris.length > 0) {
     return (
-      <NewPostDetailsForm
-        mediaUris={localUris}
-        activeIndex={activeIndex}
-        onActiveIndexChange={setActiveIndex}
-        username={username}
-        userId={userId}
-        profileId={profileId}
-        catalogProducts={catalogProducts}
-        publishing={publishing}
-        onBack={() => {
-          Alert.alert("Discard post?", "Your selected photos will be lost.", [
-            { text: "Keep editing", style: "cancel" },
-            { text: "Discard", style: "destructive", onPress: () => router.back() },
-          ]);
-        }}
-        onShare={handleShare}
-        onEditPhoto={() => setStep("filters")}
-      />
-    );
-  }
+      <>
+        <NewPostDetailsForm
+          mediaUris={localUris}
+          activeIndex={activeIndex}
+          onActiveIndexChange={setActiveIndex}
+          username={username}
+          brandStores={brandStores}
+          defaultStoreId={activeProfile?.type === "BUSINESS" ? activeProfile.id : null}
+          publishing={publishing}
+          onBack={() => {
+            Alert.alert("Discard post?", "Your selected photos will be lost.", [
+              { text: "Keep editing", style: "cancel" },
+              { text: "Discard", style: "destructive", onPress: () => router.back() },
+            ]);
+          }}
+          onShare={handleShare}
+          onEditPhoto={() => localUri && setEditorVisible(true)}
+        />
 
-  if (step === "filters" && localUri) {
-    return (
-      <View style={styles.filterScreen}>
-        <View style={styles.filterHeader}>
-          <TouchableOpacity onPress={() => setStep("compose")}>
-            <Lucide name="chevron-back" size={28} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.filterTitle}>Edit photo</Text>
-          <TouchableOpacity onPress={applyFilterAndReturn} disabled={baking}>
-            {baking ? (
-              <ActivityIndicator color="#00f5ff" />
-            ) : (
-              <Text style={styles.filterDone}>Done</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-        <View style={styles.filterPreview}>
-          <FilterBakeCanvas imageUri={localUri} filterId={filterId} canvasRef={canvasRef} />
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
-          {FILTER_PRESETS.map((f) => (
-            <TouchableOpacity
-              key={f.id}
-              style={[styles.filterChip, filterId === f.id && styles.filterChipActive]}
-              onPress={() => setFilterId(f.id)}
-            >
-              <Text style={[styles.filterText, filterId === f.id && styles.filterTextActive]}>{f.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+        {localUri ? (
+          <ImageEditor
+            visible={editorVisible}
+            imageUri={localUri}
+            onClose={() => setEditorVisible(false)}
+            onSave={handleEditorSave}
+          />
+        ) : null}
+      </>
     );
   }
 
@@ -283,26 +244,4 @@ const styles = StyleSheet.create({
   loadingText: { color: "rgba(255,255,255,0.6)", marginTop: 12, fontSize: 14, marginBottom: 20 },
   primaryBtn: { backgroundColor: "#4a90d9", paddingHorizontal: 28, paddingVertical: 14, borderRadius: 10 },
   primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  filterScreen: { flex: 1, backgroundColor: "#080415", paddingTop: 48 },
-  filterHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-  },
-  filterTitle: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  filterDone: { color: "#00f5ff", fontSize: 16, fontWeight: "700" },
-  filterPreview: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16 },
-  filterRow: { maxHeight: 48, paddingHorizontal: 12, marginBottom: 24 },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginHorizontal: 4,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-  filterChipActive: { backgroundColor: "rgba(0,245,255,0.15)", borderWidth: 1, borderColor: "#00f5ff" },
-  filterText: { color: "rgba(255,255,255,0.5)", fontSize: 12, fontWeight: "600" },
-  filterTextActive: { color: "#00f5ff" },
 });

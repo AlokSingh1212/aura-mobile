@@ -164,6 +164,37 @@ function ProfilePostPage({
         </Text>
       ) : null}
 
+      {post.aiLabel ? (
+        <View style={styles.aiLabelRow}>
+          <Lucide name="sparkles" size={14} color="#4a90d9" />
+          <Text style={styles.aiLabelText}>AI-generated content</Text>
+        </View>
+      ) : null}
+
+      {post.location ? (
+        <View style={styles.locationRow}>
+          <Lucide name="location-outline" size={14} color="#00f5ff" />
+          <Text style={styles.locationText} numberOfLines={1}>
+            {post.location}
+          </Text>
+        </View>
+      ) : null}
+
+      {(post.tags?.length || post.collabs?.length) ? (
+        <View style={styles.tagMetaRow}>
+          {post.tags?.map((t) => (
+            <Text key={`tag_${t.profileId}`} style={styles.tagMetaChip}>
+              @{t.username}
+            </Text>
+          ))}
+          {post.collabs?.map((t) => (
+            <Text key={`collab_${t.profileId}`} style={styles.collabMetaChip}>
+              Collab · @{t.username}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
       {linkedProduct ? (
         <TouchableOpacity
           style={styles.viewProductBtn}
@@ -686,6 +717,31 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 2,
   },
+  aiLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingBottom: 6,
+  },
+  aiLabelText: { color: "#4a90d9", fontSize: 12, fontWeight: "700" },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+  },
+  locationText: { color: "rgba(255,255,255,0.65)", fontSize: 13, flex: 1 },
+  tagMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+  },
+  tagMetaChip: { color: "#ff9500", fontSize: 12, fontWeight: "600" },
+  collabMetaChip: { color: "#00f5ff", fontSize: 12, fontWeight: "600" },
   productBody: {
     paddingHorizontal: 16,
     paddingTop: 12,
