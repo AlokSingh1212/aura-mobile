@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Platform,
   type TextStyle,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
@@ -16,12 +17,17 @@ import {
   applyCaptionSuggestion,
   getActiveCaptionToken,
   segmentCaptionForInput,
+  type CaptionSegment,
   type CaptionToken,
 } from "@/lib/captionAutocomplete";
 import { searchHashtags, searchProfiles } from "@/lib/postComposerSearch";
 
 const HASHTAG_COLOR = "#00f5ff";
 const MENTION_COLOR = "#ff9500";
+
+const ANDROID_TEXT = Platform.OS === "android"
+  ? { fontFamily: "Roboto" as const, includeFontPadding: false as const }
+  : {};
 
 interface SuggestionRow {
   id: string;
@@ -37,6 +43,29 @@ interface CaptionComposerInputProps {
   maxLength?: number;
   style?: TextStyle;
   minHeight?: number;
+}
+
+/** Mirror segments must match TextInput char-for-char (same weight/size — color only). */
+function buildMirrorSegments(value: string, activeToken: CaptionToken | null): CaptionSegment[] {
+  if (!value) return [];
+
+  if (!activeToken) {
+    return segmentCaptionForInput(value);
+  }
+
+  const before = value.slice(0, activeToken.start);
+  const tokenText = value.slice(activeToken.start, activeToken.end);
+  const after = value.slice(activeToken.end);
+
+  const segments: CaptionSegment[] = [];
+  if (before) segments.push(...segmentCaptionForInput(before));
+  segments.push({
+    kind: activeToken.type === "hashtag" ? "hashtag" : "mention",
+    value: tokenText,
+  });
+  if (after) segments.push(...segmentCaptionForInput(after));
+
+  return segments.filter((s) => s.value.length > 0);
 }
 
 export function CaptionComposerInput({
@@ -58,36 +87,13 @@ export function CaptionComposerInput({
     [value, selection.end]
   );
 
-  const segments = useMemo(() => {
-    const base = segmentCaptionForInput(value);
-    if (!activeToken) return base;
+  const segments = useMemo(
+    () => buildMirrorSegments(value, activeToken),
+    [value, activeToken]
+  );
 
-    const covered =
-      base.reduce((n, s) => n + s.value.length, 0) >= value.length ||
-      base.some((s) => s.value === value.slice(activeToken.start, activeToken.end));
-
-    if (covered) return base;
-
-    const before = value.slice(0, activeToken.start);
-    const tokenText = value.slice(activeToken.start, activeToken.end);
-    const after = value.slice(activeToken.end);
-    const rebuilt: ReturnType<typeof segmentCaptionForInput> = [];
-
-    if (before) {
-      rebuilt.push(...segmentCaptionForInput(before).filter((s) => s.value));
-    }
-    rebuilt.push({
-      kind: activeToken.type === "hashtag" ? "hashtag" : "mention",
-      value: tokenText,
-    });
-    if (after) {
-      rebuilt.push(...segmentCaptionForInput(after).filter((s) => s.value));
-    }
-    return rebuilt.length ? rebuilt : base;
-  }, [value, activeToken]);
-
-  const inputStyle = useMemo(
-    () => [styles.input, { minHeight }, style],
+  const sharedTextStyle = useMemo(
+    () => [styles.textBase, { minHeight }, style],
     [minHeight, style]
   );
 
@@ -96,7 +102,9 @@ export function CaptionComposerInput({
       const pos = pendingCursor.current;
       pendingCursor.current = null;
       setSelection({ start: pos, end: pos });
-      inputRef.current?.setNativeProps({ selection: { start: pos, end: pos } });
+      requestAnimationFrame(() => {
+        inputRef.current?.setNativeProps({ selection: { start: pos, end: pos } });
+      });
     }
   }, [value]);
 
@@ -170,42 +178,52 @@ export function CaptionComposerInput({
   return (
     <View style={styles.wrap}>
       <View style={styles.inputStack}>
-        <Text pointerEvents="none" style={[inputStyle, styles.mirror]}>
+        {/* Colored mirror — absolute behind; must not change glyph metrics vs TextInput */}
+        <Text pointerEvents="none" style={[sharedTextStyle, styles.mirror]} accessible={false}>
           {value.length === 0 ? (
             <Text style={styles.placeholder}>{placeholder}</Text>
           ) : (
             segments.map((seg, i) => {
               if (seg.kind === "hashtag") {
                 return (
-                  <Text key={`${i}-h`} style={styles.hashtag}>
+                  <Text key={`${i}-h`} style={styles.hashtagMirror}>
                     {seg.value}
                   </Text>
                 );
               }
               if (seg.kind === "mention") {
                 return (
-                  <Text key={`${i}-m`} style={styles.mention}>
+                  <Text key={`${i}-m`} style={styles.mentionMirror}>
                     {seg.value}
                   </Text>
                 );
               }
-              return <Text key={`${i}-t`}>{seg.value}</Text>;
+              return (
+                <Text key={`${i}-t`} style={styles.plainMirror}>
+                  {seg.value}
+                </Text>
+              );
             })
           )}
         </Text>
+
+        {/* TextInput drives layout height; text transparent so mirror shows through */}
         <TextInput
           ref={inputRef}
-          style={[inputStyle, styles.inputOverlay]}
+          style={[sharedTextStyle, styles.inputField]}
           placeholder=""
           value={value}
           onChangeText={onChangeText}
           onSelectionChange={onSelectionChange}
           multiline
+          scrollEnabled={false}
           maxLength={maxLength}
           autoCapitalize="none"
           autoCorrect={false}
-          selectionColor={activeToken?.type === "hashtag" ? HASHTAG_COLOR : MENTION_COLOR}
+          spellCheck={false}
+          selectionColor={activeToken?.type === "hashtag" ? HASHTAG_COLOR : "#fff"}
           cursorColor="#fff"
+          underlineColorAndroid="transparent"
         />
       </View>
 
@@ -220,6 +238,7 @@ export function CaptionComposerInput({
               data={suggestions}
               keyExtractor={(item) => item.id}
               keyboardShouldPersistTaps="always"
+              nestedScrollEnabled
               style={{ maxHeight: 160 }}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -235,7 +254,7 @@ export function CaptionComposerInput({
                     <Text
                       style={[
                         styles.suggestLabel,
-                        activeToken.type === "hashtag" ? styles.hashtag : styles.mention,
+                        activeToken.type === "hashtag" ? styles.suggestHashtag : styles.suggestMention,
                       ]}
                     >
                       {item.label}
@@ -258,34 +277,60 @@ export function CaptionComposerInput({
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
-  inputStack: { position: "relative" },
-  input: {
+  inputStack: {
+    position: "relative",
+  },
+  textBase: {
     color: "#fff",
     fontSize: 16,
     lineHeight: 22,
+    fontWeight: "400",
     textAlignVertical: "top",
-    padding: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    paddingHorizontal: 0,
+    margin: 0,
+    ...ANDROID_TEXT,
   },
   mirror: {
-    color: "#fff",
-  },
-  inputOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    color: "transparent",
+    zIndex: 0,
+  },
+  inputField: {
+    zIndex: 1,
+    color: Platform.OS === "ios" ? "transparent" : "rgba(255,255,255,0.01)",
+    backgroundColor: "transparent",
+  },
+  plainMirror: {
+    color: "#fff",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "400",
+    ...ANDROID_TEXT,
+  },
+  hashtagMirror: {
+    color: HASHTAG_COLOR,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "400",
+    ...ANDROID_TEXT,
+  },
+  mentionMirror: {
+    color: MENTION_COLOR,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "400",
+    ...ANDROID_TEXT,
   },
   placeholder: {
     color: "rgba(255,255,255,0.35)",
-  },
-  hashtag: {
-    color: HASHTAG_COLOR,
-    fontWeight: "600",
-  },
-  mention: {
-    color: MENTION_COLOR,
-    fontWeight: "600",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "400",
+    ...ANDROID_TEXT,
   },
   suggestPanel: {
     marginTop: 8,
@@ -308,6 +353,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
+  suggestHashtag: { color: HASHTAG_COLOR },
+  suggestMention: { color: MENTION_COLOR },
   suggestSub: {
     color: "rgba(255,255,255,0.45)",
     fontSize: 12,
