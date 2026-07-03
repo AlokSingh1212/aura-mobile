@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  FlatList,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -234,14 +233,10 @@ export function CaptionComposerInput({
           {loading ? (
             <ActivityIndicator color={HASHTAG_COLOR} style={{ paddingVertical: 10 }} />
           ) : (
-            <FlatList
-              data={suggestions}
-              keyExtractor={(item) => item.id}
-              keyboardShouldPersistTaps="always"
-              nestedScrollEnabled
-              style={{ maxHeight: 160 }}
-              renderItem={({ item }) => (
+            <View style={styles.suggestList}>
+              {suggestions.map((item) => (
                 <TouchableOpacity
+                  key={item.id}
                   style={styles.suggestRow}
                   onPress={() => pickSuggestion(item, activeToken)}
                 >
@@ -266,8 +261,8 @@ export function CaptionComposerInput({
                     ) : null}
                   </View>
                 </TouchableOpacity>
-              )}
-            />
+              ))}
+            </View>
           )}
         </View>
       ) : null}
@@ -339,6 +334,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255,255,255,0.1)",
     overflow: "hidden",
+  },
+  suggestList: {
+    maxHeight: 160,
   },
   suggestRow: {
     flexDirection: "row",
