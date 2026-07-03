@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,14 +7,17 @@ import {
   Modal,
   ScrollView,
   Dimensions,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform,
 } from "react-native";
 import { Image } from "expo-image";
 import { manipulateAsync, SaveFormat, FlipType } from "expo-image-manipulator";
 import Lucide from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 
-const { width } = Dimensions.get("window");
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
 interface ImageEditorProps {
   visible: boolean;
@@ -28,18 +31,26 @@ export const FILTER_PRESETS = [
   { id: "retro_warm", name: "Retro Warm", overlayColor: "rgba(235, 150, 50, 0.16)" },
   { id: "cool_ice", name: "Cool Ice", overlayColor: "rgba(50, 150, 255, 0.16)" },
   { id: "sepia", name: "Sepia Vintage", overlayColor: "rgba(180, 130, 80, 0.22)" },
-  { id: "obsidian_noir", name: "Obsidian Noir", overlayColor: "rgba(0, 0, 0, 0.55)" }
+  { id: "obsidian_noir", name: "Obsidian Noir", overlayColor: "rgba(0, 0, 0, 0.55)" },
 ];
 
 export const ImageEditor: React.FC<ImageEditorProps> = ({
   visible,
   imageUri,
   onClose,
-  onSave
+  onSave,
 }) => {
   const [currentUri, setCurrentUri] = useState<string>(imageUri);
   const [selectedFilter, setSelectedFilter] = useState<string>("normal");
   const [processing, setProcessing] = useState<boolean>(false);
+
+  const canvasSize = useMemo(() => {
+    const horizontalPad = 32;
+    const reservedVertical = 280;
+    const maxW = SCREEN_W - horizontalPad;
+    const maxH = Math.max(200, SCREEN_H - reservedVertical);
+    return { width: maxW, height: maxH };
+  }, []);
 
   useEffect(() => {
     setCurrentUri(imageUri);
@@ -51,7 +62,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
       if (type === "light") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       else if (type === "medium") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       else if (type === "success") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {
+    } catch {
       // Fail-silent on web/simulators
     }
   };
@@ -95,66 +106,75 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
     onSave(currentUri, selectedFilter);
   };
 
-  const activeOverlayColor = FILTER_PRESETS.find(f => f.id === selectedFilter)?.overlayColor || "transparent";
+  const activeOverlayColor =
+    FILTER_PRESETS.find((f) => f.id === selectedFilter)?.overlayColor || "transparent";
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false}>
-      <View style={styles.container}>
-        {/* Header */}
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      statusBarTranslucent={false}
+      onRequestClose={onClose}
+    >
+      <StatusBar style="light" />
+      <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
+          <TouchableOpacity onPress={onClose} style={styles.headerBtn} hitSlop={8}>
             <Lucide name="close" size={24} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Filter Curation</Text>
+          <Text style={styles.headerTitle}>Edit photo</Text>
           <TouchableOpacity onPress={handleDone} style={styles.headerDoneBtn}>
             <Text style={styles.headerDoneText}>Done</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Workspace Canvas View */}
         <View style={styles.canvasContainer}>
           {currentUri ? (
-            <View style={styles.imageWrapper}>
-              <Image source={{ uri: currentUri }} style={styles.canvasImage} contentFit="contain" />
-              
-              {/* Color filter overlay simulating matrix mapping */}
-              <View 
-                style={[
-                  styles.filterOverlay, 
-                  { backgroundColor: activeOverlayColor },
-                  selectedFilter === "obsidian_noir" && { mixBlendMode: "color" } as any
-                ]} 
-                pointerEvents="none" 
+            <View style={[styles.imageWrapper, canvasSize]}>
+              <Image
+                source={{ uri: currentUri }}
+                style={styles.canvasImage}
+                contentFit="contain"
               />
-              
-              {processing && (
+              <View
+                style={[
+                  styles.filterOverlay,
+                  { backgroundColor: activeOverlayColor },
+                  selectedFilter === "obsidian_noir" && ({ mixBlendMode: "color" } as object),
+                ]}
+                pointerEvents="none"
+              />
+              {processing ? (
                 <View style={styles.processingLoader}>
                   <ActivityIndicator size="large" color="#00f5ff" />
                 </View>
-              )}
+              ) : null}
             </View>
           ) : (
             <Text style={styles.emptyText}>No image selected</Text>
           )}
         </View>
 
-        {/* Toolbar (Rotate, Flip) */}
         <View style={styles.toolbar}>
           <TouchableOpacity style={styles.toolBtn} onPress={handleRotate} disabled={processing}>
             <Lucide name="reload-outline" size={22} color="#fff" />
             <Text style={styles.toolText}>Rotate 90°</Text>
           </TouchableOpacity>
-          
           <TouchableOpacity style={styles.toolBtn} onPress={handleFlip} disabled={processing}>
             <Lucide name="swap-horizontal-outline" size={22} color="#fff" />
             <Text style={styles.toolText}>Mirror</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Filters Carousel Slider */}
         <View style={styles.filterSection}>
-          <Text style={styles.sectionTitle}>Presets</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterList}>
+          <Text style={styles.sectionTitle}>Filters</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterList}
+            keyboardShouldPersistTaps="handled"
+          >
             {FILTER_PRESETS.map((preset) => {
               const isActive = selectedFilter === preset.id;
               return (
@@ -166,9 +186,15 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
                     setSelectedFilter(preset.id);
                   }}
                 >
-                  <View style={styles.filterPreviewWrapper}>
-                    <Image source={{ uri: currentUri }} style={styles.filterPreviewImg} contentFit="cover" />
-                    <View style={[styles.filterPreviewOverlay, { backgroundColor: preset.overlayColor }]} />
+                  <View style={[styles.filterPreviewWrapper, isActive && styles.filterPreviewActive]}>
+                    <Image
+                      source={{ uri: currentUri }}
+                      style={styles.filterPreviewImg}
+                      contentFit="cover"
+                    />
+                    <View
+                      style={[styles.filterPreviewOverlay, { backgroundColor: preset.overlayColor }]}
+                    />
                   </View>
                   <Text style={[styles.filterName, isActive && styles.filterNameActive]}>
                     {preset.name}
@@ -178,7 +204,7 @@ export const ImageEditor: React.FC<ImageEditorProps> = ({
             })}
           </ScrollView>
         </View>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 };
@@ -189,48 +215,51 @@ const styles = StyleSheet.create({
     backgroundColor: "#05030f",
   },
   header: {
-    height: 56,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    borderBottomWidth: 0.5,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(255,255,255,0.06)",
     backgroundColor: "#080415",
   },
   headerBtn: {
-    padding: 4,
+    width: 40,
+    alignItems: "flex-start",
   },
   headerTitle: {
     color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-    letterSpacing: 0.5,
+    fontSize: 17,
+    fontWeight: "700",
   },
   headerDoneBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
     backgroundColor: "#00f5ff",
-    borderRadius: 6,
+    borderRadius: 8,
+    minWidth: 64,
+    alignItems: "center",
   },
   headerDoneText: {
     color: "#080415",
     fontSize: 14,
-    fontWeight: "bold",
+    fontWeight: "700",
   },
   canvasContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: "#020108",
+    minHeight: 0,
   },
   imageWrapper: {
-    width: "100%",
-    height: "100%",
     position: "relative",
-    justifyContent: "center",
-    alignItems: "center",
+    borderRadius: 4,
+    overflow: "hidden",
+    backgroundColor: "#0a0618",
   },
   canvasImage: {
     width: "100%",
@@ -252,15 +281,16 @@ const styles = StyleSheet.create({
   toolbar: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 32,
+    gap: 40,
     paddingVertical: 14,
-    borderTopWidth: 0.5,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "rgba(255,255,255,0.06)",
     backgroundColor: "#080415",
   },
   toolBtn: {
     alignItems: "center",
     gap: 4,
+    minWidth: 72,
   },
   toolText: {
     color: "rgba(255,255,255,0.6)",
@@ -268,16 +298,16 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   filterSection: {
-    paddingVertical: 18,
-    borderTopWidth: 0.5,
+    paddingTop: 14,
+    paddingBottom: Platform.OS === "ios" ? 8 : 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "rgba(255,255,255,0.06)",
     backgroundColor: "#080415",
-    paddingBottom: 24,
   },
   sectionTitle: {
     color: "rgba(255,255,255,0.4)",
-    fontSize: 11.5,
-    fontWeight: "bold",
+    fontSize: 11,
+    fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.8,
     paddingHorizontal: 16,
@@ -286,23 +316,24 @@ const styles = StyleSheet.create({
   filterList: {
     paddingHorizontal: 16,
     gap: 12,
+    paddingRight: 24,
   },
   filterCard: {
     alignItems: "center",
     gap: 6,
     width: 72,
   },
-  filterCardActive: {
-    transform: [{ scale: 1.02 }],
-  },
+  filterCardActive: {},
   filterPreviewWrapper: {
     width: 64,
     height: 64,
     borderRadius: 8,
     overflow: "hidden",
-    position: "relative",
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  filterPreviewActive: {
+    borderColor: "#00f5ff",
   },
   filterPreviewImg: {
     width: "100%",
@@ -312,13 +343,13 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   filterName: {
-    color: "rgba(255,255,255,0.4)",
+    color: "rgba(255,255,255,0.45)",
     fontSize: 11,
     fontWeight: "500",
     textAlign: "center",
   },
   filterNameActive: {
     color: "#00f5ff",
-    fontWeight: "bold",
+    fontWeight: "700",
   },
 });
