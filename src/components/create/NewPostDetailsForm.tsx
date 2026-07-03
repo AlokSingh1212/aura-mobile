@@ -13,10 +13,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
-import { CaptionText } from "@/components/CaptionText";
 import { SearchPickerSheet, type SearchPickerItem } from "@/components/create/SearchPickerSheet";
 import { TagPeopleSheet } from "@/components/create/TagPeopleSheet";
-import { LocationCaptureSheet } from "@/components/create/LocationCaptureSheet";
+import { LocationPickerSheet } from "@/components/create/LocationPickerSheet";
 import { AddProductSheet, type BrandStoreOption } from "@/components/profile/AddProductSheet";
 import { searchAudio } from "@/lib/postComposerSearch";
 import {
@@ -112,14 +111,7 @@ export function NewPostDetailsForm({
   }, []);
 
   const handlePeopleChange = (people: PostPersonTag[]) => {
-    let caption = details.caption;
-    for (const person of people) {
-      const mention = `@${person.username}`;
-      if (!caption.includes(mention)) {
-        caption = `${caption} ${mention}`.trim();
-      }
-    }
-    patch({ people, caption });
+    patch({ people });
   };
 
   const removePerson = (profileId: string) => {
@@ -168,19 +160,6 @@ export function NewPostDetailsForm({
             maxLength={2200}
           />
         </View>
-
-        {details.caption ? (
-          <View style={styles.captionPreview}>
-            <CaptionText caption={details.caption} style={styles.captionPreviewText} />
-          </View>
-        ) : null}
-
-        {details.aiLabel ? (
-          <View style={styles.aiBadge}>
-            <Lucide name="sparkles" size={14} color="#4a90d9" />
-            <Text style={styles.aiBadgeText}>AI-generated content</Text>
-          </View>
-        ) : null}
 
         <View style={styles.chipsRow}>
           <TouchableOpacity
@@ -451,10 +430,10 @@ export function NewPostDetailsForm({
         onChange={handlePeopleChange}
       />
 
-      <LocationCaptureSheet
+      <LocationPickerSheet
         visible={showLocationSheet}
         onClose={() => setShowLocationSheet(false)}
-        onConfirm={(verifiedLocation) => patch({ verifiedLocation })}
+        onSelect={(verifiedLocation) => patch({ verifiedLocation })}
       />
 
       <AddProductSheet

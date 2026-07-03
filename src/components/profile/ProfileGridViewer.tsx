@@ -22,6 +22,8 @@ import type { ProfileGridTab } from "@/lib/profileGridNavigation";
 import { usePostEngagement, toEngagementItem } from "@/hooks/usePostEngagement";
 import { PostCommentsSheet } from "@/components/post/PostCommentsSheet";
 import { CaptionText } from "@/components/CaptionText";
+import { PostMetaRotator } from "@/components/post/PostMetaRotator";
+import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
 import { PostOptionsSheet } from "@/components/post/PostOptionsSheet";
 import { PostShareSheet } from "@/components/post/PostShareSheet";
 
@@ -96,9 +98,14 @@ function ProfilePostPage({
               <Text style={styles.postHeaderAvatarText}>{profile.name[0]?.toUpperCase() || "A"}</Text>
             </View>
           )}
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.postHeaderName}>{profile.name}</Text>
-            <Text style={styles.postHeaderHandle}>@{profile.username}</Text>
+            <PostMetaRotator
+              location={post.location}
+              audio={post.music}
+              aiLabel={post.aiLabel}
+              textStyle={styles.postHeaderMeta}
+            />
           </View>
         </View>
         <TouchableOpacity onPress={onThreeDots} hitSlop={12}>
@@ -107,7 +114,7 @@ function ProfilePostPage({
       </View>
 
       {mediaUrls.length > 1 ? (
-        <View>
+        <View style={styles.mediaWrap}>
           <FlatList
             data={mediaUrls}
             horizontal
@@ -121,6 +128,7 @@ function ProfilePostPage({
               <Image source={{ uri: item }} style={styles.postImage} contentFit="cover" />
             )}
           />
+          <MediaPeopleOverlay tags={post.tags} collabs={post.collabs} />
           <View style={styles.carouselDots}>
             {mediaUrls.map((_, i) => (
               <View
@@ -131,7 +139,10 @@ function ProfilePostPage({
           </View>
         </View>
       ) : (
-        <Image source={{ uri: mediaUrls[0] }} style={styles.postImage} contentFit="cover" />
+        <View style={styles.mediaWrap}>
+          <Image source={{ uri: mediaUrls[0] }} style={styles.postImage} contentFit="cover" />
+          <MediaPeopleOverlay tags={post.tags} collabs={post.collabs} />
+        </View>
       )}
 
       <View style={styles.postActions}>
@@ -162,37 +173,6 @@ function ProfilePostPage({
           <Text style={styles.postCaptionUser}>{profile.username} </Text>
           <CaptionText caption={post.caption} />
         </Text>
-      ) : null}
-
-      {post.aiLabel ? (
-        <View style={styles.aiLabelRow}>
-          <Lucide name="sparkles" size={14} color="#4a90d9" />
-          <Text style={styles.aiLabelText}>AI-generated content</Text>
-        </View>
-      ) : null}
-
-      {post.location ? (
-        <View style={styles.locationRow}>
-          <Lucide name="location-outline" size={14} color="#00f5ff" />
-          <Text style={styles.locationText} numberOfLines={1}>
-            {post.location}
-          </Text>
-        </View>
-      ) : null}
-
-      {(post.tags?.length || post.collabs?.length) ? (
-        <View style={styles.tagMetaRow}>
-          {post.tags?.map((t) => (
-            <Text key={`tag_${t.profileId}`} style={styles.tagMetaChip}>
-              @{t.username}
-            </Text>
-          ))}
-          {post.collabs?.map((t) => (
-            <Text key={`collab_${t.profileId}`} style={styles.collabMetaChip}>
-              Collab · @{t.username}
-            </Text>
-          ))}
-        </View>
       ) : null}
 
       {linkedProduct ? (
@@ -635,6 +615,13 @@ const styles = StyleSheet.create({
   postHeaderHandle: {
     color: "rgba(255,255,255,0.45)",
     fontSize: 12,
+  },
+  postHeaderMeta: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 11,
+  },
+  mediaWrap: {
+    position: "relative",
   },
   postImage: {
     width,

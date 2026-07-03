@@ -103,12 +103,6 @@ export default function PostComposerScreen() {
 
   const buildCaption = (details: NewPostDetails) => {
     let text = details.caption.trim();
-    for (const person of details.people) {
-      const mention = `@${person.username}`;
-      if (!text.includes(mention)) {
-        text = `${text} ${mention}`.trim();
-      }
-    }
     if (details.aiLabel && !text.toLowerCase().includes("#ai")) {
       text = `${text}\n\n#AI`.trim();
     }

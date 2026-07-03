@@ -20,6 +20,7 @@ export interface ProfilePost {
   location?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  music?: string | null;
   aiLabel?: boolean;
   tags?: { profileId: string; username: string; name: string; kind?: string }[];
   collabs?: { profileId: string; username: string; name: string; kind?: string }[];
@@ -104,6 +105,7 @@ export async function fetchProfilePosts(opts: {
         location?: string | null;
         latitude?: number | null;
         longitude?: number | null;
+        music?: string | null;
         aiLabel?: boolean;
         tags?: ProfilePost["tags"];
         collabs?: ProfilePost["collabs"];
@@ -120,6 +122,7 @@ export async function fetchProfilePosts(opts: {
         location: p.location ?? null,
         latitude: p.latitude ?? null,
         longitude: p.longitude ?? null,
+        music: p.music ?? null,
         aiLabel: !!p.aiLabel,
         tags: p.tags || [],
         collabs: p.collabs || [],

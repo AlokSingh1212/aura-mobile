@@ -16,6 +16,8 @@ import { formatCompactNumber } from "@/constants/format";
 import { getCachedVideo } from "@/utils/videoCache";
 import { PeekPreviewModal } from "./PeekPreviewModal";
 import { CaptionText } from "@/components/CaptionText";
+import { PostMetaRotator } from "@/components/post/PostMetaRotator";
+import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
 
 const { height, width } = Dimensions.get("window");
 
@@ -240,6 +242,11 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             <Lucide name="heart" size={90} color="#FF3B30" />
           </Animated.View>
         )}
+
+        <MediaPeopleOverlay
+          tags={item.tags || item.content?.tags}
+          collabs={item.collabs || item.content?.collabs}
+        />
       </TouchableOpacity>
 
       {/* DYNAMIC SHADER OVERLAYS SYNCED FROM THE CAMERA STUDIO */}
@@ -352,21 +359,13 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                 <Text style={styles.followBtnText}>Follow</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.audioTrackText} numberOfLines={1}>
-              ↗ {item.audioTrack
-                ? `${item.audioTrack.title} • ${item.audioTrack.artist}`
-                : item.content?.location || item.location
-                  ? `📍 ${item.content?.location || item.location}`
-                  : item.music || ""}
-            </Text>
+            <PostMetaRotator
+              location={item.content?.location || item.location}
+              audio={item.audioTrack ? `${item.audioTrack.title} · ${item.audioTrack.artist}` : item.music}
+              aiLabel={item.content?.aiLabel || item.aiLabel}
+            />
           </View>
         </View>
-        {item.content?.aiLabel || item.aiLabel ? (
-          <View style={styles.aiFeedBadge}>
-            <Lucide name="sparkles" size={12} color="#4a90d9" />
-            <Text style={styles.aiFeedBadgeText}>AI-generated</Text>
-          </View>
-        ) : null}
         <CaptionText caption={item.caption || item.content?.caption || ""} style={styles.caption} numberOfLines={2} />
       </View>
 
