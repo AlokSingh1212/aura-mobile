@@ -84,8 +84,11 @@ export default function LoginScreen() {
       const res = await authSignUp({ username, email, password, phone, gender: "Prefer Not to Say", dob: "2000-01-01" });
       if (res.success) {
         triggerHaptic("success");
-        // Navigate to OTP verification
-        router.push({ pathname: "/otp", params: { userId: "new", phone: phone || email } } as any);
+        const uid = res.user?.id || useStore.getState().currentUser?.id;
+        router.push({
+          pathname: "/otp",
+          params: { userId: uid, ...(res.devOtp ? { devOtp: res.devOtp } : {}) },
+        } as any);
       } else {
         Alert.alert("Sign Up Failed", res.error || "Could not create your account. Please try again.");
       }
@@ -110,7 +113,15 @@ export default function LoginScreen() {
         triggerHaptic("success");
         router.replace("/");
       } else {
-        Alert.alert("Login Failed", res.error || "Invalid email or password.");
+        const msg = res.error || "Invalid email or password.";
+        if (msg.includes("Forgot password") || res.error === "PASSWORD_NOT_SET") {
+          Alert.alert("Login Failed", msg, [
+            { text: "Cancel", style: "cancel" },
+            { text: "Reset password", onPress: () => router.push("/forgot-password" as any) },
+          ]);
+        } else {
+          Alert.alert("Login Failed", msg);
+        }
       }
     } catch (e: any) {
       Alert.alert("Connection Error", e.message || "Could not reach the server.");
@@ -187,7 +198,10 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={styles.forgotLink}>
+              <TouchableOpacity
+                style={styles.forgotLink}
+                onPress={() => router.push("/forgot-password" as any)}
+              >
                 <Text style={styles.forgotText}>Forgot password?</Text>
               </TouchableOpacity>
 

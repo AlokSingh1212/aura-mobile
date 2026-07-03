@@ -2,6 +2,7 @@ import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { API_BASE } from "@/constants/api";
+import { authHeaders, registerAuthTokenGetter, IS_PRODUCTION_APP } from "@/lib/apiClient";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
@@ -20,6 +21,13 @@ import {
   cacheMessages
 } from "@/utils/localDb";
 import { AuraPixel } from "@/lib/auraPixel";
+import {
+  loadAuthBundle,
+  resolveMaisonId,
+  saveAuthBundle,
+  syncInstaStoriesWithProfile,
+  buildYourStoryNode,
+} from "@/lib/sessionIdentity";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -71,6 +79,32 @@ async function registerForPushNotificationsAsync() {
     console.warn("Error registering for push notifications:", error);
     return null;
   }
+}
+
+function hydrateProfileFromApi(profile: any) {
+  if (!profile) return profile;
+  const social = profile.maison?.socialLinks;
+  const tags =
+    profile.tags ||
+    (social && typeof social === "object" && Array.isArray(social.tags)
+      ? social.tags
+      : []);
+  const websiteLink =
+    profile.websiteLink !== undefined
+      ? String(profile.websiteLink ?? "").trim()
+      : String(profile.website ?? social?.website ?? "").trim();
+  const externalLinks = profile.externalLinks ?? [];
+  const allLinks = profile.allLinks ?? (websiteLink ? [websiteLink] : []);
+  return {
+    ...profile,
+    logo: profile.logo || profile.maison?.logo || null,
+    websiteLink,
+    externalLinks,
+    allLinks,
+    website: websiteLink,
+    bioText: profile.bioText || profile.maison?.about || "",
+    tags,
+  };
 }
 
 async function syncDevicePushToken(userId: string) {
@@ -149,7 +183,7 @@ interface StoreState {
   fetchWarehouses: (maisonId?: string) => Promise<void>;
   fetchOrders: (maisonId?: string) => Promise<void>;
   createWarehouse: (data: any) => Promise<boolean>;
-  createProduct: (data: any) => Promise<boolean>;
+  createProduct: (data: any) => Promise<{ success: boolean; artifactId?: string }>;
   addToCart: (product: any) => void;
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
@@ -189,11 +223,16 @@ interface StoreState {
   // Active Session & Authentication
   currentUser: any | null;
   setCurrentUser: (user: any | null) => void;
-  authSignUp: (payload: any) => Promise<{ success: boolean; error?: string }>;
-  authLogIn: (payload: any) => Promise<{ success: boolean; error?: string }>;
+  authSignUp: (payload: any) => Promise<{ success: boolean; error?: string; user?: any; token?: string; devOtp?: string }>;
+  authLogIn: (payload: any) => Promise<{ success: boolean; error?: string; token?: string }>;
   updateProfile: (payload: any) => Promise<{ success: boolean; error?: string }>;
   authOnboard: (payload: any) => Promise<{ success: boolean; error?: string; user?: any; profile?: any }>;
   authLogOut: () => void;
+  authHydrated: boolean;
+  authToken: string | null;
+  restoreAuthSession: () => Promise<void>;
+  syncProfileIdentity: () => void;
+  patchActiveProfile: (patch: Record<string, unknown>) => void;
 
   activeProfile: any | null;
   userProfiles: any[];
@@ -202,6 +241,7 @@ interface StoreState {
   switchActiveProfile: (profileId: string) => Promise<{ success: boolean; error?: string }>;
   instaStories: any[];
   addInstaStorySlide: (slide: any) => void;
+  loadUserStories: (userId: string) => Promise<void>;
 
   notifications: any[];
   loadingNotifications: boolean;
@@ -286,7 +326,7 @@ const MOCK_PRODUCTS = [
 ];
 
 export const useStore = create<StoreState>((set, get) => ({
-  products: MOCK_PRODUCTS,
+  products: [],
   stories: [],
   cart: [],
   warehouses: [],
@@ -315,18 +355,76 @@ export const useStore = create<StoreState>((set, get) => ({
   loadingDeals: false,
   influencers: [],
 
-  activeMaisonId: "aloksingh",
+  activeMaisonId: "",
   setActiveMaisonId: (id) => set({ activeMaisonId: id }),
+
+  authHydrated: false,
+  authToken: null,
+
+  syncProfileIdentity: () => {
+    const s = get();
+    const activeMaisonId = resolveMaisonId(s.activeProfile, s.currentUser, s.activeMaisonId);
+    const instaStories = syncInstaStoriesWithProfile(
+      s.instaStories,
+      s.activeProfile,
+      s.currentUser
+    );
+    set({ activeMaisonId, instaStories });
+    if (s.currentUser?.id) {
+      saveAuthBundle(AsyncStorage, {
+        currentUser: s.currentUser,
+        activeProfile: s.activeProfile,
+        userProfiles: s.userProfiles,
+        activeMaisonId,
+        authToken: s.authToken,
+      }).catch(() => {});
+    }
+  },
+
+  patchActiveProfile: (patch: Record<string, unknown>) => {
+    set((state) => ({
+      activeProfile: state.activeProfile
+        ? { ...state.activeProfile, ...patch }
+        : state.activeProfile,
+      userProfiles: state.userProfiles.map((prof) =>
+        prof.id === state.activeProfile?.id ? { ...prof, ...patch } : prof
+      ),
+    }));
+    get().syncProfileIdentity();
+  },
+
+  restoreAuthSession: async () => {
+    try {
+      const bundle = await loadAuthBundle(AsyncStorage);
+      if (bundle?.currentUser?.id) {
+        set({
+          currentUser: bundle.currentUser,
+          activeProfile: bundle.activeProfile,
+          userProfiles: bundle.userProfiles || [],
+          authToken: bundle.authToken || null,
+          activeMaisonId:
+            bundle.activeMaisonId ||
+            resolveMaisonId(bundle.activeProfile, bundle.currentUser),
+        });
+        get().syncProfileIdentity();
+        get()
+          .fetchProfiles(String(bundle.currentUser.id))
+          .catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Auth session restore failed:", e);
+    } finally {
+      set({ authHydrated: true });
+    }
+  },
 
   instaStories: [
     {
       id: "ys",
       username: "Your story",
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150",
+      avatar: "",
       isYourStory: true,
-      slides: [
-        { id: "ys_1", url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400", caption: "Securing next-gen luxury blueprints..." }
-      ]
+      slides: [],
     },
     {
       id: "g1",
@@ -402,9 +500,8 @@ export const useStore = create<StoreState>((set, get) => ({
         }
       }
     } catch (e) {
-      console.warn("Could not query products from local host. Using simulated models fallback.", e);
-      // Fallback to mock products on fetch failure
-      if (get().products.length === 0) {
+      console.warn("Could not query products from API.", e);
+      if (!IS_PRODUCTION_APP && get().products.length === 0) {
         set({ products: MOCK_PRODUCTS });
       }
     } finally {
@@ -543,19 +640,20 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const res = await fetch(`${API_BASE}/products/create`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("success");
         get().fetchProducts();
-        return true;
+        return { success: true, artifactId: data.artifact?.id };
       }
-      return false;
+      console.warn("Product create refused:", data.error || data.message);
+      return { success: false, error: data.error || data.message };
     } catch (e) {
       console.warn("Could not create dynamic catalog product on local host.", e);
-      return false;
+      return { success: false, error: e instanceof Error ? e.message : "Network error" };
     }
   },
 
@@ -935,9 +1033,19 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("success");
-        set({ currentUser: data.user, activeMaisonId: data.user.maisonId });
+        set({
+          currentUser: data.user,
+          activeMaisonId: data.user.maisonId,
+          authToken: data.token || null,
+        });
         await get().fetchProfiles(data.user.id);
-        return { success: true };
+        get().syncProfileIdentity();
+        return {
+          success: true,
+          user: data.user,
+          token: data.token,
+          devOtp: data.devOtp,
+        };
       }
       return { success: false, error: data.message || data.error };
     } catch (e: any) {
@@ -956,9 +1064,14 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("success");
-        set({ currentUser: data.user, activeMaisonId: data.user.maisonId });
+        set({
+          currentUser: data.user,
+          activeMaisonId: data.user.maisonId,
+          authToken: data.token || null,
+        });
         await get().fetchProfiles(data.user.id);
-        return { success: true };
+        get().syncProfileIdentity();
+        return { success: true, token: data.token };
       }
       return { success: false, error: data.message || data.error };
     } catch (e: any) {
@@ -1012,7 +1125,10 @@ export const useStore = create<StoreState>((set, get) => ({
       const res = await fetch(`${API_BASE}/profile/list?userId=${userId}`);
       const data = await res.json();
       if (data.success) {
-        set({ userProfiles: data.profiles, activeProfile: data.activeProfile });
+        const profiles = (data.profiles || []).map(hydrateProfileFromApi);
+        const activeProfile = hydrateProfileFromApi(data.activeProfile);
+        set({ userProfiles: profiles, activeProfile });
+        get().syncProfileIdentity();
         syncDevicePushToken(userId);
         AuraPixel.loadConfig(userId);
       }
@@ -1025,25 +1141,30 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const res = await fetch(`${API_BASE}/profile/create`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("success");
-        const newMaisonId = data.activeProfile.maisonId || data.activeProfile.username;
-        set(state => ({
-          userProfiles: data.profiles,
-          activeProfile: data.activeProfile,
-          activeMaisonId: newMaisonId || state.activeMaisonId,
-          currentUser: state.currentUser ? {
-            ...state.currentUser,
-            activeProfileId: data.activeProfile.id,
-            maisonId: data.activeProfile.type === "BUSINESS" ? newMaisonId : state.currentUser.maisonId,
-            isBusinessAccount: data.activeProfile.type === "BUSINESS"
-          } : null
-        }));
-        // Force refresh feed & catalog matching the new profile's vertical
+        const profiles = (data.profiles || []).map(hydrateProfileFromApi);
+        const activeProfile = hydrateProfileFromApi(data.activeProfile);
+        set({
+          userProfiles: profiles,
+          activeProfile,
+          currentUser: get().currentUser
+            ? {
+                ...get().currentUser,
+                activeProfileId: activeProfile.id,
+                maisonId:
+                  activeProfile.type === "BUSINESS"
+                    ? activeProfile.maisonId || activeProfile.username
+                    : get().currentUser?.maisonId,
+                isBusinessAccount: activeProfile.type === "BUSINESS",
+              }
+            : null,
+        });
+        get().syncProfileIdentity();
         get().fetchProducts();
         get().fetchFeed();
         return { success: true };
@@ -1068,17 +1189,16 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("success");
+        const profiles = (data.profiles || []).map(hydrateProfileFromApi);
+        const activeProfile = hydrateProfileFromApi(data.activeProfile);
         set({
-          userProfiles: data.profiles,
-          activeProfile: data.activeProfile,
+          userProfiles: profiles,
+          activeProfile,
           currentUser: data.user,
-          activeMaisonId: data.user.maisonId || "aloksingh"
         });
-
-        // Force dynamic algorithmic feed and product reload matching the switched profile category
+        get().syncProfileIdentity();
         get().fetchProducts();
         get().fetchFeed();
-
         return { success: true };
       }
       return { success: false, error: data.message || data.error };
@@ -1089,18 +1209,45 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   addInstaStorySlide: (slide) => {
-    set(state => {
-      const updated = state.instaStories.map(story => {
+    set((state) => {
+      const updated = state.instaStories.map((story) => {
         if (story.isYourStory) {
           return {
             ...story,
-            slides: [slide, ...(story.slides || [])]
+            slides: [slide, ...(story.slides || [])],
           };
         }
         return story;
       });
       return { instaStories: updated };
     });
+    get().syncProfileIdentity();
+  },
+
+  loadUserStories: async (userId) => {
+    try {
+      const res = await fetch(`${API_BASE}/profile/stories?userId=${encodeURIComponent(userId)}`, {
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (!data.success || !Array.isArray(data.stories)) return;
+
+      const slides = data.stories.map((s: { id: string; url: string; caption?: string; isVideo?: boolean }) => ({
+        id: s.id,
+        url: s.url,
+        caption: s.caption,
+        isVideo: s.isVideo,
+      }));
+
+      set((state) => {
+        const others = state.instaStories.filter((s) => !s.isYourStory);
+        const yourStory = buildYourStoryNode(state.activeProfile, state.currentUser, slides);
+        return { instaStories: [yourStory, ...others] };
+      });
+      get().syncProfileIdentity();
+    } catch (e) {
+      console.warn("Could not load user stories from server.", e);
+    }
   },
 
   fetchNotifications: async (profileId) => {
@@ -1139,7 +1286,19 @@ export const useStore = create<StoreState>((set, get) => ({
 
   authLogOut: () => {
     get().triggerHaptic("medium");
-    set({ currentUser: null, activeProfile: null, userProfiles: [], activeMaisonId: "aloksingh", notifications: [], viewingProfile: null, viewingProducts: [], viewingHighlights: [] });
+    saveAuthBundle(AsyncStorage, null).catch(() => {});
+    set({
+      currentUser: null,
+      activeProfile: null,
+      userProfiles: [],
+      activeMaisonId: "",
+      authToken: null,
+      notifications: [],
+      viewingProfile: null,
+      viewingProducts: [],
+      viewingHighlights: [],
+    });
+    get().syncProfileIdentity();
   },
 
   // View Other User's Profile
@@ -1534,3 +1693,5 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   }
 }));
+
+registerAuthTokenGetter(() => useStore.getState().authToken);

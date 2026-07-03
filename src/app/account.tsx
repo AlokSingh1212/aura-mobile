@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { 
   StyleSheet, 
   Text, 
   View, 
   Image, 
-  TouchableOpacity, 
+  TouchableOpacity,
+  Pressable,
   ScrollView,
   Alert,
   Modal,
@@ -16,35 +17,48 @@ import {
   Linking,
   Share,
   Platform,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
-import { router } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
+import { router, useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
+import { openExternalUrl, normalizeProfileLinks } from "@/lib/openExternalUrl";
+import { resolveMaisonId } from "@/lib/sessionIdentity";
+import { uploadMediaFromUri } from "@/lib/uploadMedia";
+import { delayAfterModalClose, pickMediaFromLibrary, type MediaPickMode } from "@/lib/createMediaPicker";
 import * as Clipboard from "expo-clipboard";
 import * as ImageManipulator from "expo-image-manipulator";
 import { API_HOST } from "@/constants/api";
+import { authHeaders } from "@/lib/apiClient";
 import { LiveShowroom } from "@/components/LiveShowroom";
+import { synthesizeProductFromPrompt } from "@/lib/aiProduct";
+import { uploadAndPublish } from "@/lib/publishContent";
 import { formatCompactNumber } from "@/constants/format";
+import { ProfileGridEmpty } from "@/components/ProfileGridEmpty";
+import { ProfileGridViewer } from "@/components/profile/ProfileGridViewer";
+import { CreateBrandProfileSheet } from "@/components/profile/CreateBrandProfileSheet";
+import { AddProductSheet, type BrandStoreOption } from "@/components/profile/AddProductSheet";
+import { MAX_PROFILES_PER_ACCOUNT } from "@/lib/profileUsername";
+import {
+  fetchProfileNetwork,
+  fetchProfilePosts,
+  fetchProfileProducts,
+  toggleFollowProfile,
+  type NetworkProfile,
+  type ProfileCatalogProduct,
+} from "@/lib/profileApi";
+import { useProfileGridViewer } from "@/lib/profileGridNavigation";
 
 const { width } = Dimensions.get("window");
 const GRID_ITEM_SIZE = (width - 2) / 3; // 3 columns with 1px gap
 
-const PRESET_POSTS = [
-  { id: "grid_1", url: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400", isVideo: true },
-  { id: "grid_2", url: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400", isVideo: true },
-  { id: "grid_3", url: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=400", isVideo: false },
-  { id: "grid_4", url: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600", isVideo: false },
-  { id: "grid_5", url: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=400", isVideo: true },
-  { id: "grid_6", url: "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=400", isVideo: false },
-  { id: "grid_7", url: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&q=80&w=400", isVideo: true },
-  { id: "grid_8", url: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=400", isVideo: false },
-  { id: "grid_9", url: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&q=80&w=400", isVideo: true },
-];
+const PRESET_POSTS: { id: string; url: string; isVideo: boolean }[] = [];
 
 export default function AccountScreen() {
+  const routeParams = useLocalSearchParams<{ openCreate?: string }>();
   const { 
     products, 
     triggerHaptic, 
@@ -52,26 +66,30 @@ export default function AccountScreen() {
     setActiveMaisonId, 
     createProduct, 
     fetchProducts,
+    syncProfileIdentity,
+    patchActiveProfile,
     currentUser,
+    authHydrated,
     updateProfile,
     authLogOut,
     addInstaStorySlide,
+    loadUserStories,
+    instaStories,
     switchActiveProfile,
-    createNewProfile,
+    fetchProfiles,
     activeProfile,
     userProfiles,
     wishlist,
     fetchWishlist,
     toggleWishlist,
     addToCart,
-    isSubscribed,
-    setSubscribed
   } = useStore();
   const personalProfile = userProfiles.find(p => p.type === "PERSONAL") || userProfiles.find(p => p.type !== "BUSINESS") || userProfiles[0];
   const brandProfiles = userProfiles.filter(p => p.type === "BUSINESS");
   
   const insets = useSafeAreaInsets();
   const [presetPosts, setPresetPosts] = useState(PRESET_POSTS);
+  const { viewer: gridViewer, openGridItem, closeViewer: closeGridViewer } = useProfileGridViewer();
 
   // 👥 Personal Details states
   const [showPersonalDetails, setShowPersonalDetails] = useState(false);
@@ -83,56 +101,233 @@ export default function AccountScreen() {
   const [isUpdating, setIsUpdating] = useState(false);
 
   // 🔴 PROFILE EDITABLE STATES (PARITY WITH SCREENSHOT AND EXTENDED TO BE FULLY FUNCTIONAL)
-  const [username, setUsername] = useState<string>(activeProfile?.username || activeMaisonId);
+  const [username, setUsername] = useState<string>(activeProfile?.username || "");
   const [logo, setLogo] = useState<string | null>(activeProfile?.logo || null);
   const [editLogo, setEditLogo] = useState<string | null>(activeProfile?.logo || null);
-  const [profileName, setProfileName] = useState<string>(activeProfile?.name || (activeMaisonId === "aloksingh" ? "Alok Singh" : "Rare Raven"));
-  const [category, setCategory] = useState<string>(activeProfile?.category || (activeMaisonId === "aloksingh" ? "Personal Profile" : "Clothing (Brand)"));
+  const [profileName, setProfileName] = useState<string>(activeProfile?.name || "");
+  const [category, setCategory] = useState<string>(activeProfile?.category || "");
 
   // 🧠 Profile-Centric Logical Helpers
-  const isPersonalProfile = category === "Personal Profile" || category?.toLowerCase().includes("personal");
+  const isPersonalProfile =
+    activeProfile?.type === "PERSONAL" ||
+    category === "Personal Profile" ||
+    category?.toLowerCase().includes("personal");
   const isCreatorProfile = category?.toLowerCase().includes("creator") || category?.toLowerCase().includes("stylist") || category?.toLowerCase().includes("influencer") || category?.toLowerCase().includes("artist");
   const isBusinessProfile = !isPersonalProfile && !isCreatorProfile;
-  const [bioText, setBioText] = useState<string>(
-    activeProfile?.bioText || (activeMaisonId === "aloksingh" 
-      ? "Founder of AURA. Brutalist Web Architect & Sovereign Creator."
-      : "Streetwear + Gen Z Aesthetic\nBold Fits. Clean Planet.\nOversized fashion that slap — not the Earth.\nEco-conscious streetwear for every vibe.")
+  const [bioText, setBioText] = useState<string>(activeProfile?.bioText || "");
+  const [websiteLink, setWebsiteLink] = useState<string>(
+    activeProfile?.websiteLink || activeProfile?.website || ""
   );
-  const [websiteLink, setWebsiteLink] = useState<string>(activeProfile?.websiteLink || (activeMaisonId === "aloksingh" ? "aisastra.com" : "clothikoo.in"));
-  const [tags, setTags] = useState<string[]>(activeProfile?.tags || (activeMaisonId === "aloksingh" ? ["@aloksingh", "✦ Founder", "✦ AI Sastra"] : ["@rare_raven", "ⓕ Clothikoo", "✦ Ecom Expert"]));
-  const [postsCount, setPostsCount] = useState<number>(activeProfile?.postsCount || (activeMaisonId === "aloksingh" ? 42 : 137));
-  const [followersCount, setFollowersCount] = useState<number>(activeProfile?.followersCount || (activeMaisonId === "aloksingh" ? 880 : 80));
-  const [followingCount, setFollowingCount] = useState<number>(activeProfile?.followingCount || (activeMaisonId === "aloksingh" ? 120 : 613));
+  const [tags, setTags] = useState<string[]>(activeProfile?.tags || []);
+  const [postsCount, setPostsCount] = useState<number>(activeProfile?.postsCount || 0);
+  const [followersCount, setFollowersCount] = useState<number>(activeProfile?.followersCount || 0);
+  const [followingCount, setFollowingCount] = useState<number>(activeProfile?.followingCount || 0);
 
   // Edit profile popup form values
-  const [editUsername, setEditUsername] = useState<string>(activeProfile?.username || activeMaisonId);
-  const [editProfileName, setEditProfileName] = useState<string>(activeProfile?.name || (activeMaisonId === "aloksingh" ? "Alok Singh" : "Rare Raven"));
-  const [editCategory, setEditCategory] = useState<string>(activeProfile?.category || (activeMaisonId === "aloksingh" ? "Personal Profile" : "Clothing (Brand)"));
-  const [editBioText, setEditBioText] = useState<string>(activeProfile?.bioText || (activeMaisonId === "aloksingh" ? "Founder of AURA. Brutalist Web Architect & Sovereign Creator." : "Streetwear + Gen Z Aesthetic\nBold Fits. Clean Planet.\nOversized fashion that slap — not the Earth.\nEco-conscious streetwear for every vibe."));
-  const [editWebsiteLink, setEditWebsiteLink] = useState<string>(activeProfile?.websiteLink || (activeMaisonId === "aloksingh" ? "aisastra.com" : "clothikoo.in"));
-  const [editPostsCount, setEditPostsCount] = useState<string>((activeProfile?.postsCount || (activeMaisonId === "aloksingh" ? 42 : 137)).toString());
-  const [editFollowersCount, setEditFollowersCount] = useState<string>((activeProfile?.followersCount || (activeMaisonId === "aloksingh" ? 880 : 80)).toString());
-  const [editFollowingCount, setEditFollowingCount] = useState<string>((activeProfile?.followingCount || (activeMaisonId === "aloksingh" ? 120 : 613)).toString());
+  const [editUsername, setEditUsername] = useState<string>(activeProfile?.username || "");
+  const [editProfileName, setEditProfileName] = useState<string>(activeProfile?.name || "");
+  const [editCategory, setEditCategory] = useState<string>(activeProfile?.category || "");
+  const [editBioText, setEditBioText] = useState<string>(activeProfile?.bioText || "");
+  const [editWebsiteLink, setEditWebsiteLink] = useState<string>(
+    activeProfile?.websiteLink || activeProfile?.website || ""
+  );
+
+  const displayLogo = logo || activeProfile?.logo || currentUser?.avatar || null;
+
+  const profileSaveInFlight = useRef(false);
+  const mediaUploadInFlight = useRef(false);
+
+  const applyProfilePayload = useCallback((p: any) => {
+    if (!p) return;
+    setUsername(p.username || "");
+    setProfileName(p.profileName || p.name || "");
+    setCategory(p.category || "");
+    setBioText(p.bioText || "");
+    setWebsiteLink(p.websiteLink || p.website || "");
+    setTags(p.tags || []);
+    setPostsCount(p.postsCount ?? 0);
+    setFollowersCount(p.followersCount ?? 0);
+    setFollowingCount(p.followingCount ?? 0);
+    setLogo(p.logo || null);
+    setEditLogo(p.logo || null);
+    setEditUsername(p.username || "");
+    setEditProfileName(p.profileName || p.name || "");
+    setEditCategory(p.category || "");
+    setEditBioText(p.bioText || "");
+    setEditWebsiteLink(p.websiteLink || p.website || "");
+
+    useStore.setState((state) => {
+      const patch = {
+        username: p.username,
+        name: p.profileName || p.name,
+        category: p.category,
+        bioText: p.bioText,
+        websiteLink: p.websiteLink || p.website,
+        website: p.websiteLink || p.website,
+        externalLinks: p.externalLinks || [],
+        allLinks: p.allLinks || normalizeProfileLinks(p),
+        logo: p.logo,
+        postsCount: p.postsCount,
+        followersCount: p.followersCount,
+        followingCount: p.followingCount,
+        tags: p.tags,
+      };
+      return {
+        activeProfile: state.activeProfile
+          ? { ...state.activeProfile, ...patch }
+          : state.activeProfile,
+        userProfiles: state.userProfiles.map((prof) =>
+          prof.id === state.activeProfile?.id || prof.username === p.username
+            ? { ...prof, ...patch }
+            : prof
+        ),
+      };
+    });
+    useStore.getState().syncProfileIdentity();
+  }, []);
+
+  const loadProfileFromServer = useCallback(async () => {
+    if (
+      !authHydrated ||
+      !currentUser?.id ||
+      profileSaveInFlight.current ||
+      mediaUploadInFlight.current
+    ) {
+      return;
+    }
+    setLoadingProfile(true);
+    try {
+      const res = await fetch(
+        `${API_HOST}/api/mobile/profile?userId=${encodeURIComponent(currentUser.id)}`
+      );
+      const data = await res.json();
+      if (data.success && data.profile) {
+        applyProfilePayload(data.profile);
+      } else if (!data.success) {
+        console.warn("Profile load refused:", data.error || data.message);
+      }
+      if (data.maisons) {
+        setAvailableMaisons(data.maisons);
+      }
+    } catch (e) {
+      console.warn("Could not synchronize profile from database.", e);
+    } finally {
+      setLoadingProfile(false);
+    }
+  }, [applyProfilePayload, authHydrated, currentUser?.id]);
+
+  const loadProfilePosts = useCallback(async () => {
+    if (!currentUser?.id) return;
+    try {
+      const posts = await fetchProfilePosts({
+        userId: currentUser.id,
+        profileId: activeProfile?.id,
+      });
+      setPresetPosts(posts);
+    } catch (e) {
+      console.warn("Could not load profile posts.", e);
+    }
+  }, [currentUser?.id, activeProfile?.id]);
+
+  const loadProfileProducts = useCallback(async () => {
+    if (!currentUser?.id) return;
+    try {
+      const { products, mode } = await fetchProfileProducts({
+        userId: currentUser.id,
+        profileId: activeProfile?.id,
+      });
+      setProfileProducts(products);
+      setProfileProductsMode(mode === "aggregated" ? "aggregated" : products.length ? "store" : "empty");
+    } catch (e) {
+      console.warn("Could not load profile products.", e);
+      setProfileProducts([]);
+    }
+  }, [currentUser?.id, activeProfile?.id]);
 
   // UI state hooks
   const [showEditModal, setShowEditModal] = useState(false);
   const [activeGridTab, setActiveGridTab] = useState<"posts" | "reels" | "products" | "collabs">("posts");
   const [loadingProfile, setLoadingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [availableMaisons, setAvailableMaisons] = useState<any[]>([]);
   const [showSwitcherModal, setShowSwitcherModal] = useState(false);
+  const [showCreateBrandSheet, setShowCreateBrandSheet] = useState(false);
+  const [showAddProductSheet, setShowAddProductSheet] = useState(false);
+  const [profileProducts, setProfileProducts] = useState<ProfileCatalogProduct[]>([]);
+  const [profileProductsMode, setProfileProductsMode] = useState<"store" | "aggregated" | "empty">("store");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showStoryViewer, setShowStoryViewer] = useState(false);
+  const [storyViewerIndex, setStoryViewerIndex] = useState(0);
+
+  const yourStorySlides =
+    instaStories.find((s) => s.isYourStory)?.slides?.filter((sl: { url?: string }) => sl?.url) || [];
+  const hasActiveStory = yourStorySlides.length > 0;
   const [showWishlistModal, setShowWishlistModal] = useState(false);
 
   // 👥 Followers/Following network list states
   const [showNetworkModal, setShowNetworkModal] = useState(false);
   const [networkTab, setNetworkTab] = useState<"followers" | "following">("followers");
-  const [networkUsers, setNetworkUsers] = useState([
-    { id: "n1", username: "studywithjasmeet", name: "Jasmeet Kaur", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=100", followed: false, isFollower: true },
-    { id: "n2", username: "fitwithyashika_", name: "Yashika Sharma", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=100", followed: true, isFollower: true },
-    { id: "n3", username: "curator.alok", name: "Alok Sovereign", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=100", followed: true, isFollower: false },
-    { id: "n4", username: "priya_mehta", name: "Priya Mehta", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=100", followed: false, isFollower: false },
-    { id: "n5", username: "rohan_curator", name: "Rohan Kapoor", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=100", followed: true, isFollower: true }
-  ]);
+  const [networkUsers, setNetworkUsers] = useState<NetworkProfile[]>([]);
+  const [loadingNetwork, setLoadingNetwork] = useState(false);
+  const [shareContacts, setShareContacts] = useState<NetworkProfile[]>([]);
+  const [loadingShareContacts, setLoadingShareContacts] = useState(false);
+
+  const loadNetworkList = useCallback(
+    async (tab: "followers" | "following") => {
+      if (!activeProfile?.id) return;
+      setLoadingNetwork(true);
+      try {
+        const list = await fetchProfileNetwork(activeProfile.id, tab, activeProfile.id);
+        setNetworkUsers(list);
+      } catch (e) {
+        console.warn("Could not load profile network.", e);
+        setNetworkUsers([]);
+      } finally {
+        setLoadingNetwork(false);
+      }
+    },
+    [activeProfile?.id]
+  );
+
+  const loadShareContacts = useCallback(async () => {
+    if (!activeProfile?.id) return;
+    setLoadingShareContacts(true);
+    try {
+      const list = await fetchProfileNetwork(activeProfile.id, "following", activeProfile.id);
+      setShareContacts(list);
+    } catch (e) {
+      console.warn("Could not load share contacts.", e);
+      setShareContacts([]);
+    } finally {
+      setLoadingShareContacts(false);
+    }
+  }, [activeProfile?.id]);
+
+  useEffect(() => {
+    if (showNetworkModal && activeProfile?.id) {
+      loadNetworkList(networkTab);
+    }
+  }, [showNetworkModal, networkTab, activeProfile?.id, loadNetworkList]);
+
+  const handleNetworkFollowToggle = async (item: NetworkProfile) => {
+    if (!activeProfile?.id || item.id === activeProfile.id) return;
+    triggerHaptic("medium");
+    const data = await toggleFollowProfile(activeProfile.id, item.id);
+    if (!data.success) return;
+
+    setNetworkUsers((prev) =>
+      prev.map((u) => (u.id === item.id ? { ...u, followed: !!data.isFollowing } : u))
+    );
+
+    if (networkTab === "following" && !data.isFollowing) {
+      setNetworkUsers((prev) => prev.filter((u) => u.id !== item.id));
+    }
+
+    if (typeof data.followingCount === "number") {
+      setFollowingCount(data.followingCount);
+    }
+  };
 
   // ➕ Functional Modals State
   const [showPostModal, setShowPostModal] = useState(false);
@@ -190,21 +385,18 @@ export default function AccountScreen() {
   const [showShareProfileSheet, setShowShareProfileSheet] = useState(false);
   const [shareSearch, setShareSearch] = useState("");
 
-  // Live simulator states
-  const [liveComments, setLiveComments] = useState<any[]>([]);
-  const [viewerCount, setViewerCount] = useState(1280);
-  const [showLiveStats, setShowLiveStats] = useState(false);
+  useEffect(() => {
+    if (showShareProfileSheet && activeProfile?.id) {
+      loadShareContacts();
+    }
+  }, [showShareProfileSheet, activeProfile?.id, loadShareContacts]);
 
-  // Mock highlights
-  const [highlights, setHighlights] = useState([
-    { id: "h1", title: "Community", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150" },
-    { id: "h2", title: "C", avatar: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150" },
-    { id: "h3", title: "CLOTHIKOO", avatar: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=150" },
-    { id: "h4", title: "Core", avatar: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=150" },
-  ]);
+  // Highlights — seeded from real stories when available
+  const [highlights, setHighlights] = useState<{ id: string; title: string; avatar: string }[]>([]);
 
   // Redirect to login if user is not authenticated dynamically
   useEffect(() => {
+    if (!authHydrated) return;
     if (!currentUser) {
       const timer = setTimeout(() => {
         router.replace("/login");
@@ -221,70 +413,35 @@ export default function AccountScreen() {
     setRegionLockEnabled(currentUser.regionLockEnabled ?? false);
     setAlertsEnabled(currentUser.alertsEnabled ?? true);
     setFediverseSharing(currentUser.fediverseSharing ?? false);
-  }, [currentUser]);
+  }, [currentUser, authHydrated]);
 
-  // Synchronize local states instantly from activeProfile when it changes, preventing lag/flicker
-  useEffect(() => {
-    if (activeProfile) {
-      setUsername(activeProfile.username || activeMaisonId);
-      setProfileName(activeProfile.name || (activeProfile.username === "aloksingh" ? "Alok Singh" : "Rare Raven"));
-      setCategory(activeProfile.category || (activeProfile.username === "aloksingh" ? "Personal Profile" : "Clothing (Brand)"));
-      setLogo(activeProfile.logo || null);
-      setEditLogo(activeProfile.logo || null);
-      setBioText(activeProfile.bioText || "");
-      setWebsiteLink(activeProfile.websiteLink || "");
-      setTags(activeProfile.tags || []);
-      setPostsCount(activeProfile.postsCount || 0);
-      setFollowersCount(activeProfile.followersCount || 0);
-      setFollowingCount(activeProfile.followingCount || 0);
-
-      setEditUsername(activeProfile.username || activeMaisonId);
-      setEditProfileName(activeProfile.name || (activeProfile.username === "aloksingh" ? "Alok Singh" : "Rare Raven"));
-      setEditCategory(activeProfile.category || (activeProfile.username === "aloksingh" ? "Personal Profile" : "Clothing (Brand)"));
-      setEditLogo(activeProfile.logo || null);
-      setEditBioText(activeProfile.bioText || "");
-      setEditWebsiteLink(activeProfile.websiteLink || "");
-      setEditPostsCount((activeProfile.postsCount || 0).toString());
-      setEditFollowersCount((activeProfile.followersCount || 0).toString());
-      setEditFollowingCount((activeProfile.followingCount || 0).toString());
-    }
-  }, [activeProfile]);
-
-  // Synchronize profile details from Next.js Neon PostgreSQL on mount
-  useEffect(() => {
-    if (!currentUser) return;
-    const fetchProfileData = async () => {
-      try {
-        const res = await fetch(`${API_HOST}/api/mobile/profile?maisonId=${activeMaisonId}`);
-        const data = await res.json();
-        if (data.success) {
-          if (data.profile) {
-            const p = data.profile;
-            setUsername(p.username);
-            setProfileName(p.profileName);
-            setCategory(p.category);
-            setBioText(p.bioText);
-            setWebsiteLink(p.websiteLink);
-            setTags(p.tags || []);
-            setPostsCount(p.postsCount);
-            setFollowersCount(p.followersCount);
-            setFollowingCount(p.followingCount);
-            setLogo(p.logo || null);
-            setEditLogo(p.logo || null);
-          }
-          if (data.maisons) {
-            setAvailableMaisons(data.maisons);
-          }
-        }
-      } catch (e) {
-        console.warn("Could not synchronize profile from database. Using offline fallback states.", e);
-      } finally {
-        setLoadingProfile(false);
+  useFocusEffect(
+    useCallback(() => {
+      loadProfileFromServer();
+      loadProfilePosts();
+      loadProfileProducts();
+      if (currentUser?.id) {
+        loadUserStories(currentUser.id);
       }
-    };
-    fetchProfileData();
+    }, [loadProfileFromServer, loadProfilePosts, loadProfileProducts, loadUserStories, currentUser?.id, activeProfile?.id])
+  );
+
+  // Keep account avatar in sync with global store (bottom tab uses the same activeProfile.logo)
+  useEffect(() => {
+    if (mediaUploadInFlight.current || isUploadingMedia) return;
+    const storeLogo = activeProfile?.logo;
+    if (storeLogo && storeLogo !== logo) {
+      setLogo(storeLogo);
+      setEditLogo(storeLogo);
+    }
+  }, [activeProfile?.logo, isUploadingMedia, logo]);
+
+  // Load from Postgres when auth is ready or active profile switches
+  useEffect(() => {
+    if (!authHydrated || !currentUser?.id) return;
+    loadProfileFromServer();
     fetchProducts();
-  }, [activeMaisonId, currentUser]);
+  }, [authHydrated, currentUser?.id, activeProfile?.id]);
 
   const handleSavePersonalDetails = async () => {
     if (!personalDob.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -386,10 +543,76 @@ export default function AccountScreen() {
     }
   };
 
-  // Filter actual products curations from AURA database that belong to this brand!
-  const maisonProducts = products.filter(
-    p => p.maisonId === username || p.maison?.id === username || (username === "rare_raven" && (p.maisonId === "rare_raven" || p.maison?.id === "rare_raven" || !p.maisonId))
-  );
+  // Catalog products for profile grid (aggregated on personal profile, store-scoped on brand)
+  const brandStoreOptions: BrandStoreOption[] = brandProfiles.map((p) => ({
+    id: p.id,
+    name: p.name,
+    username: p.username,
+    maisonId: p.maisonId || p.username,
+    logo: p.logo,
+  }));
+
+  const displayProducts = profileProducts.length > 0
+    ? profileProducts
+    : products
+        .filter(
+          (p) =>
+            p.maisonId === username ||
+            p.maison?.id === username ||
+            (username === "rare_raven" &&
+              (p.maisonId === "rare_raven" || p.maison?.id === "rare_raven" || !p.maisonId))
+        )
+        .map((p) => ({
+          id: p.id,
+          title: p.title,
+          price: p.price,
+          images: p.images || [],
+          maisonId: p.maisonId,
+          storeName: p.maison?.name || profileName,
+          storeUsername: p.maisonId || username,
+          storeProfileId: activeProfile?.type === "BUSINESS" ? activeProfile.id : null,
+        })) as ProfileCatalogProduct[];
+
+  const showStoreLabelsOnProducts = profileProductsMode === "aggregated" || isPersonalProfile;
+
+  const handleOpenAddProduct = () => {
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required", "Sign in to add products.");
+      return;
+    }
+    if (brandStoreOptions.length === 0) {
+      Alert.alert(
+        "Create a brand store first",
+        "Products are listed under brand profiles. Create a brand profile, then add products to that store.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Create brand",
+            onPress: () => setShowCreateBrandSheet(true),
+          },
+        ]
+      );
+      return;
+    }
+    triggerHaptic("medium");
+    setShowAddProductSheet(true);
+  };
+
+  const handleSwitchToStoreFromProduct = async (storeProfileId: string | null) => {
+    if (!storeProfileId) return;
+    triggerHaptic("medium");
+    const res = await switchActiveProfile(storeProfileId);
+    if (res.success) {
+      setActiveGridTab("products");
+      await loadProfileFromServer();
+      await loadProfileProducts();
+    }
+  };
+
+  const handleProductCreated = useCallback(async () => {
+    await fetchProducts();
+    await loadProfileProducts();
+  }, [fetchProducts, loadProfileProducts]);
 
   const handleEditProfilePress = () => {
     triggerHaptic("medium");
@@ -414,78 +637,171 @@ export default function AccountScreen() {
     setShowWishlistModal(true);
   };
 
-  const handleAddStory = async (url: string, storyOnly: boolean = false, customCaption?: string) => {
-    const storyCaption = customCaption || `✨ ${activeProfile?.name || profileName || "Your"} Design Story uploaded dynamically!`;
-    try {
-      const res = await fetch(`${API_HOST}/api/mobile/feed`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: currentUser?.id || "cmpctrlqn000004ktfuqga0td",
-          profileId: activeProfile?.id || null,
-          url: url,
-          thumbnail: url,
-          caption: storyCaption,
-          location: "Atelier Flagship",
-          music: storyOnly ? "STORY_ONLY" : "Cinematic Luxury Waves"
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        // Add the story slide to the "Your story" bubble so it appears in the story ring immediately
-        addInstaStorySlide({
-          id: `story_${Date.now()}`,
-          url: url,
-          caption: storyCaption,
-          isVideo: false
-        });
+  const buildProfileSaveBody = (overrides: Record<string, unknown> = {}) => {
+    const maisonKey = resolveMaisonId(activeProfile, currentUser, username);
+    return {
+      userId: currentUser?.id,
+      profileId: activeProfile?.id,
+      maisonId: maisonKey,
+      profileName,
+      category,
+      bioText,
+      websiteLink,
+      logo,
+      tags,
+      postsCount,
+      followersCount,
+      followingCount,
+      ...overrides,
+    };
+  };
 
-        Alert.alert("Story Added", "Your visual story has been published to your profile!");
-        // Refresh the visual feed
-        useStore.getState().fetchFeed(true);
-      } else {
-        Alert.alert("Story Denied", "Failed to register story inside the database.");
-      }
+  const addLookToGrid = (url: string, isVideo = false) => {
+    const newPost = {
+      id: `post_${Date.now()}`,
+      url,
+      isVideo,
+    };
+    setPresetPosts((prev) => [newPost, ...prev]);
+    setPostsCount((prev) => prev + 1);
+  };
+
+  const publishStoryWithUrl = async (
+    publicUrl: string,
+    storyOnly: boolean,
+    customCaption?: string,
+    isVideo = false
+  ) => {
+    const storyCaption =
+      customCaption ||
+      `✨ ${activeProfile?.name || profileName || "Your"} Design Story uploaded dynamically!`;
+
+    const res = await fetch(`${API_HOST}/api/mobile/feed`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        userId: currentUser!.id,
+        profileId: activeProfile?.id || null,
+        url: publicUrl,
+        thumbnail: publicUrl,
+        caption: storyCaption,
+        location: "Atelier Flagship",
+        music: storyOnly ? "STORY_ONLY" : "Cinematic Luxury Waves",
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error || "Could not save story to the server.");
+    }
+
+    if (storyOnly) {
+      addInstaStorySlide({
+        id: `story_${Date.now()}`,
+        url: publicUrl,
+        caption: storyCaption,
+        isVideo,
+      });
+    } else if (!storyOnly) {
+      addLookToGrid(publicUrl, isVideo);
+    }
+
+    useStore.getState().fetchFeed(true);
+    useStore.getState().fetchFeedItems("", "For You", true);
+    loadProfilePosts();
+    if (currentUser?.id) {
+      await loadUserStories(currentUser.id);
+    }
+  };
+
+  const handlePublishReel = async (localUri: string) => {
+    if (!currentUser?.id) {
+      Alert.alert("Not signed in", "Sign in again to publish reels.");
+      return;
+    }
+    setIsUploadingMedia(true);
+    mediaUploadInFlight.current = true;
+    try {
+      const publicUrl = await uploadMediaFromUri(localUri, "reel");
+      await publishStoryWithUrl(publicUrl, false, "New reel", true);
+      Alert.alert("Reel published", "Your reel is live on your profile and feed.");
+    } catch (e) {
+      console.warn("Could not publish reel.", e);
+      Alert.alert(
+        "Publish failed",
+        e instanceof Error ? e.message : "Could not upload or publish your reel."
+      );
+    } finally {
+      mediaUploadInFlight.current = false;
+      setIsUploadingMedia(false);
+    }
+  };
+
+  const handleAddStory = async (url: string, storyOnly: boolean = false, customCaption?: string) => {
+    if (!currentUser?.id) {
+      Alert.alert("Not signed in", "Sign in again to publish stories.");
+      return;
+    }
+
+    setIsUploadingMedia(true);
+    mediaUploadInFlight.current = true;
+    try {
+      const publicUrl = await uploadMediaFromUri(url, "story");
+      await publishStoryWithUrl(publicUrl, storyOnly, customCaption);
+      Alert.alert(
+        storyOnly ? "Story published" : "Story + post published",
+        storyOnly
+          ? "Your story is live. Tap your profile photo to view it."
+          : "Your story and feed post are live."
+      );
     } catch (e) {
       console.warn("Could not save story to database.", e);
-      Alert.alert("Story Saved Offline", "Story caching active.");
+      Alert.alert(
+        "Publish failed",
+        e instanceof Error ? e.message : "Could not upload or publish your story."
+      );
+    } finally {
+      mediaUploadInFlight.current = false;
+      setIsUploadingMedia(false);
     }
   };
 
   const handleUpdateLogo = async (url: string) => {
+    if (!currentUser?.id || !activeProfile?.id) {
+      Alert.alert("Not signed in", "Sign in again to update your photo.");
+      return;
+    }
+
+    mediaUploadInFlight.current = true;
+    setLogo(url);
+    setEditLogo(url);
+    setIsUploadingMedia(true);
     try {
-      setLogo(url);
-      setEditLogo(url);
+      const publicUrl = await uploadMediaFromUri(url, "avatar");
+      setLogo(publicUrl);
+      setEditLogo(publicUrl);
+      patchActiveProfile({ logo: publicUrl });
+
       const res = await fetch(`${API_HOST}/api/mobile/profile`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          maisonId: username || "aloksingh",
-          oldMaisonId: username,
-          profileName: profileName,
-          category: category,
-          bioText: bioText,
-          websiteLink: websiteLink,
-          logo: url,
-          tags: tags,
-          postsCount: postsCount,
-          followersCount: followersCount,
-          followingCount: followingCount
-        })
+        headers: authHeaders(),
+        body: JSON.stringify(buildProfileSaveBody({ logo: publicUrl })),
       });
       const data = await res.json();
-      if (data.success) {
-        useStore.setState((state) => ({
-          activeProfile: state.activeProfile ? { ...state.activeProfile, logo: url } : null,
-          userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { ...p, logo: url } : p)
-        }));
-        Alert.alert("Profile Photo Updated", "Your brand/identity logo has been written to PostgreSQL!");
+      if (data.success && data.profile) {
+        applyProfilePayload(data.profile);
+        Alert.alert("Photo updated", "Profile photo saved. It will show on your tab bar too.");
       } else {
-        Alert.alert("Update Rejected", "Failed to update profile image in the database.");
+        Alert.alert("Update failed", data.message || data.error || "Could not save photo.");
       }
     } catch (e) {
       console.warn("Failed to synchronize avatar update.", e);
-      Alert.alert("Photo Saved Locally", "Profile photo offline caching enabled.");
+      Alert.alert(
+        "Update failed",
+        e instanceof Error ? e.message : "Could not upload your photo."
+      );
+    } finally {
+      mediaUploadInFlight.current = false;
+      setIsUploadingMedia(false);
     }
   };
 
@@ -511,7 +827,7 @@ export default function AccountScreen() {
           sessionAlerts: alertsEnabled ? "ENABLED" : "DISABLED",
           fediverseBridging: fediverseSharing ? "ENABLED (ActivityPub)" : "DISABLED"
         },
-        catalogLedger: maisonProducts.map(p => ({
+        catalogLedger: displayProducts.map(p => ({
           artifactId: p.id,
           sovereignId: p.sovereignId || `sha256_${p.id}`,
           title: p.title,
@@ -552,7 +868,7 @@ export default function AccountScreen() {
     try {
       const res = await fetch(`${API_HOST}/api/mobile/auth/delete-account`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ userId, confirmEmail: confirmEmail.trim() }),
       });
       const data = await res.json();
@@ -625,59 +941,86 @@ export default function AccountScreen() {
   };
 
   const compressAndTranscodeImage = async (uri: string, mode: "story" | "avatar") => {
+    const actions =
+      mode === "story" ? [{ resize: { width: 1080 } as const }] : [{ resize: { width: 320 } as const }];
     try {
-      const manipulateResult = await ImageManipulator.manipulateAsync(
-        uri,
-        [
-          { resize: mode === "story" ? { width: 1080 } : { width: 400 } }
-        ],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.WEBP }
-      );
+      const manipulateResult = await ImageManipulator.manipulateAsync(uri, actions, {
+        compress: mode === "story" ? 0.72 : 0.62,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
       return manipulateResult.uri;
     } catch (e) {
-      console.warn("GPU-acceleration WebP compression aborted. Using raw image asset URI.", e);
-      return uri; // Fallback to raw URI
+      console.warn("Primary compression failed, retrying copy to cache.", e);
+      try {
+        const fallback = await ImageManipulator.manipulateAsync(uri, [], {
+          compress: 0.75,
+          format: ImageManipulator.SaveFormat.JPEG,
+        });
+        return fallback.uri;
+      } catch (e2) {
+        console.warn("Image compression failed completely.", e2);
+        throw new Error("Could not process the selected photo.");
+      }
     }
   };
 
-  const handleLaunchImagePicker = async (mode: "story" | "avatar") => {
+  type CreateMode = "reel" | "edit" | "post" | "story" | "highlight" | "live" | "ai";
+  const pendingCreateRef = useRef<CreateMode | null>(null);
+  const [isOpeningPicker, setIsOpeningPicker] = useState(false);
+
+  const handleLaunchMediaPicker = async (mode: MediaPickMode) => {
     triggerHaptic("medium");
+    setIsOpeningPicker(true);
     try {
-      // Request media library permission
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
+      const asset = await pickMediaFromLibrary(mode);
+      if (!asset?.uri) return;
+
+      const selectedUri = asset.uri;
+      triggerHaptic("success");
+
+      if (mode === "reel") {
+        await handlePublishReel(selectedUri);
+        return;
+      }
+
+      let compressedUri: string;
+      try {
+        compressedUri = await compressAndTranscodeImage(
+          selectedUri,
+          mode === "avatar" ? "avatar" : "story"
+        );
+      } catch (compressError) {
         Alert.alert(
-          "Permission Denied",
-          "AURA requires camera roll authorization to load custom luxury curation designs."
+          "Photo error",
+          compressError instanceof Error
+            ? compressError.message
+            : "Could not process the selected photo."
         );
         return;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: mode === "story" ? [9, 16] : [1, 1],
-        quality: 0.8,
-      });
+      if (mode === "post") {
+        setPostImage(compressedUri);
+        setIsPublishingStoryAndPost(false);
+        setPostTitle("");
+        setPostPrice("");
+        setPostDescription("");
+        setShowPostModal(true);
+        return;
+      }
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const selectedUri = result.assets[0].uri;
-        triggerHaptic("success");
-
-        // GPU-Accelerated WebP compression and scaling!
-        const compressedUri = await compressAndTranscodeImage(selectedUri, mode);
-
-        if (mode === "story") {
+      if (mode === "story") {
+        const showPublishChoice = () => {
           Alert.alert(
             "Publishing Destination",
-            "Would you like to publish this to your Feed as a Post as well, or upload as a Story only?",
+            "Publish as story only, or story + grid post?",
             [
               {
                 text: "Story Only",
                 onPress: async () => {
                   triggerHaptic("medium");
                   await handleAddStory(compressedUri, true);
-                }
+                },
               },
               {
                 text: "Both (Story + Post)",
@@ -689,174 +1032,193 @@ export default function AccountScreen() {
                   setPostPrice("");
                   setPostDescription("");
                   setShowPostModal(true);
-                }
+                },
               },
-              {
-                text: "Cancel",
-                style: "cancel"
-              }
+              { text: "Cancel", style: "cancel" },
             ]
           );
+        };
+
+        if (Platform.OS === "ios") {
+          InteractionManager.runAfterInteractions(() => {
+            setTimeout(showPublishChoice, 300);
+          });
         } else {
-          await handleUpdateLogo(compressedUri);
+          showPublishChoice();
         }
+        return;
       }
-    } catch (error) {
-      console.warn("Failed to open native camera roll:", error);
-      Alert.alert("Picker Error", "Could not initialize the system media library.");
+
+      await handleUpdateLogo(compressedUri);
+    } finally {
+      setIsOpeningPicker(false);
     }
   };
 
-  const handleAvatarPress = () => {
-    triggerHaptic("medium");
-    Alert.alert(
-      "Atelier Curation Mark",
-      "Would you like to select custom media, or use a premium pre-designed marking templates?",
-      [
-        {
-          text: "📸 Pick Story from Gallery",
-          onPress: () => handleLaunchImagePicker("story")
-        },
-        {
-          text: "🖼️ Pick Logo from Gallery",
-          onPress: () => handleLaunchImagePicker("avatar")
-        },
-        {
-          text: "Sustainable Design Presets",
-          onPress: () => {
-            triggerHaptic("success");
-            Alert.alert(
-              "Template Library",
-              "Select a sustainable identity or vertical aesthetic:",
-              [
-                {
-                  text: "1. Atelier Silk Drape (Story)",
-                  onPress: () => handleAddStory("https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400")
-                },
-                {
-                  text: "2. Obsidian Brutalist Cuff (Story)",
-                  onPress: () => handleAddStory("https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=400")
-                },
-                {
-                  text: "3. Identity: Sustainable Obsidian (Logo)",
-                  onPress: () => handleUpdateLogo("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150")
-                },
-                {
-                  text: "4. Identity: Neon AURA (Logo)",
-                  onPress: () => handleUpdateLogo("https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150")
-                },
-                {
-                  text: "Cancel",
-                  style: "cancel"
-                }
-              ]
-            );
-          }
-        },
-        {
-          text: "Cancel",
-          style: "cancel"
-        }
-      ]
-    );
+  const executeCreateAction = (mode: CreateMode) => {
+    switch (mode) {
+      case "reel":
+        router.push({
+          pathname: "/",
+          params: { activeTab: "reels", openCamera: "true" },
+        } as any);
+        break;
+      case "post":
+        router.push("/create/post");
+        break;
+      case "story":
+        router.push("/create/story");
+        break;
+      case "edit":
+        handleEditProfilePress();
+        break;
+      case "highlight":
+        handleAddHighlight();
+        break;
+      case "live":
+        setShowLiveModal(true);
+        break;
+      case "ai":
+        router.push("/create/ai");
+        break;
+      default:
+        break;
+    }
   };
 
+  const queueCreateAction = (mode: CreateMode) => {
+    triggerHaptic("medium");
+    if (showCreateModal) {
+      pendingCreateRef.current = mode;
+      setShowCreateModal(false);
+      return;
+    }
+    setTimeout(() => executeCreateAction(mode), delayAfterModalClose());
+  };
+
+  useEffect(() => {
+    if (showCreateModal) return;
+    const mode = pendingCreateRef.current;
+    if (!mode) return;
+    pendingCreateRef.current = null;
+    const timer = setTimeout(() => executeCreateAction(mode), delayAfterModalClose());
+    return () => clearTimeout(timer);
+  }, [showCreateModal]);
+
+  const handleAvatarPress = () => {
+    triggerHaptic("medium");
+    Alert.alert("Profile photo & stories", "What do you want to do?", [
+      {
+        text: "Change profile photo",
+        onPress: () => handleLaunchMediaPicker("avatar"),
+      },
+      {
+        text: "Add story from gallery",
+        onPress: () => router.push("/create/story"),
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const handleProfileAvatarTap = () => {
+    if (hasActiveStory) {
+      triggerHaptic("light");
+      setStoryViewerIndex(0);
+      setShowStoryViewer(true);
+    } else {
+      handleAvatarPress();
+    }
+  };
+
+  const openCreateHandled = useRef(false);
+  useEffect(() => {
+    const mode = routeParams.openCreate;
+    if (!mode || !authHydrated || !currentUser?.id || openCreateHandled.current) return;
+    openCreateHandled.current = true;
+    if (mode === "post" || mode === "story") {
+      router.push(`/create/${mode}` as "/create/post");
+    } else if (mode === "reel") {
+      router.push({ pathname: "/", params: { activeTab: "reels", openCamera: "true" } } as any);
+    } else {
+      queueCreateAction(mode as CreateMode);
+    }
+  }, [routeParams.openCreate, authHydrated, currentUser?.id]);
+
   const handleSaveProfile = async () => {
+    if (!currentUser?.id) {
+      Alert.alert("Not signed in", "Sign in again to save your profile.");
+      return;
+    }
+    if (!activeProfile?.id) {
+      Alert.alert("Profile loading", "Wait a moment for your profile to load, then try again.");
+      return;
+    }
+
     triggerHaptic("success");
-    
-    // Capture original state values to enable robust database rollbacks
+    profileSaveInFlight.current = true;
+    setIsSavingProfile(true);
+
     const originalUsername = username;
     const originalProfileName = profileName;
     const originalCategory = category;
     const originalBioText = bioText;
     const originalWebsiteLink = websiteLink;
-    const originalPostsCount = postsCount;
-    const originalFollowersCount = followersCount;
-    const originalFollowingCount = followingCount;
     const originalLogo = logo;
-
-    // Optimistic UI updates to ensure zero latency
-    setUsername(editUsername);
-    setActiveMaisonId(editUsername);
-    setProfileName(editProfileName);
-    setCategory(editCategory);
-    setBioText(editBioText);
-    setWebsiteLink(editWebsiteLink);
-    setPostsCount(parseInt(editPostsCount) || 0);
-    setFollowersCount(parseInt(editFollowersCount) || 0);
-    setFollowingCount(parseInt(editFollowingCount) || 0);
-    setLogo(editLogo);
-    setShowEditModal(false);
+    const maisonKey = resolveMaisonId(activeProfile, currentUser, originalUsername);
 
     try {
+      const nextUsername = editUsername.trim() || originalUsername;
+      const usernameChanged = nextUsername !== originalUsername.trim();
       const res = await fetch(`${API_HOST}/api/mobile/profile`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: authHeaders(),
         body: JSON.stringify({
-          maisonId: editUsername || "rare_raven",
-          oldMaisonId: originalUsername,
+          userId: currentUser.id,
+          profileId: activeProfile.id,
+          maisonId: nextUsername,
+          oldMaisonId: usernameChanged ? maisonKey : undefined,
           profileName: editProfileName,
           category: editCategory,
           bioText: editBioText,
-          websiteLink: editWebsiteLink,
+          websiteLink: editWebsiteLink.trim(),
           logo: editLogo,
-          tags: tags,
-          postsCount: parseInt(editPostsCount) || 0,
-          followersCount: parseInt(editFollowersCount) || 0,
-          followingCount: parseInt(editFollowingCount) || 0
-        })
+          tags,
+        }),
       });
-      
+
       const data = await res.json();
-      if (data.success) {
-        useStore.setState((state) => {
-          const updatedProfile = state.activeProfile ? { 
-            ...state.activeProfile, 
-            logo: editLogo,
-            username: editUsername,
-            name: editProfileName,
-            category: editCategory,
-            website: editWebsiteLink
-          } : null;
-          return {
-            activeProfile: updatedProfile,
-            userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { 
-              ...p, 
-              logo: editLogo, 
-              username: editUsername, 
-              name: editProfileName,
-              category: editCategory,
-              website: editWebsiteLink
-            } : p)
-          };
-        });
-        Alert.alert("Profile Synchronized", "Sovereign identity parameters written securely to PostgreSQL!");
+      if (data.success && data.profile) {
+        applyProfilePayload(data.profile);
+        if (usernameChanged) {
+          setActiveMaisonId(data.profile.username || nextUsername);
+        }
+        syncProfileIdentity();
+        setShowEditModal(false);
+        Alert.alert("Profile saved", "Your changes are stored on the server.");
       } else {
         triggerHaptic("heavy");
-        
-        // Revert optimistic updates if backend failed
-        setUsername(originalUsername);
-        setActiveMaisonId(originalUsername);
-        setProfileName(originalProfileName);
-        setCategory(originalCategory);
-        setBioText(originalBioText);
-        setWebsiteLink(originalWebsiteLink);
-        setPostsCount(originalPostsCount);
-        setFollowersCount(originalFollowersCount);
-        setFollowingCount(originalFollowingCount);
-        setLogo(originalLogo);
-
         if (data.error === "USERNAME_TAKEN") {
-          Alert.alert("Username Already Taken", "This brand username is already claimed by another node in the AURA ledger. Please select a unique identity.");
+          Alert.alert(
+            "Username taken",
+            "That username is already in use. Pick a different one."
+          );
         } else {
-          Alert.alert("Synchronization Refused", data.message || "Failed to commit sovereign profile adjustments.");
+          Alert.alert(
+            "Save failed",
+            data.message || data.error || "The server could not save your profile."
+          );
         }
       }
     } catch (e) {
-      console.warn("Neon DB Sync failed. Offline parameters preserved.", e);
-      Alert.alert("Profile Saved", "Saved locally (Offline Caching Active).");
+      console.warn("Profile sync failed.", e);
+      triggerHaptic("heavy");
+      Alert.alert(
+        "Save failed",
+        `Could not reach the server at ${API_HOST}. Reload the app and try again.`
+      );
+    } finally {
+      profileSaveInFlight.current = false;
+      setIsSavingProfile(false);
     }
   };
 
@@ -872,7 +1234,7 @@ export default function AccountScreen() {
         const newHighlight = {
           id: `hl_${Date.now()}`,
           title: title.trim(),
-          avatar: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=150"
+          avatar: yourStorySlides[0]?.url || displayLogo || "",
         };
         setHighlights(prev => [...prev, newHighlight]);
       }
@@ -898,46 +1260,30 @@ export default function AccountScreen() {
     }
   };
 
-  const handleAddBrandProfile = async () => {
+  const handleAddBrandProfile = () => {
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required", "Sign in again to create a brand profile.");
+      return;
+    }
+    if (userProfiles.length >= MAX_PROFILES_PER_ACCOUNT) {
+      Alert.alert(
+        "Profile limit reached",
+        `You can have up to ${MAX_PROFILES_PER_ACCOUNT} profiles per account, like Instagram.`
+      );
+      return;
+    }
     triggerHaptic("medium");
-    showCustomPrompt(
-      "Create New Brand Profile",
-      "Enter unique username / Maison ID for your brand (lowercase, no spaces):",
-      "e.g. obsidian-drape",
-      (newId) => {
-        if (!newId || !newId.trim()) return;
-        const formattedId = newId.trim().toLowerCase().replace(/\s+/g, "-");
-        
-        showCustomPrompt(
-          "Brand Display Name",
-          "Enter display name for your new brand:",
-          "e.g. Obsidian Drape",
-          async (name) => {
-            if (!name || !name.trim()) return;
-            triggerHaptic("success");
-            try {
-              const res = await createNewProfile({
-                userId: currentUser?.id,
-                type: "BUSINESS",
-                name: name.trim(),
-                username: formattedId,
-                category: "Clothing (Brand)",
-                website: "aura.luxury"
-              });
-              if (res.success) {
-                Alert.alert("Brand Hydrated", `Sovereign Maison '${name.trim()}' has been minted in PostgreSQL!`);
-                setShowSwitcherModal(false);
-              } else {
-                Alert.alert("Minting Rejected", res.error || "Failed to register brand profile.");
-              }
-            } catch (e: any) {
-              Alert.alert("Network Failure", e.message || "Failed to connect to AURA database cluster.");
-            }
-          }
-        );
-      }
-    );
+    setShowSwitcherModal(false);
+    setShowCreateBrandSheet(true);
   };
+
+  const handleBrandProfileCreated = useCallback(async () => {
+    if (!currentUser?.id) return;
+    await fetchProfiles(currentUser.id);
+    await loadProfileFromServer();
+    await loadProfilePosts();
+    await loadProfileProducts();
+  }, [currentUser?.id, fetchProfiles, loadProfileFromServer, loadProfilePosts, loadProfileProducts]);
 
   const handleAddPress = () => {
     triggerHaptic("light");
@@ -953,40 +1299,16 @@ export default function AccountScreen() {
 
           // Save to Neon PostgreSQL
           try {
-            await fetch(`${API_HOST}/api/mobile/profile`, {
+            const res = await fetch(`${API_HOST}/api/mobile/profile`, {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                maisonId: username || "rare_raven",
-                oldMaisonId: username,
-                profileName: profileName,
-                category: category,
-                bioText: bioText,
-                websiteLink: websiteLink,
-                logo: logo,
-                tags: newTags,
-                postsCount: postsCount,
-                followersCount: followersCount,
-                followingCount: followingCount
-              })
+              headers: authHeaders(),
+              body: JSON.stringify(buildProfileSaveBody({ tags: newTags })),
             });
-
-            // Update activeProfile store state so it propagates immediately to dynamic profile screen
-            useStore.setState((state) => {
-              const updatedProfile = state.activeProfile ? { 
-                ...state.activeProfile, 
-                tags: newTags
-              } : null;
-              return {
-                activeProfile: updatedProfile,
-                userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { 
-                  ...p, 
-                  tags: newTags
-                } : p)
-              };
-            });
+            const data = await res.json();
+            if (data.success && data.profile) {
+              applyProfilePayload(data.profile);
+              syncProfileIdentity();
+            }
           } catch (e) {
             console.warn("Failed to save tag in account profile view", e);
           }
@@ -1012,39 +1334,16 @@ export default function AccountScreen() {
 
             // Save to database
             try {
-              await fetch(`${API_HOST}/api/mobile/profile`, {
+              const res = await fetch(`${API_HOST}/api/mobile/profile`, {
                 method: "POST",
-                headers: {
-                  "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                  maisonId: username || "rare_raven",
-                  oldMaisonId: username,
-                  profileName: profileName,
-                  category: category,
-                  bioText: bioText,
-                  websiteLink: websiteLink,
-                  logo: logo,
-                  tags: newTags,
-                  postsCount: postsCount,
-                  followersCount: followersCount,
-                  followingCount: followingCount
-                })
+                headers: authHeaders(),
+                body: JSON.stringify(buildProfileSaveBody({ tags: newTags })),
               });
-
-              useStore.setState((state) => {
-                const updatedProfile = state.activeProfile ? { 
-                  ...state.activeProfile, 
-                  tags: newTags
-                } : null;
-                return {
-                  activeProfile: updatedProfile,
-                  userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { 
-                    ...p, 
-                    tags: newTags
-                  } : p)
-                };
-              });
+              const data = await res.json();
+              if (data.success && data.profile) {
+                applyProfilePayload(data.profile);
+                syncProfileIdentity();
+              }
             } catch (e) {
               console.warn("Failed to remove tag in account profile view", e);
             }
@@ -1056,245 +1355,249 @@ export default function AccountScreen() {
 
   const handleRequestVerification = async () => {
     if (isVerifiedUser) {
-      Alert.alert("Verified Node", "This identity node is already verified via AURA cryptographic keys.");
+      Alert.alert("Verified", "Your email is already verified.");
       return;
     }
     triggerHaptic("medium");
     Alert.alert(
-      "Request Verification Badge",
-      "Would you like to authorize AURA key verification to claim your blue checkmark badge?",
+      "Email verification required",
+      "Complete OTP verification from signup, or resend a code from Account settings after signing in.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Verify Node",
-          onPress: async () => {
-            setIsUpdating(true);
-            try {
-              const res = await updateProfile({
-                userId: currentUser?.id,
-                isVerified: true
-              });
-              if (res.success) {
-                setIsVerifiedUser(true);
-                triggerHaptic("success");
-                Alert.alert("Verification Minted", "Your identity node is now cryptographic-trust verified!");
-              } else {
-                Alert.alert("Verification Failed", res.error || "Could not complete verification request.");
-              }
-            } catch (e) {
-              Alert.alert("Verification Error", "Database synchronization failed.");
-            } finally {
-              setIsUpdating(false);
-            }
-          }
-        }
+          text: "Go to verify",
+          onPress: () => {
+            router.push({
+              pathname: "/otp",
+              params: { userId: currentUser?.id || "" },
+            } as any);
+          },
+        },
       ]
     );
   };
 
   // 📸 Product/Post publishing handler
   const handlePublishPost = async () => {
-    // 👥 PERSONAL PROFILE LOOKBOOK POSTING LOGIC
-    if (category === "Personal Profile") {
-      if (!postTitle.trim()) {
-        Alert.alert("Missing Caption", "Please enter a caption for your look.");
+    if (!currentUser?.id) {
+      Alert.alert("Not signed in", "Sign in again to publish.");
+      return;
+    }
+    if (!postImage?.trim()) {
+      Alert.alert("Missing photo", "Choose a photo before publishing.");
+      return;
+    }
+
+    // 👥 PERSONAL PROFILE — validate caption before upload
+    if (category === "Personal Profile" && !postTitle.trim()) {
+      Alert.alert("Missing Caption", "Please enter a caption for your look.");
+      return;
+    }
+
+    setIsUploadingMedia(true);
+    mediaUploadInFlight.current = true;
+    try {
+      const publicUrl = await uploadMediaFromUri(postImage, "post");
+
+      if (category === "Personal Profile") {
+        triggerHaptic("success");
+        const wasStoryAndPost = isPublishingStoryAndPost;
+        if (wasStoryAndPost) {
+          await publishStoryWithUrl(publicUrl, true, postTitle);
+          await publishStoryWithUrl(publicUrl, false, postTitle);
+          setIsPublishingStoryAndPost(false);
+        } else {
+          await publishStoryWithUrl(publicUrl, false, postTitle);
+        }
+
+        Alert.alert(
+          "Look posted",
+          wasStoryAndPost
+            ? "Your story and grid post are live."
+            : "Your look is on your profile grid and feed."
+        );
+
+        setPostTitle("");
+        setShowPostModal(false);
+        return;
+      }
+
+      // 🏛️ BUSINESS / BRAND MAISON PRODUCT PUBLISHING LOGIC
+      if (!postTitle.trim() || !postPrice.trim()) {
+        Alert.alert("Missing Parameters", "Please enter title and price for curating your AURA artifact.");
         return;
       }
       triggerHaptic("success");
-      
-      const newPost = {
-        id: `post_${Date.now()}`,
-        url: postImage,
-        isVideo: false
+      const parsedPrice = parseFloat(postPrice) || 0;
+
+      const newProduct = {
+        id: `p_${Date.now()}`,
+        title: postTitle.trim(),
+        price: parsedPrice,
+        vibe: postVibe,
+        images: [publicUrl],
+        description: postDescription.trim() || "Dynamic high-fidelity physical design artifact.",
+        maisonId: username,
+        maison: { id: username, name: profileName },
+        auraScore: 9.8,
+        rating: 5.0,
+        createdAt: new Date().toISOString(),
       };
 
-      setPresetPosts(prev => [newPost, ...prev]);
-      setPostsCount(prev => prev + 1);
-      
+      await createProduct({
+        title: postTitle.trim(),
+        price: parsedPrice,
+        vibe: postVibe,
+        images: [publicUrl],
+        description: postDescription.trim(),
+        maisonId: username,
+      });
+
+      useStore.setState((state) => ({ products: [newProduct, ...state.products] }));
+      setPostsCount((prev) => prev + 1);
+
       if (isPublishingStoryAndPost) {
-        await handleAddStory(postImage, false, postTitle);
+        await publishStoryWithUrl(
+          publicUrl,
+          false,
+          `${postTitle} - ₹${parsedPrice.toLocaleString()}`
+        );
         setIsPublishingStoryAndPost(false);
       }
 
-      Alert.alert(
-        "Look Posted",
-        "Your new aesthetic look has been published to your personal lookbook grid!"
-      );
+      Alert.alert("Artifact curated", "Your product is saved and visible in your catalog.");
 
-      // Reset fields
       setPostTitle("");
+      setPostPrice("");
+      setPostDescription("");
       setShowPostModal(false);
-      return;
+    } catch (e) {
+      Alert.alert(
+        "Publish failed",
+        e instanceof Error ? e.message : "Could not upload or publish your post."
+      );
+    } finally {
+      mediaUploadInFlight.current = false;
+      setIsUploadingMedia(false);
     }
-
-    // 🏛️ BUSINESS / BRAND MAISON PRODUCT PUBLISHING LOGIC
-    if (!postTitle.trim() || !postPrice.trim()) {
-      Alert.alert("Missing Parameters", "Please enter title and price for curating your AURA artifact.");
-      return;
-    }
-    triggerHaptic("success");
-    const parsedPrice = parseFloat(postPrice) || 0;
-    
-    // Create new AURA product artifact structure
-    const newProduct = {
-      id: `p_${Date.now()}`,
-      title: postTitle.trim(),
-      price: parsedPrice,
-      vibe: postVibe,
-      images: [postImage],
-      description: postDescription.trim() || "Dynamic high-fidelity physical design artifact.",
-      maisonId: username,
-      maison: { id: username, name: profileName },
-      auraScore: 9.8,
-      rating: 5.0,
-      createdAt: new Date().toISOString()
-    };
-
-    // Optimistically add to store state
-    const success = await createProduct({
-      title: postTitle.trim(),
-      price: parsedPrice,
-      vibe: postVibe,
-      images: [postImage],
-      description: postDescription.trim(),
-      maisonId: username
-    });
-
-    // In offline fallback mode, still append to local memory to keep user experience responsive
-    useStore.setState((state) => ({ products: [newProduct, ...state.products] }));
-    setPostsCount(prev => prev + 1);
-
-    if (isPublishingStoryAndPost) {
-      await handleAddStory(postImage, false, `${postTitle} - ₹${parsedPrice.toLocaleString()}`);
-      setIsPublishingStoryAndPost(false);
-    }
-
-    Alert.alert(
-      "Artifact Curated",
-      "Your brand physical curation has been hydrated to PostgreSQL and live catalog grids!"
-    );
-
-    // Reset fields
-    setPostTitle("");
-    setPostPrice("");
-    setPostDescription("");
-    setShowPostModal(false);
   };
 
-  // 📡 Live broadcast simulator
-  const startLiveSimulation = () => {
-    setLiveComments([]);
-    setViewerCount(840);
-    
-    const mockFeed = [
-      { id: "c1", user: "Julian Rossi", text: "this drape is incredible!" },
-      { id: "c2", user: "Gucci Atelier", text: "Outstanding mesh rendering" },
-      { id: "c3", user: "AURA Core", text: "Dynamic coordinates verify clean trace" },
-      { id: "c4", user: "Sovereign Node", text: "copping the titanium cyber-vest immediately!" },
-      { id: "c5", user: "Zenith Design", text: "AURA score is off the charts ✦" }
-    ];
-
-    // Push comments dynamically
-    mockFeed.forEach((comment, i) => {
-      setTimeout(() => {
-        setLiveComments(prev => [...prev, comment]);
-        setViewerCount(count => count + Math.floor(Math.random() * 50) + 10);
-      }, (i + 1) * 2000);
-    });
-  };
-
-  // 🌌 AI generative curation simulator
-  const handleStartAIGeneration = () => {
+  // 🌌 AI generative product pipeline (real API)
+  const handleStartAIGeneration = async () => {
     if (!aiPrompt.trim()) {
-      Alert.alert("Design Intent Missing", "Type a prompt describing your fashion blueprint (e.g. brutalist metal corset).");
+      Alert.alert("Design Intent Missing", "Type a prompt describing your fashion blueprint.");
       return;
     }
 
     triggerHaptic("medium");
     setAiGenerating(true);
-    setAiProgress(0);
+    setAiProgress(10);
+    setAiStep("Connecting to AURA synthesis engine…");
     setGeneratedProduct(null);
 
-    const steps = [
-      { p: 15, s: "Initializing deep synthesis nodes..." },
-      { p: 35, s: "Generating high-dimensional brutalist wireframe mesh..." },
-      { p: 60, s: "Synthesizing dynamic linen/matte materials..." },
-      { p: 85, s: "Raytracing brutalist ambient occlusion shadows..." },
-      { p: 100, s: "Generative synthesis complete!" }
-    ];
-
-    steps.forEach((stepObj, i) => {
-      setTimeout(() => {
-        setAiProgress(stepObj.p);
-        setAiStep(stepObj.s);
-
-        if (stepObj.p === 100) {
-          triggerHaptic("success");
-          setAiGenerating(false);
-          
-          // Generate a stunning matching product preset
-          const aiImagePreset = [
-            "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400",
-            "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400",
-            "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=400"
-          ][Math.floor(Math.random() * 3)];
-
-          setGeneratedProduct({
-            title: "Gen-AI " + aiPrompt.trim().replace(/\b\w/g, c => c.toUpperCase()),
-            price: 185000,
-            image: aiImagePreset,
-            vibe: "Cyberpunk",
-            description: `A unique, dynamically synthesized fashion piece curated by AURA-AI matching design signature: '${aiPrompt.trim()}'`
-          });
-          setAiTitle("Gen-AI " + aiPrompt.trim().replace(/\b\w/g, c => c.toUpperCase()));
-          setAiPrice("185000");
-        }
-      }, (i + 1) * 1500);
-    });
+    try {
+      setAiProgress(40);
+      setAiStep("Generating product blueprint and render…");
+      const product = await synthesizeProductFromPrompt(aiPrompt.trim());
+      setAiProgress(100);
+      setAiStep("Synthesis complete!");
+      triggerHaptic("success");
+      setGeneratedProduct({
+        title: product.title,
+        price: product.price,
+        image: product.imageUrl,
+        vibe: product.vibe,
+        description: product.description,
+      });
+      setAiTitle(product.title);
+      setAiPrice(String(product.price));
+    } catch (e) {
+      Alert.alert(
+        "Synthesis failed",
+        e instanceof Error ? e.message : "Could not generate product."
+      );
+    } finally {
+      setAiGenerating(false);
+    }
   };
 
-  // 🚀 Mint AI Generated Product
   const handleMintGeneratedProduct = async () => {
-    if (!aiTitle.trim() || !aiPrice.trim()) return;
+    if (!generatedProduct || !aiTitle.trim() || !aiPrice.trim()) return;
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required", "Sign in to save products.");
+      return;
+    }
+
     triggerHaptic("success");
+    setAiGenerating(true);
+    setAiStep("Saving to catalog…");
 
-    const parsedPrice = parseFloat(aiPrice) || 185000;
-    const newProduct = {
-      id: `p_ai_${Date.now()}`,
-      title: aiTitle.trim(),
-      price: parsedPrice,
-      vibe: "Cyberpunk",
-      images: [generatedProduct.image],
-      description: generatedProduct.description,
-      maisonId: username,
-      maison: { id: username, name: profileName },
-      auraScore: 9.9,
-      rating: 5.0,
-      createdAt: new Date().toISOString()
-    };
+    const parsedPrice = parseFloat(aiPrice) || generatedProduct.price || 125000;
 
-    // Hydrate to PostgreSQL
-    await createProduct({
-      title: aiTitle.trim(),
-      price: parsedPrice,
-      vibe: "Cyberpunk",
-      images: [generatedProduct.image],
-      description: generatedProduct.description,
-      maisonId: username
-    });
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/products/create`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          maisonId: username,
+          userId: currentUser.id,
+          title: aiTitle.trim(),
+          price: parsedPrice,
+          vibe: generatedProduct.vibe || "Quiet Luxury",
+          type: "Fashion",
+          images: [generatedProduct.image],
+          videoUrl: "",
+        }),
+      });
+      const data = await res.json();
 
-    // Offline append
-    useStore.setState((state) => ({ products: [newProduct, ...state.products] }));
+      if (!data.success || !data.artifact) {
+        throw new Error(data.error || "Could not save product.");
+      }
 
-    Alert.alert(
-      "AI Curation Minted",
-      `Dynamic design '${aiTitle.trim()}' minted successfully in Neon PostgreSQL cluster!`
-    );
+      const artifact = data.artifact;
+      const newProduct = {
+        id: artifact.id,
+        title: aiTitle.trim(),
+        price: parsedPrice,
+        vibe: generatedProduct.vibe,
+        images: [generatedProduct.image],
+        description: generatedProduct.description,
+        maisonId: username,
+        maison: { id: username, name: profileName },
+        auraScore: 9.5,
+        rating: 5.0,
+        createdAt: new Date().toISOString(),
+      };
 
-    // Reset & Close
-    setAiPrompt("");
-    setGeneratedProduct(null);
-    setShowAIModal(false);
+      useStore.setState((state) => ({ products: [newProduct, ...state.products] }));
+      fetchProducts();
+
+      await uploadAndPublish(generatedProduct.image, "post", {
+        userId: currentUser.id,
+        profileId: activeProfile?.id ?? null,
+        profileName,
+        caption: `${aiTitle.trim()} · AI curated on AURA`,
+        productId: artifact.id,
+      });
+
+      Alert.alert(
+        "Product live",
+        `'${aiTitle.trim()}' is in your shop and posted to your grid.`
+      );
+
+      setAiPrompt("");
+      setGeneratedProduct(null);
+      setShowAIModal(false);
+    } catch (e) {
+      Alert.alert(
+        "Save failed",
+        e instanceof Error ? e.message : "Could not save AI product."
+      );
+    } finally {
+      setAiGenerating(false);
+      setAiStep("");
+    }
   };
 
   return (
@@ -1373,55 +1676,91 @@ export default function AccountScreen() {
                     <Text style={styles.bubbleText}>Can't decide...</Text>
                     <View style={styles.bubblePointer} />
                   </View>
-                  <LinearGradient
-                    colors={["#fb923c", "#d946ef", "#8b5cf6"]}
-                    start={{ x: 0, y: 1 }}
-                    end={{ x: 1, y: 0 }}
-                    style={{
-                      width: 88,
-                      height: 88,
-                      borderRadius: 44,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <View style={{
-                      width: 82,
-                      height: 82,
-                      borderRadius: 41,
-                      backgroundColor: "#080415",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}>
+                  <TouchableOpacity activeOpacity={0.85} onPress={handleProfileAvatarTap} disabled={isUploadingMedia}>
+                    {hasActiveStory ? (
+                      <LinearGradient
+                        colors={["#fb923c", "#d946ef", "#8b5cf6"]}
+                        start={{ x: 0, y: 1 }}
+                        end={{ x: 1, y: 0 }}
+                        style={{
+                          width: 88,
+                          height: 88,
+                          borderRadius: 44,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <View style={{
+                          width: 82,
+                          height: 82,
+                          borderRadius: 41,
+                          backgroundColor: "#080415",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}>
+                          <View style={{
+                            width: 76,
+                            height: 76,
+                            borderRadius: 38,
+                            overflow: "hidden",
+                            backgroundColor: "#080415",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}>
+                            {displayLogo ? (
+                              <Image 
+                                source={{ uri: displayLogo }} 
+                                key={displayLogo.slice(0, 64)}
+                                style={{ width: "100%", height: "100%", borderRadius: 38 }} 
+                              />
+                            ) : (
+                              <Text style={styles.avatarInitial}>
+                                {(profileName || activeProfile?.name || currentUser?.name || username || "R")[0]?.toUpperCase()}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+                      </LinearGradient>
+                    ) : (
                       <View style={{
-                        width: 76,
-                        height: 76,
-                        borderRadius: 38,
-                        overflow: "hidden",
-                        backgroundColor: "#080415",
+                        width: 88,
+                        height: 88,
+                        borderRadius: 44,
+                        borderWidth: 1.5,
+                        borderColor: "rgba(255,255,255,0.25)",
                         alignItems: "center",
                         justifyContent: "center",
                       }}>
-                        {logo ? (
-                          <Image 
-                            source={{ uri: logo }} 
-                            style={{ width: "100%", height: "100%", borderRadius: 38 }} 
-                          />
-                        ) : currentUser?.avatar ? (
-                          <Image 
-                            source={{ uri: currentUser.avatar }} 
-                            style={{ width: "100%", height: "100%", borderRadius: 38 }} 
-                          />
-                        ) : (
-                          <Text style={styles.avatarInitial}>
-                            {(profileName || activeProfile?.name || currentUser?.name || username || "R")[0]?.toUpperCase()}
-                          </Text>
-                        )}
+                        <View style={{
+                          width: 76,
+                          height: 76,
+                          borderRadius: 38,
+                          overflow: "hidden",
+                          backgroundColor: "#080415",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}>
+                          {displayLogo ? (
+                            <Image 
+                              source={{ uri: displayLogo }} 
+                              key={displayLogo.slice(0, 64)}
+                              style={{ width: "100%", height: "100%", borderRadius: 38 }} 
+                            />
+                          ) : (
+                            <Text style={styles.avatarInitial}>
+                              {(profileName || activeProfile?.name || currentUser?.name || username || "R")[0]?.toUpperCase()}
+                            </Text>
+                          )}
+                        </View>
                       </View>
-                    </View>
-                  </LinearGradient>
-                  <TouchableOpacity style={styles.avatarPlusBadge} onPress={handleAvatarPress}>
-                    <Lucide name="add" size={13} color="#ffffff" />
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.avatarPlusBadge} onPress={handleAvatarPress} disabled={isUploadingMedia}>
+                    {isUploadingMedia ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <Lucide name="add" size={13} color="#ffffff" />
+                    )}
                   </TouchableOpacity>
                 </View>
 
@@ -1464,47 +1803,26 @@ export default function AccountScreen() {
                 <Text style={styles.bioDescriptionText}>{bioText}</Text>
                 
                 {websiteLink ? (
-                  <TouchableOpacity 
-                    style={styles.websiteRow} 
-                    onPress={() => { 
-                      triggerHaptic("light"); 
-                      try {
-                        const url = websiteLink.trim().startsWith("http") ? websiteLink.trim() : "https://" + websiteLink.trim();
-                        Linking.openURL(url);
-                      } catch (e) {
-                        Alert.alert("URL Error", "Failed to cross over to the target URL.");
-                      }
+                  <TouchableOpacity
+                    style={styles.websiteRow}
+                    onPress={() => {
+                      triggerHaptic("light");
+                      openExternalUrl(websiteLink);
                     }}
                   >
                     <Lucide name="link-outline" size={15} color="#00f5ff" />
-                    <Text style={styles.websiteText}>
-                      {websiteLink} <Text style={{ color: "#8e8e8e", fontWeight: "normal" }}>and 1 more</Text>
-                    </Text>
+                    <Text style={styles.websiteText}>{websiteLink}</Text>
                   </TouchableOpacity>
                 ) : null}
 
                 {/* Threads pill badge exactly matching Instagram screenshot */}
                 <TouchableOpacity 
                   style={styles.threadsPill} 
-                  onPress={() => { triggerHaptic("light"); Alert.alert("Threads Node", `Syncing to @${username} Threads coordinates...`); }}
+                  onPress={() => { triggerHaptic("light"); openExternalUrl(`https://threads.net/@${username}`); }}
                 >
                   <Text style={styles.threadsIcon}>@</Text>
-                  <Text style={styles.threadsPillText}>
-                    {username} <Text style={{ color: "rgba(255,255,255,0.4)" }}>2 new •</Text>
-                  </Text>
+                  <Text style={styles.threadsPillText}>{username}</Text>
                 </TouchableOpacity>
-
-                {/* Overlapping followed-by avatars list exactly matching Instagram screenshot */}
-                <View style={styles.socialProofRow}>
-                  <View style={styles.socialProofAvatars}>
-                    <Image source={{ uri: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=80" }} style={[styles.socialProofAvatar, { zIndex: 3 }]} />
-                    <Image source={{ uri: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=80" }} style={[styles.socialProofAvatar, { zIndex: 2, marginLeft: -10 }]} />
-                    <Image source={{ uri: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=80" }} style={[styles.socialProofAvatar, { zIndex: 1, marginLeft: -10 }]} />
-                  </View>
-                  <Text style={styles.socialProofText} numberOfLines={1}>
-                    Followed by <Text style={styles.socialProofBold}>studywithjasmeet</Text>, <Text style={styles.socialProofBold}>fitwithyashika_</Text> and <Text style={styles.socialProofBold}>23 others</Text>
-                  </Text>
-                </View>
               </View>
 
               {/* 🔴 HORIZONTAL TAG BADGES */}
@@ -1564,16 +1882,6 @@ export default function AccountScreen() {
                 <Text style={styles.actionBtnText}>Share profile</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={[styles.actionBtn, { backgroundColor: "rgba(0,245,255,0.08)", borderWidth: 1, borderColor: "rgba(0,245,255,0.25)" }]} 
-                onPress={() => {
-                  triggerHaptic("medium");
-                  router.push("/maison/business-suite");
-                }}
-              >
-                <Text style={[styles.actionBtnText, { color: "#00f5ff" }]}>AURA Suite</Text>
-              </TouchableOpacity>
-
               {(isCreatorProfile || isBusinessProfile) && (
                 <TouchableOpacity 
                   style={[styles.actionBtn, { backgroundColor: "rgba(255,255,255,0.05)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }]} 
@@ -1584,139 +1892,9 @@ export default function AccountScreen() {
               )}
             </View>
 
-            {/* 🛡️ AURA VAULT SUBSCRIPTION TEST CARD */}
-            <View style={{
-              marginHorizontal: 24,
-              marginTop: 16,
-              marginBottom: 8,
-              padding: 16,
-              borderRadius: 20,
-              backgroundColor: "rgba(11, 7, 30, 0.65)",
-              borderWidth: 1,
-              borderColor: isSubscribed ? "rgba(0, 245, 255, 0.45)" : "rgba(255, 255, 255, 0.08)",
-              shadowColor: "#00f5ff",
-              shadowOpacity: isSubscribed ? 0.15 : 0,
-              shadowOffset: { width: 0, height: 4 },
-              shadowRadius: 10,
-              elevation: 4,
-            }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold", letterSpacing: 1 }}>AURA VAULT MEMBER</Text>
-                <View style={{ 
-                  backgroundColor: isSubscribed ? "rgba(0, 245, 255, 0.15)" : "rgba(255, 255, 255, 0.05)",
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderRadius: 8,
-                  borderWidth: 0.5,
-                  borderColor: isSubscribed ? "#00f5ff" : "rgba(255,255,255,0.15)"
-                }}>
-                  <Text style={{ color: isSubscribed ? "#00f5ff" : "rgba(255,255,255,0.4)", fontSize: 10, fontWeight: "bold" }}>
-                    {isSubscribed ? "PREMIUM ⚡" : "FREE 📁"}
-                  </Text>
-                </View>
-              </View>
-              <Text style={{ color: "rgba(255, 255, 255, 0.45)", fontSize: 12, lineHeight: 16, marginBottom: 12 }}>
-                {isSubscribed 
-                  ? "You have full access to direct search, categories, and immediate ledger checkout." 
-                  : "Subscribe to unlock direct e-commerce catalog features and exclusive drops."}
-              </Text>
-              <TouchableOpacity
-                style={{
-                  backgroundColor: isSubscribed ? "rgba(255, 59, 48, 0.15)" : "#00f5ff",
-                  borderWidth: isSubscribed ? 1 : 0,
-                  borderColor: isSubscribed ? "#FF3B30" : "transparent",
-                  borderRadius: 12,
-                  height: 38,
-                  justifyContent: "center",
-                  alignItems: "center"
-                }}
-                onPress={() => {
-                  triggerHaptic("medium");
-                  setSubscribed(!isSubscribed);
-                  Alert.alert(
-                    "AURA Subscription Sync", 
-                    isSubscribed 
-                      ? "Premium subscription cancelled. Vault store features locked." 
-                      : "Premium subscription activated! Vault store features unlocked."
-                  );
-                }}
-              >
-                <Text style={{ 
-                  color: isSubscribed ? "#FF3B30" : "#000000", 
-                  fontSize: 12, 
-                  fontWeight: "bold",
-                  letterSpacing: 0.5
-                }}>
-                  {isSubscribed ? "CANCEL VAULT MEMBERSHIP" : "UPGRADE TO VAULT MEMBER (₹299/mo)"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* 🛡️ AURA VAULT SUBSCRIPTION TEST CARD */}
-            <View style={{
-              marginHorizontal: 24,
-              marginTop: 16,
-              marginBottom: 8,
-              padding: 16,
-              borderRadius: 20,
-              backgroundColor: "rgba(11, 7, 30, 0.65)",
-              borderWidth: 1,
-              borderColor: isSubscribed ? "rgba(0, 245, 255, 0.45)" : "rgba(255, 255, 255, 0.08)",
-              shadowColor: "#00f5ff",
-              shadowOpacity: isSubscribed ? 0.15 : 0,
-              shadowOffset: { width: 0, height: 4 },
-              shadowRadius: 10,
-              elevation: 4,
-            }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <Text style={{ color: "#ffffff", fontSize: 13, fontWeight: "bold", letterSpacing: 1 }}>AURA VAULT MEMBER</Text>
-                <View style={{ 
-                  backgroundColor: isSubscribed ? "rgba(0, 245, 255, 0.15)" : "rgba(255, 255, 255, 0.05)",
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderRadius: 8,
-                  borderWidth: 0.5,
-                  borderColor: isSubscribed ? "#00f5ff" : "rgba(255,255,255,0.15)"
-                }}>
-                  <Text style={{ color: isSubscribed ? "#00f5ff" : "rgba(255,255,255,0.4)", fontSize: 10, fontWeight: "bold" }}>
-                    {isSubscribed ? "PREMIUM ⚡" : "FREE 📁"}
-                  </Text>
-                </View>
-              </View>
-              <Text style={{ color: "rgba(255, 255, 255, 0.45)", fontSize: 12, lineHeight: 16, marginBottom: 12 }}>
-                {isSubscribed 
-                  ? "You have full access to direct search, categories, and immediate ledger checkout." 
-                  : "Subscribe to unlock direct e-commerce catalog features and exclusive drops."}
-              </Text>
-              <TouchableOpacity
-                style={{
-                  backgroundColor: isSubscribed ? "rgba(255, 59, 48, 0.15)" : "#00f5ff",
-                  borderWidth: isSubscribed ? 1 : 0,
-                  borderColor: isSubscribed ? "#FF3B30" : "transparent",
-                  borderRadius: 12,
-                  height: 38,
-                  justifyContent: "center",
-                  alignItems: "center"
-                }}
-                onPress={() => {
-                  triggerHaptic("medium");
-                  setSubscribed(!isSubscribed);
-                  Alert.alert(
-                    "AURA Subscription Sync", 
-                    isSubscribed 
-                      ? "Premium subscription cancelled. Vault store features locked." 
-                      : "Premium subscription activated! Vault store features unlocked."
-                  );
-                }}
-              >
-                <Text style={{ 
-                  color: isSubscribed ? "#FF3B30" : "#000000", 
-                  fontSize: 12, 
-                  fontWeight: "bold",
-                  letterSpacing: 0.5
-                }}>
-                  {isSubscribed ? "CANCEL VAULT MEMBERSHIP" : "UPGRADE TO VAULT MEMBER (₹299/mo)"}
-                </Text>
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity style={styles.actionBtn} onPress={handleOpenAddProduct}>
+                <Text style={styles.actionBtnText}>Add product</Text>
               </TouchableOpacity>
             </View>
 
@@ -1795,83 +1973,94 @@ export default function AccountScreen() {
             {/* 🔴 GRID OF PRODUCTS / PERSONAL POSTS */}
             <View style={styles.gridWrapper}>
               {activeGridTab === "posts" && (
-                // 👥 Posts lookbook - photo items
-                presetPosts.filter((post: any) => !post.isVideo).map((post: any) => (
-                  <TouchableOpacity 
-                    key={post.id} 
-                    style={styles.gridImageContainer}
-                    onPress={() => { triggerHaptic("medium"); Alert.alert("Look Curation", "Opening premium look detail view..."); }}
-                  >
-                    <Image source={{ uri: post.url }} style={styles.gridPostImage} />
-                  </TouchableOpacity>
-                ))
+                presetPosts.filter((post: any) => !post.isVideo).length > 0 ? (
+                  presetPosts.filter((post: any) => !post.isVideo).map((post: any) => (
+                    <TouchableOpacity 
+                      key={post.id} 
+                      style={styles.gridImageContainer}
+                      onPress={() => {
+                        triggerHaptic("medium");
+                        openGridItem("posts", post.id);
+                      }}
+                    >
+                      <Image source={{ uri: post.thumbnail || post.url }} style={styles.gridPostImage} />
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <ProfileGridEmpty tab="posts" isOwnProfile />
+                )
               )}
 
               {activeGridTab === "reels" && (
-                // 🎥 Reels - video items
-                presetPosts.filter((post: any) => post.isVideo).map((post: any) => (
-                  <TouchableOpacity 
-                    key={post.id} 
-                    style={styles.gridImageContainer}
-                    onPress={() => { triggerHaptic("medium"); Alert.alert("Reel Curation", "Playing high-fidelity visual reel..."); }}
-                  >
-                    <Image source={{ uri: post.url }} style={styles.gridPostImage} />
-                    <View style={styles.gridVideoBadge}>
-                      <Lucide name="play" size={11} color="#ffffff" />
-                    </View>
-                  </TouchableOpacity>
-                ))
+                presetPosts.filter((post: any) => post.isVideo).length > 0 ? (
+                  presetPosts.filter((post: any) => post.isVideo).map((post: any) => (
+                    <TouchableOpacity 
+                      key={post.id} 
+                      style={styles.gridImageContainer}
+                      onPress={() => {
+                        triggerHaptic("medium");
+                        openGridItem("reels", post.id);
+                      }}
+                    >
+                      <Image source={{ uri: post.thumbnail || post.url }} style={styles.gridPostImage} />
+                      <View style={styles.gridVideoBadge}>
+                        <Lucide name="play" size={11} color="#ffffff" />
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <ProfileGridEmpty tab="reels" isOwnProfile />
+                )
               )}
 
               {activeGridTab === "products" && (
-                // 🏛️ storefront products with price tag overlays
-                maisonProducts.length > 0 ? (
-                  maisonProducts.map((product) => {
-                    const imageUrl = product.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400";
+                displayProducts.length > 0 ? (
+                  displayProducts.map((product) => {
+                    const imageUrl = product.images?.[0] || "";
                     return (
                       <TouchableOpacity 
                         key={product.id} 
                         style={styles.gridImageContainer}
-                        onPress={() => { triggerHaptic("medium"); router.push(`/product/${product.id}` as any); }}
+                        onPress={() => {
+                          triggerHaptic("medium");
+                          openGridItem("products", product.id);
+                        }}
                       >
                         <Image source={{ uri: imageUrl }} style={styles.gridPostImage} />
                         <View style={styles.gridPriceBadge}>
                           <Text style={styles.gridPriceText}>₹{product.price?.toLocaleString()}</Text>
                         </View>
+                        {showStoreLabelsOnProducts && product.storeName && (
+                          <TouchableOpacity
+                            style={styles.gridStoreBadge}
+                            onPress={() => handleSwitchToStoreFromProduct(product.storeProfileId)}
+                          >
+                            <Lucide name="storefront-outline" size={9} color="#00f5ff" />
+                            <Text style={styles.gridStoreBadgeText} numberOfLines={1}>
+                              {product.storeName}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                       </TouchableOpacity>
                     );
                   })
                 ) : (
-                  // Fallback storefront products mock grid
-                  [
-                    { id: "fp1", price: 185000, img: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400" },
-                    { id: "fp2", price: 245000, img: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400" },
-                    { id: "fp3", price: 340000, img: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=400" }
-                  ].map((product) => (
-                    <TouchableOpacity
-                      key={product.id}
-                      style={styles.gridImageContainer}
-                      onPress={() => triggerHaptic("medium")}
-                    >
-                      <Image source={{ uri: product.img }} style={styles.gridPostImage} />
-                      <View style={styles.gridPriceBadge}>
-                        <Text style={styles.gridPriceText}>₹{product.price.toLocaleString()}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))
+                  <ProfileGridEmpty tab="products" isOwnProfile />
                 )
               )}
 
               {activeGridTab === "collabs" && (
-                // 🔮 Collabs - affiliate commission lookbook
-                maisonProducts.length > 0 ? (
-                  maisonProducts.map((product) => {
-                    const imageUrl = product.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400";
+                displayProducts.length > 0 ? (
+                  displayProducts.map((product) => {
+                    const imageUrl = product.images?.[0] || "";
                     return (
                       <TouchableOpacity 
                         key={product.id} 
                         style={styles.gridImageContainer}
-                        onPress={() => { triggerHaptic("medium"); router.push(`/product/${product.id}` as any); }}
+                        onPress={() => {
+                          triggerHaptic("medium");
+                          openGridItem("collabs", product.id);
+                        }}
                       >
                         <Image source={{ uri: imageUrl }} style={styles.gridPostImage} />
                         <View style={styles.gridAffiliateBadge}>
@@ -1881,23 +2070,7 @@ export default function AccountScreen() {
                     );
                   })
                 ) : (
-                  // Fallback collabs affiliate lookbook grid
-                  [
-                    { id: "fc1", rate: "10% Commission", img: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=400" },
-                    { id: "fc2", rate: "12% Commission", img: "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=400" },
-                    { id: "fc3", rate: "8% Commission", img: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=400" }
-                  ].map((collab) => (
-                    <TouchableOpacity
-                      key={collab.id}
-                      style={styles.gridImageContainer}
-                      onPress={() => triggerHaptic("medium")}
-                    >
-                      <Image source={{ uri: collab.img }} style={styles.gridPostImage} />
-                      <View style={styles.gridAffiliateBadge}>
-                        <Text style={styles.gridAffiliateText}>{collab.rate}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))
+                  <ProfileGridEmpty tab="collabs" isOwnProfile />
                 )
               )}
             </View>
@@ -1939,37 +2112,60 @@ export default function AccountScreen() {
               </TouchableOpacity>
             </View>
 
-            <FlatList
-              data={networkUsers.filter(u => networkTab === "followers" ? u.isFollower : !u.isFollower)}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 40 }}
-              renderItem={({ item }) => (
-                <View style={styles.networkUserRow}>
-                  <View style={styles.networkUserLeft}>
-                    <Image source={{ uri: item.avatar }} style={styles.networkUserAvatar} />
-                    <View>
-                      <Text style={styles.networkUserName}>{item.name}</Text>
-                      <Text style={styles.networkUserHandle}>@{item.username}</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={[
-                      styles.networkFollowBtn,
-                      item.followed ? styles.networkFollowBtnOutline : styles.networkFollowBtnPrimary
-                    ]}
-                    onPress={() => {
-                      triggerHaptic("medium");
-                      setNetworkUsers(prev => prev.map(u => u.id === item.id ? { ...u, followed: !u.followed } : u));
-                    }}
-                  >
-                    <Text style={[styles.networkFollowBtnText, item.followed && { color: "#fff" }]}>
-                      {item.followed ? "Following" : "Follow"}
+            {loadingNetwork ? (
+              <ActivityIndicator size="small" color="#00f5ff" style={{ marginTop: 24 }} />
+            ) : (
+              <FlatList
+                data={networkUsers}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 40, flexGrow: 1 }}
+                ListEmptyComponent={
+                  <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                    <Text style={{ color: "rgba(255,255,255,0.45)", fontSize: 14 }}>
+                      {networkTab === "followers" ? "No followers yet" : "Not following anyone yet"}
                     </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            />
+                  </View>
+                }
+                renderItem={({ item }) => (
+                  <View style={styles.networkUserRow}>
+                    <TouchableOpacity
+                      style={styles.networkUserLeft}
+                      onPress={() => {
+                        triggerHaptic("light");
+                        setShowNetworkModal(false);
+                        router.push(`/profile/${item.username}` as any);
+                      }}
+                    >
+                      {item.avatar ? (
+                        <Image source={{ uri: item.avatar }} style={styles.networkUserAvatar} />
+                      ) : (
+                        <View style={[styles.networkUserAvatar, { backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" }]}>
+                          <Text style={{ color: "#fff", fontWeight: "700" }}>{item.name[0]?.toUpperCase() || "?"}</Text>
+                        </View>
+                      )}
+                      <View>
+                        <Text style={styles.networkUserName}>{item.name}</Text>
+                        <Text style={styles.networkUserHandle}>@{item.username}</Text>
+                      </View>
+                    </TouchableOpacity>
+                    {item.id !== activeProfile?.id && (
+                      <TouchableOpacity
+                        style={[
+                          styles.networkFollowBtn,
+                          item.followed ? styles.networkFollowBtnOutline : styles.networkFollowBtnPrimary
+                        ]}
+                        onPress={() => handleNetworkFollowToggle(item)}
+                      >
+                        <Text style={[styles.networkFollowBtnText, item.followed && { color: "#fff" }]}>
+                          {item.followed ? "Following" : "Follow"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              />
+            )}
             
             <TouchableOpacity 
               style={styles.modalCloseButton} 
@@ -1995,8 +2191,12 @@ export default function AccountScreen() {
               <Text style={styles.editModalCancelText}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.editModalTitle}>Edit Profile</Text>
-            <TouchableOpacity onPress={handleSaveProfile}>
-              <Text style={styles.editModalDoneText}>Done</Text>
+            <TouchableOpacity onPress={handleSaveProfile} disabled={isSavingProfile}>
+              {isSavingProfile ? (
+                <ActivityIndicator size="small" color="#00f5ff" />
+              ) : (
+                <Text style={styles.editModalDoneText}>Done</Text>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -2076,40 +2276,6 @@ export default function AccountScreen() {
               />
             </View>
 
-            <View style={styles.editorDividerRow}>
-              <Text style={styles.editorSectionTitle}>Stats Calibration</Text>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Posts Count</Text>
-              <TextInput 
-                style={styles.inputField} 
-                value={editPostsCount} 
-                onChangeText={setEditPostsCount}
-                keyboardType="numeric"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Followers Count</Text>
-              <TextInput 
-                style={styles.inputField} 
-                value={editFollowersCount} 
-                onChangeText={setEditFollowersCount}
-                keyboardType="numeric"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Following Count</Text>
-              <TextInput 
-                style={styles.inputField} 
-                value={editFollowingCount} 
-                onChangeText={setEditFollowingCount}
-                keyboardType="numeric"
-              />
-            </View>
-
             <View style={{ height: 60 }} />
           </ScrollView>
         </View>
@@ -2122,14 +2288,11 @@ export default function AccountScreen() {
         transparent={true}
         onRequestClose={() => setShowSwitcherModal(false)}
       >
-        <TouchableOpacity 
-          style={styles.switcherBackdrop} 
-          activeOpacity={1} 
-          onPress={() => setShowSwitcherModal(false)}
-        >
-          <View style={styles.switcherPanel}>
+        <View style={styles.switcherBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowSwitcherModal(false)} />
+          <View style={styles.switcherPanel} onStartShouldSetResponder={() => true}>
             <View style={styles.switcherHandle} />
-            <Text style={styles.switcherTitle}>Switch Identity Profile</Text>
+            <Text style={styles.switcherTitle}>Switch profile</Text>
             
             <ScrollView style={styles.switcherList} showsVerticalScrollIndicator={false}>
               {userProfiles.map((m) => {
@@ -2163,11 +2326,28 @@ export default function AccountScreen() {
 
             <TouchableOpacity style={styles.addBrandBtn} onPress={handleAddBrandProfile}>
               <Lucide name="add-circle-outline" size={22} color="#00f5ff" />
-              <Text style={styles.addBrandBtnText}>Mint new brand profile</Text>
+              <Text style={styles.addBrandBtnText}>Add brand profile</Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
+
+      <CreateBrandProfileSheet
+        visible={showCreateBrandSheet}
+        onClose={() => setShowCreateBrandSheet(false)}
+        onCreated={handleBrandProfileCreated}
+      />
+
+      <AddProductSheet
+        visible={showAddProductSheet}
+        onClose={() => setShowAddProductSheet(false)}
+        onCreated={handleProductCreated}
+        brandStores={brandStoreOptions}
+        defaultStoreId={
+          activeProfile?.type === "BUSINESS" ? activeProfile.id : null
+        }
+        showStorePicker={isPersonalProfile || brandStoreOptions.length > 1}
+      />
 
       {/* ➕ INSTAGRAM-STYLE CREATE BOTTOM SHEET */}
       <Modal
@@ -2176,30 +2356,19 @@ export default function AccountScreen() {
         transparent={true}
         onRequestClose={() => setShowCreateModal(false)}
       >
-        <TouchableOpacity 
-          style={styles.switcherBackdrop} 
-          activeOpacity={1} 
-          onPress={() => setShowCreateModal(false)}
-        >
-          <View style={styles.createPanel}>
+        <View style={styles.switcherBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowCreateModal(false)} />
+          <View style={[styles.createPanel, { alignSelf: "stretch" }]}>
             <View style={styles.switcherHandle} />
             <Text style={styles.createTitle}>Create</Text>
             
             <ScrollView style={styles.createList} showsVerticalScrollIndicator={false}>
-              <TouchableOpacity style={styles.createItem} onPress={() => { 
-                setShowCreateModal(false); 
-                triggerHaptic("medium"); 
-                router.push({ pathname: "/", params: { activeTab: "reels" } } as any);
-              }}>
+              <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("reel")}>
                 <Lucide name="film-outline" size={24} color="#ffffff" />
                 <Text style={styles.createItemText}>Reel</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.createItem} onPress={() => { 
-                setShowCreateModal(false); 
-                triggerHaptic("medium"); 
-                handleEditProfilePress();
-              }}>
+              <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("edit")}>
                 <Lucide name="copy-outline" size={24} color="#ffffff" />
                 <Text style={styles.createItemText}>Edits</Text>
                 <View style={styles.newBadge}>
@@ -2207,55 +2376,45 @@ export default function AccountScreen() {
                 </View>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.createItem} onPress={() => { 
-                setShowCreateModal(false); 
-                triggerHaptic("medium"); 
-                setShowPostModal(true);
-              }}>
+              <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("post")}>
                 <Lucide name="grid-outline" size={24} color="#ffffff" />
                 <Text style={styles.createItemText}>Post</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.createItem} onPress={() => { 
-                setShowCreateModal(false); 
-                triggerHaptic("medium"); 
-                router.push({ pathname: "/", params: { activeTab: "reels", openCamera: "true" } } as any);
-              }}>
+              <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("story")}>
                 <Lucide name="add-circle-outline" size={24} color="#ffffff" />
                 <Text style={styles.createItemText}>Story</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.createItem} onPress={() => { 
-                setShowCreateModal(false); 
-                triggerHaptic("medium"); 
-                handleAddHighlight(); 
-              }}>
+              <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("highlight")}>
                 <Lucide name="heart-circle-outline" size={24} color="#ffffff" />
                 <Text style={styles.createItemText}>Highlights</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.createItem} onPress={() => { 
-                setShowCreateModal(false); 
-                triggerHaptic("medium"); 
-                setShowLiveModal(true);
-                startLiveSimulation();
-              }}>
+              <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("live")}>
                 <Lucide name="radio-outline" size={24} color="#ffffff" />
                 <Text style={styles.createItemText}>Live</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.createItem} onPress={() => { 
-                setShowCreateModal(false); 
-                triggerHaptic("medium"); 
-                setShowAIModal(true);
-              }}>
+              <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("ai")}>
                 <Lucide name="sparkles-outline" size={24} color="#00f5ff" />
                 <Text style={[styles.createItemText, { color: "#00f5ff" }]}>AI</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
+
+      {(isOpeningPicker || isUploadingMedia) && (
+        <View style={styles.mediaBusyOverlay} pointerEvents="box-none">
+          <View style={styles.mediaBusyCard}>
+            <ActivityIndicator size="large" color="#00f5ff" />
+            <Text style={styles.mediaBusyText}>
+              {isOpeningPicker ? "Opening gallery…" : "Publishing…"}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* 📸 FUNCTIONAL PORTAL 1: POST CURATOR */}
       <Modal
@@ -2271,8 +2430,12 @@ export default function AccountScreen() {
                 <Text style={styles.editModalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <Text style={styles.editModalTitle}>{category === "Personal Profile" ? "New Look Post" : "Curate Artifact"}</Text>
-              <TouchableOpacity onPress={handlePublishPost}>
-                <Text style={styles.editModalDoneText}>Publish</Text>
+              <TouchableOpacity onPress={handlePublishPost} disabled={isUploadingMedia}>
+                {isUploadingMedia ? (
+                  <ActivityIndicator size="small" color="#00f5ff" />
+                ) : (
+                  <Text style={styles.editModalDoneText}>Publish</Text>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -2343,7 +2506,29 @@ export default function AccountScreen() {
                 </>
               )}
 
-              <Text style={[styles.inputLabel, { marginTop: 10, marginBottom: 12 }]}>Select Design Texture Image</Text>
+              {postImage && !postImage.includes("images.unsplash.com") ? (
+                <View style={{ marginBottom: 20, alignItems: "center" }}>
+                  <Image
+                    source={{ uri: postImage }}
+                    style={{
+                      width: width - 48,
+                      height: (width - 48) * 1.05,
+                      borderRadius: 12,
+                      backgroundColor: "#111",
+                    }}
+                    resizeMode="cover"
+                  />
+                  <Text style={{ color: "#8e8e8e", fontSize: 12, marginTop: 8 }}>
+                    Selected from your gallery
+                  </Text>
+                </View>
+              ) : null}
+
+              <Text style={[styles.inputLabel, { marginTop: 10, marginBottom: 12 }]}>
+                {postImage && !postImage.includes("images.unsplash.com")
+                  ? "Or pick a stock texture"
+                  : "Select Design Texture Image"}
+              </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 40 }}>
                 {[
                   "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400",
@@ -2373,6 +2558,7 @@ export default function AccountScreen() {
         visible={showLiveModal}
         onClose={() => setShowLiveModal(false)}
         initialMode="broadcaster"
+        skipLobby
         maisonId={username}
         maisonName={profileName}
       />
@@ -2534,11 +2720,17 @@ export default function AccountScreen() {
                       setShowAccountsCenter(false);
                     }}
                   >
-                    <View style={[styles.profileTabCircle, { borderWidth: (activeProfile?.id === personalProfile.id) ? 1.5 : 0, borderColor: "#00f5ff", width: 40, height: 40, borderRadius: 20, overflow: "hidden", marginRight: 12, padding: 0 }]}>
-                      <Image 
-                        source={{ uri: personalProfile.logo || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150" }} 
-                        style={{ width: "100%", height: "100%" }} 
-                      />
+                    <View style={[styles.profileTabCircle, { borderWidth: (activeProfile?.id === personalProfile.id) ? 1.5 : 0, borderColor: "#00f5ff", width: 40, height: 40, borderRadius: 20, overflow: "hidden", marginRight: 12, padding: 0, backgroundColor: "#111", alignItems: "center", justifyContent: "center" }]}>
+                      {personalProfile.logo ? (
+                        <Image 
+                          source={{ uri: personalProfile.logo }} 
+                          style={{ width: "100%", height: "100%" }} 
+                        />
+                      ) : (
+                        <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700" }}>
+                          {(personalProfile.name || "U")[0]?.toUpperCase()}
+                        </Text>
+                      )}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: "#ffffff", fontSize: 14, fontWeight: "bold" }}>{personalProfile.name || currentUser?.name || "Curator"}</Text>
@@ -2960,50 +3152,71 @@ export default function AccountScreen() {
 
               {/* Direct Message Contacts Grid */}
               <View style={styles.shareContactsContainer}>
-                {(() => {
-                  const allContacts = [
-                    { id: "c1", name: "Kiran Soni", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150" },
-                    { id: "c2", name: "S U R A J", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150" },
-                    { id: "c3", name: "Dr. Rashneet ✨", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150" },
-                    { id: "c4", name: "Rhythm Bhatia", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150" },
-                    { id: "c5", name: "the.priyas...", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150" },
-                    { id: "c6", name: "Mandy", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=150" },
-                  ];
-                  const filtered = allContacts.filter(c => 
-                    c.name.toLowerCase().includes(shareSearch.toLowerCase())
+                {loadingShareContacts ? (
+                  <ActivityIndicator size="small" color="#00f5ff" style={{ marginVertical: 24 }} />
+                ) : (() => {
+                  const filtered = shareContacts.filter(c =>
+                    c.name.toLowerCase().includes(shareSearch.toLowerCase()) ||
+                    c.username.toLowerCase().includes(shareSearch.toLowerCase())
                   );
-                  
-                  // Chunk into groups of 3
+
                   const rows = [];
                   for (let i = 0; i < filtered.length; i += 3) {
                     rows.push(filtered.slice(i, i + 3));
                   }
-                  
+
                   if (filtered.length === 0) {
                     return (
                       <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                        <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>No contacts found</Text>
+                        <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
+                          {shareContacts.length === 0 ? "Follow people to share your profile via DM" : "No contacts found"}
+                        </Text>
                       </View>
                     );
                   }
-                  
+
                   return rows.map((rowContacts, rowIndex) => (
                     <View key={`row_${rowIndex}`} style={[styles.shareContactsRow, rowIndex > 0 && { marginTop: 20 }]}>
                       {rowContacts.map((contact) => (
-                        <TouchableOpacity 
-                          key={contact.id} 
-                          style={styles.shareContactCard} 
-                          onPress={() => {
+                        <TouchableOpacity
+                          key={contact.id}
+                          style={styles.shareContactCard}
+                          onPress={async () => {
                             triggerHaptic("success");
                             setShowShareProfileSheet(false);
-                            Alert.alert("Sent", `AURA profile shared successfully with ${contact.name}!`);
+                            try {
+                              const res = await fetch(`${API_HOST}/api/mobile/chat/initiate`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json", ...authHeaders() },
+                                body: JSON.stringify({
+                                  userId: currentUser?.id,
+                                  userName: profileName,
+                                  maisonId: contact.username,
+                                  maisonName: contact.name,
+                                  initialMessage: `Check out my profile: https://aura.app/${username}`,
+                                }),
+                              });
+                              const data = await res.json();
+                              if (data.success) {
+                                Alert.alert("Sent", `Profile shared with ${contact.name}`);
+                              } else {
+                                Alert.alert("Could not send", data.error || "Try again");
+                              }
+                            } catch {
+                              Alert.alert("Could not send", "Network error");
+                            }
                           }}
                         >
-                          <Image source={{ uri: contact.avatar }} style={styles.shareContactAvatar} />
+                          {contact.avatar ? (
+                            <Image source={{ uri: contact.avatar }} style={styles.shareContactAvatar} />
+                          ) : (
+                            <View style={[styles.shareContactAvatar, { backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" }]}>
+                              <Text style={{ color: "#fff", fontWeight: "700" }}>{contact.name[0]?.toUpperCase()}</Text>
+                            </View>
+                          )}
                           <Text style={styles.shareContactName} numberOfLines={1}>{contact.name}</Text>
                         </TouchableOpacity>
                       ))}
-                      {/* Placeholders if row has < 3 elements to maintain space-between layout alignments */}
                       {rowContacts.length < 3 && Array.from({ length: 3 - rowContacts.length }).map((_, placeholderIdx) => (
                         <View key={`placeholder_${placeholderIdx}`} style={{ width: 90 }} />
                       ))}
@@ -3210,15 +3423,18 @@ export default function AccountScreen() {
             router.push("/account");
           }}
         >
-          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "#00f5ff", overflow: "hidden" }]}>
-            {username === "aloksingh" ? (
+          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "#00f5ff", overflow: "hidden", backgroundColor: "#111" }]}>
+            {displayLogo ? (
               <Image 
-                source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80" }} 
+                source={{ uri: displayLogo }} 
+                key={displayLogo.slice(0, 64)}
                 style={styles.profileTabImg} 
               />
             ) : (
               <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center" }]}>
-                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>{username[0]?.toUpperCase() || "R"}</Text>
+                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>
+                  {(profileName || username || "R")[0]?.toUpperCase()}
+                </Text>
               </View>
             )}
           </View>
@@ -3226,6 +3442,56 @@ export default function AccountScreen() {
         </TouchableOpacity>
 
       </View>
+
+      {/* 📖 YOUR STORY VIEWER */}
+      <Modal
+        visible={showStoryViewer}
+        animationType="fade"
+        transparent={false}
+        onRequestClose={() => setShowStoryViewer(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: "#000" }}>
+          <StatusBar barStyle="light-content" />
+          <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              {displayLogo ? (
+                <Image source={{ uri: displayLogo }} style={{ width: 32, height: 32, borderRadius: 16 }} />
+              ) : null}
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>{username}</Text>
+              <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 12 }}>Just now</Text>
+            </View>
+            <TouchableOpacity onPress={() => setShowStoryViewer(false)}>
+              <Lucide name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex: 1, justifyContent: "center" }}>
+            {yourStorySlides[storyViewerIndex] ? (
+              <Image
+                source={{ uri: yourStorySlides[storyViewerIndex].url }}
+                style={{ width: "100%", height: "85%" }}
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }}>
+            <TouchableOpacity
+              disabled={storyViewerIndex <= 0}
+              onPress={() => setStoryViewerIndex((i) => Math.max(0, i - 1))}
+            >
+              <Lucide name="chevron-back" size={28} color={storyViewerIndex <= 0 ? "rgba(255,255,255,0.2)" : "#fff"} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push("/create/story")}>
+              <Lucide name="add-circle-outline" size={28} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={storyViewerIndex >= yourStorySlides.length - 1}
+              onPress={() => setStoryViewerIndex((i) => Math.min(yourStorySlides.length - 1, i + 1))}
+            >
+              <Lucide name="chevron-forward" size={28} color={storyViewerIndex >= yourStorySlides.length - 1 ? "rgba(255,255,255,0.2)" : "#fff"} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ➕ CUSTOM PROMPT MODAL */}
       <Modal
@@ -3373,6 +3639,29 @@ export default function AccountScreen() {
           </View>
         </View>
       </Modal>
+
+      <ProfileGridViewer
+        visible={gridViewer.visible}
+        onClose={closeGridViewer}
+        tab={gridViewer.tab}
+        initialItemId={gridViewer.initialItemId}
+        profile={{
+          username,
+          name: profileName,
+          logo: displayLogo,
+        }}
+        posts={presetPosts}
+        products={displayProducts}
+        isOwnProfile
+        onPostDeleted={(postId) => {
+          setPresetPosts((prev) => {
+            const next = prev.filter((p) => p.id !== postId);
+            if (next.length === 0) closeGridViewer();
+            return next;
+          });
+          loadProfileFromServer();
+        }}
+      />
 
     </View>
   );
@@ -3677,6 +3966,27 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: "600",
   },
+  gridStoreBadge: {
+    position: "absolute",
+    left: 6,
+    bottom: 6,
+    right: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderWidth: 0.5,
+    borderColor: "rgba(0,245,255,0.35)",
+  },
+  gridStoreBadgeText: {
+    color: "#00f5ff",
+    fontSize: 9,
+    fontWeight: "700",
+    flex: 1,
+  },
 
   // Highlights Row
   highlightsContainer: {
@@ -3940,6 +4250,29 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: "#ff3b30",
+  },
+  mediaBusyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  mediaBusyCard: {
+    backgroundColor: "#0b071e",
+    borderRadius: 16,
+    paddingHorizontal: 28,
+    paddingVertical: 22,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  mediaBusyText: {
+    color: "#ffffff",
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: "600",
   },
   // Switcher modal styles
   switcherBackdrop: {

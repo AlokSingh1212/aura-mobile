@@ -4,9 +4,8 @@ import { StatusBar } from "expo-status-bar";
 import { LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { initDatabase } from "@/utils/localDb";
-
-import NetInfo from "@react-native-community/netinfo";
 import { useStore } from "@/store/useStore";
+import NetInfo from "@react-native-community/netinfo";
 
 // Suppress expo-av deprecation warnings
 LogBox.ignoreLogs([
@@ -18,6 +17,10 @@ LogBox.ignoreLogs([
 export default function RootLayout() {
   useEffect(() => {
     initDatabase();
+    useStore.getState().restoreAuthSession().catch((err) => {
+      console.warn("Failed to restore auth session:", err);
+      useStore.setState({ authHydrated: true });
+    });
 
     // Subscribe to network connection state changes
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -43,15 +46,9 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: "#FFFFFF" }
         }}
       >
-        {/* Onboarding Flow */}
-        <Stack.Screen name="splash" options={{ animation: "none" }} />
-        <Stack.Screen name="welcome" options={{ animation: "fade" }} />
         <Stack.Screen name="login" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="forgot-password" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="otp" options={{ animation: "slide_from_right" }} />
-        <Stack.Screen name="persona" options={{ animation: "slide_from_right" }} />
-        <Stack.Screen name="create-profile" options={{ animation: "slide_from_right" }} />
-        <Stack.Screen name="interests" options={{ animation: "slide_from_right" }} />
-        <Stack.Screen name="permissions" options={{ animation: "slide_from_right" }} />
 
         {/* Main App */}
         <Stack.Screen name="index" options={{ animation: "none" }} />
@@ -59,6 +56,7 @@ export default function RootLayout() {
         <Stack.Screen name="cart" options={{ animation: "none" }} />
         <Stack.Screen name="dashboard" />
         <Stack.Screen name="account" options={{ animation: "none" }} />
+        <Stack.Screen name="create" options={{ animation: "slide_from_bottom", presentation: "modal" }} />
         <Stack.Screen name="profile/[username]" options={{ animation: "fade_from_bottom" }} />
       </Stack>
     </GestureHandlerRootView>

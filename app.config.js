@@ -5,6 +5,6 @@ module.exports = () => ({
   ...appJson.expo,
   extra: {
     ...appJson.expo.extra,
-    apiHost: process.env.EXPO_PUBLIC_API_HOST || "http://192.168.1.5:3000",
+    apiHost: process.env.EXPO_PUBLIC_API_HOST || "https://ai-marketplace-delta-five.vercel.app",
   },
 });

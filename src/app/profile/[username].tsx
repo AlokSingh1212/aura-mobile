@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -22,22 +22,22 @@ import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import { API_HOST } from "@/constants/api";
+import { openExternalUrl } from "@/lib/openExternalUrl";
+import { formatCompactNumber } from "@/constants/format";
+import { ProfileGridEmpty } from "@/components/ProfileGridEmpty";
+import {
+  fetchProfileNetwork,
+  fetchProfilePosts,
+  fetchSuggestedProfiles,
+  toggleFollowProfile,
+  type NetworkProfile,
+  type ProfilePost,
+} from "@/lib/profileApi";
+import { useProfileGridViewer } from "@/lib/profileGridNavigation";
+import { ProfileGridViewer } from "@/components/profile/ProfileGridViewer";
 
 const { width } = Dimensions.get("window");
 const GRID_ITEM_SIZE = (width - 2) / 3;
-
-// Preset visual lookbook posts for personal/fallback profiles
-const PRESET_POSTS = [
-  { id: "vg_1", url: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400", isVideo: true },
-  { id: "vg_2", url: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400", isVideo: true },
-  { id: "vg_3", url: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=400", isVideo: false },
-  { id: "vg_4", url: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600", isVideo: false },
-  { id: "vg_5", url: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=400", isVideo: true },
-  { id: "vg_6", url: "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=400", isVideo: false },
-  { id: "vg_7", url: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&q=80&w=400", isVideo: true },
-  { id: "vg_8", url: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=400", isVideo: false },
-  { id: "vg_9", url: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&q=80&w=400", isVideo: true },
-];
 
 export default function ViewProfileScreen() {
   const { username } = useLocalSearchParams<{ username: string }>();
@@ -57,26 +57,60 @@ export default function ViewProfileScreen() {
 
   const [activeGridTab, setActiveGridTab] = useState<"posts" | "reels" | "products" | "collabs">("posts");
   const [followLoading, setFollowLoading] = useState(false);
+  const [profilePosts, setProfilePosts] = useState<ProfilePost[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const { viewer: gridViewer, openGridItem, closeViewer: closeGridViewer } = useProfileGridViewer();
 
-  // 👥 Suggested Curators collapsible state
   const [showSuggested, setShowSuggested] = useState(false);
-  const [suggestedProfiles, setSuggestedProfiles] = useState([
-    { id: "s1", username: "garimahuja05", name: "Garima Ahuja", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=100", followed: false },
-    { id: "s2", username: "namita.thapar", name: "Namita Thapar", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=100", followed: false },
-    { id: "s3", username: "vidmikai", name: "Mikai", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=100", followed: false },
-    { id: "s4", username: "mahima.unfilter", name: "Mahima", avatar: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&q=80&w=100", followed: false }
-  ]);
+  const [suggestedProfiles, setSuggestedProfiles] = useState<NetworkProfile[]>([]);
 
-  // 👥 Followers/Following network list states
   const [showNetworkModal, setShowNetworkModal] = useState(false);
   const [networkTab, setNetworkTab] = useState<"followers" | "following">("followers");
-  const [networkUsers, setNetworkUsers] = useState([
-    { id: "n1", username: "studywithjasmeet", name: "Jasmeet Kaur", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=100", followed: false, isFollower: true },
-    { id: "n2", username: "fitwithyashika_", name: "Yashika Sharma", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=100", followed: true, isFollower: true },
-    { id: "n3", username: "curator.alok", name: "Alok Sovereign", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=100", followed: true, isFollower: false },
-    { id: "n4", username: "priya_mehta", name: "Priya Mehta", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=100", followed: false, isFollower: false },
-    { id: "n5", username: "rohan_curator", name: "Rohan Kapoor", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=100", followed: true, isFollower: true }
-  ]);
+  const [networkUsers, setNetworkUsers] = useState<NetworkProfile[]>([]);
+  const [loadingNetwork, setLoadingNetwork] = useState(false);
+
+  const loadNetworkList = useCallback(
+    async (tab: "followers" | "following", profileId: string) => {
+      setLoadingNetwork(true);
+      try {
+        const list = await fetchProfileNetwork(profileId, tab, activeProfile?.id);
+        setNetworkUsers(list);
+      } catch (e) {
+        console.warn("Could not load profile network.", e);
+        setNetworkUsers([]);
+      } finally {
+        setLoadingNetwork(false);
+      }
+    },
+    [activeProfile?.id]
+  );
+
+  const handleNetworkFollowToggle = async (item: NetworkProfile) => {
+    if (!activeProfile?.id || item.id === activeProfile.id) return;
+    triggerHaptic("medium");
+    const data = await toggleFollowProfile(activeProfile.id, item.id);
+    if (!data.success) return;
+    setNetworkUsers((prev) =>
+      prev.map((u) => (u.id === item.id ? { ...u, followed: !!data.isFollowing } : u))
+    );
+    if (networkTab === "following" && !data.isFollowing) {
+      setNetworkUsers((prev) => prev.filter((u) => u.id !== item.id));
+    }
+  };
+
+  const handleSuggestedFollow = async (p: NetworkProfile) => {
+    if (!activeProfile?.id) {
+      Alert.alert("Login Required", "Please log in to follow profiles.");
+      return;
+    }
+    triggerHaptic("medium");
+    const data = await toggleFollowProfile(activeProfile.id, p.id);
+    if (data.success) {
+      setSuggestedProfiles((prev) =>
+        prev.map((x) => (x.id === p.id ? { ...x, followed: !!data.isFollowing } : x))
+      );
+    }
+  };
 
   // 💬 DMs States
   const [showMessageSheet, setShowMessageSheet] = useState(false);
@@ -135,9 +169,6 @@ export default function ViewProfileScreen() {
                 websiteLink: profile.websiteLink,
                 logo: profile.logo,
                 tags: newTags,
-                postsCount: profile.postsCount,
-                followersCount: profile.followersCount,
-                followingCount: profile.followingCount
               })
             });
 
@@ -194,9 +225,6 @@ export default function ViewProfileScreen() {
                   websiteLink: profile.websiteLink,
                   logo: profile.logo,
                   tags: newTags,
-                  postsCount: profile.postsCount,
-                  followersCount: profile.followersCount,
-                  followingCount: profile.followingCount
                 })
               });
 
@@ -222,7 +250,6 @@ export default function ViewProfileScreen() {
     );
   };
 
-  // Fetch profile data on mount
   useEffect(() => {
     if (username) {
       fetchViewProfile(username, activeProfile?.id);
@@ -230,23 +257,51 @@ export default function ViewProfileScreen() {
     return () => {
       clearViewProfile();
     };
-  }, [username]);
+  }, [username, activeProfile?.id]);
 
-  // Derived profile state
   const profile = viewingProfile;
-  const isOwnProfile = profile?.username === currentUser?.username;
+  const isOwnProfile =
+    profile?.username === activeProfile?.username ||
+    profile?.profileId === activeProfile?.id;
+  const isPersonalProfile = profile?.profileType === "PERSONAL";
+  const isCreatorProfile = profile?.profileType === "CREATOR";
+  const isBusinessProfile = profile?.profileType === "BUSINESS";
+  const isFollowing = profile?.isFollowing || false;
+  const isPrivate = profile?.isPrivate || false;
+  const showPrivateOverlay = isPrivate && !isFollowing && !isOwnProfile;
+  const followedBy = (profile as { followedBy?: { username: string; name: string; logo: string | null }[] })?.followedBy || [];
+  const followedByOthersCount = (profile as { followedByOthersCount?: number })?.followedByOthersCount || 0;
 
   useEffect(() => {
     if (viewingProfile?.tags) {
       setTags(viewingProfile.tags);
     }
   }, [viewingProfile]);
-  const isPersonalProfile = profile?.profileType === "PERSONAL";
-  const isCreatorProfile = profile?.profileType === "CREATOR";
-  const isBusinessProfile = profile?.profileType === "BUSINESS";
-  const isFollowing = profile?.isFollowing || false;
-  const isPrivate = profile?.isPrivate || false;
-  const showPrivateOverlay = isPrivate && !isFollowing;
+
+  useEffect(() => {
+    if (showNetworkModal && profile?.profileId && !profile.profileId.startsWith("mock_")) {
+      loadNetworkList(networkTab, profile.profileId);
+    }
+  }, [showNetworkModal, networkTab, profile?.profileId, loadNetworkList]);
+
+  useEffect(() => {
+    if (!activeProfile?.id || profile?.profileId?.startsWith("mock_")) return;
+    fetchSuggestedProfiles(activeProfile.id).then(setSuggestedProfiles);
+  }, [activeProfile?.id, profile?.profileId]);
+
+  useEffect(() => {
+    if (!profile?.profileId || profile.profileId.startsWith("mock_") || showPrivateOverlay) {
+      setProfilePosts([]);
+      return;
+    }
+    setLoadingPosts(true);
+    fetchProfilePosts({
+      username: profile.username,
+      profileId: profile.profileId,
+    })
+      .then(setProfilePosts)
+      .finally(() => setLoadingPosts(false));
+  }, [profile?.profileId, profile?.username, showPrivateOverlay]);
 
   // Handle follow/unfollow toggle
   const handleFollowToggle = async () => {
@@ -460,7 +515,7 @@ export default function ViewProfileScreen() {
               {/* Stats Columns */}
               <View style={styles.statsRow}>
                 <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{profile.postsCount}</Text>
+                  <Text style={styles.statNumber}>{formatCompactNumber(profile.postsCount || 0)}</Text>
                   <Text style={styles.statLabel}>posts</Text>
                 </View>
                 <TouchableOpacity style={styles.statItem} onPress={() => {
@@ -468,7 +523,7 @@ export default function ViewProfileScreen() {
                   setNetworkTab("followers");
                   setShowNetworkModal(true);
                 }}>
-                  <Text style={styles.statNumber}>{profile.followersCount}</Text>
+                  <Text style={styles.statNumber}>{formatCompactNumber(profile.followersCount || 0)}</Text>
                   <Text style={styles.statLabel}>followers</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.statItem} onPress={() => {
@@ -476,7 +531,7 @@ export default function ViewProfileScreen() {
                   setNetworkTab("following");
                   setShowNetworkModal(true);
                 }}>
-                  <Text style={styles.statNumber}>{profile.followingCount}</Text>
+                  <Text style={styles.statNumber}>{formatCompactNumber(profile.followingCount || 0)}</Text>
                   <Text style={styles.statLabel}>following</Text>
                 </TouchableOpacity>
               </View>
@@ -493,45 +548,59 @@ export default function ViewProfileScreen() {
                   style={styles.websiteRow}
                   onPress={() => {
                     triggerHaptic("light");
-                    try {
-                      const url = profile.websiteLink.trim().startsWith("http")
-                        ? profile.websiteLink.trim()
-                        : "https://" + profile.websiteLink.trim();
-                      Linking.openURL(url);
-                    } catch (e) {
-                      Alert.alert("URL Error", "Failed to open the link.");
-                    }
+                    openExternalUrl(profile.websiteLink);
                   }}
                 >
                   <Lucide name="link-outline" size={15} color="#00f5ff" />
-                  <Text style={styles.websiteText}>
-                    {profile.websiteLink} <Text style={{ color: "#8e8e8e", fontWeight: "normal" }}>and 1 more</Text>
-                  </Text>
+                  <Text style={styles.websiteText}>{profile.websiteLink}</Text>
                 </TouchableOpacity>
               ) : null}
 
               {/* Threads pill badge exactly matching Instagram screenshot */}
               <TouchableOpacity 
                 style={styles.threadsPill} 
-                onPress={() => { triggerHaptic("light"); Alert.alert("Threads Node", `Syncing to @${profile.username} Threads coordinates...`); }}
+                onPress={() => { triggerHaptic("light"); openExternalUrl(`https://threads.net/@${profile.username}`); }}
               >
                 <Text style={styles.threadsIcon}>@</Text>
-                <Text style={styles.threadsPillText}>
-                  {profile.username} <Text style={{ color: "rgba(255,255,255,0.4)" }}>2 new •</Text>
-                </Text>
+                <Text style={styles.threadsPillText}>{profile.username}</Text>
               </TouchableOpacity>
 
-              {/* Overlapping followed-by avatars list exactly matching Instagram screenshot */}
-              <View style={styles.socialProofRow}>
-                <View style={styles.socialProofAvatars}>
-                  <Image source={{ uri: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=80" }} style={[styles.socialProofAvatar, { zIndex: 3 }]} />
-                  <Image source={{ uri: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=80" }} style={[styles.socialProofAvatar, { zIndex: 2, marginLeft: -10 }]} />
-                  <Image source={{ uri: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=80" }} style={[styles.socialProofAvatar, { zIndex: 1, marginLeft: -10 }]} />
+              {followedBy.length > 0 && (
+                <View style={styles.socialProofRow}>
+                  <View style={styles.socialProofAvatars}>
+                    {followedBy.slice(0, 3).map((person, idx) => (
+                      person.logo ? (
+                        <Image
+                          key={person.username}
+                          source={{ uri: person.logo }}
+                          style={[styles.socialProofAvatar, { zIndex: 3 - idx, marginLeft: idx > 0 ? -10 : 0 }]}
+                        />
+                      ) : (
+                        <View
+                          key={person.username}
+                          style={[styles.socialProofAvatar, { zIndex: 3 - idx, marginLeft: idx > 0 ? -10 : 0, backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center" }]}
+                        >
+                          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>{person.name[0]?.toUpperCase()}</Text>
+                        </View>
+                      )
+                    ))}
+                  </View>
+                  <Text style={styles.socialProofText} numberOfLines={2}>
+                    Followed by{" "}
+                    {followedBy.slice(0, 2).map((person, idx) => (
+                      <Text key={person.username}>
+                        {idx > 0 ? ", " : ""}
+                        <Text style={styles.socialProofBold}>{person.username}</Text>
+                      </Text>
+                    ))}
+                    {followedByOthersCount + Math.max(0, followedBy.length - 2) > 0 && (
+                      <Text style={styles.socialProofBold}>
+                        {" "}and {followedByOthersCount + Math.max(0, followedBy.length - 2)} others
+                      </Text>
+                    )}
+                  </Text>
                 </View>
-                <Text style={styles.socialProofText} numberOfLines={1}>
-                  Followed by <Text style={styles.socialProofBold}>studywithjasmeet</Text>, <Text style={styles.socialProofBold}>fitwithyashika_</Text> and <Text style={styles.socialProofBold}>23 others</Text>
-                </Text>
-              </View>
+              )}
             </View>
 
             {/* 🔴 HORIZONTAL TAG BADGES */}
@@ -621,76 +690,71 @@ export default function ViewProfileScreen() {
                 </TouchableOpacity>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestedScroll}>
-                {suggestedProfiles.map((p) => (
-                  <View key={p.id} style={styles.suggestedCard}>
-                    <TouchableOpacity style={styles.suggestedCloseBtn} onPress={() => {
-                      triggerHaptic("light");
-                      setSuggestedProfiles(prev => prev.filter(x => x.id !== p.id));
-                    }}>
-                      <Lucide name="close" size={14} color="rgba(255,255,255,0.3)" />
-                    </TouchableOpacity>
-                    <Image source={{ uri: p.avatar }} style={styles.suggestedAvatar} />
-                    <Text style={styles.suggestedName} numberOfLines={1}>{p.name}</Text>
-                    <Text style={styles.suggestedHandle} numberOfLines={1}>@{p.username}</Text>
-                    <TouchableOpacity
-                      style={[
-                        styles.suggestedFollowBtn,
-                        p.followed ? styles.suggestedFollowBtnActive : styles.suggestedFollowBtnPrimary
-                      ]}
-                      onPress={() => {
-                        triggerHaptic("medium");
-                        setSuggestedProfiles(prev => prev.map(x => x.id === p.id ? { ...x, followed: !x.followed } : x));
-                      }}
-                    >
-                      <Text style={[
-                        styles.suggestedFollowText,
-                        p.followed && { color: "#ffffff" }
-                      ]}>
-                        {p.followed ? "Following" : "Follow"}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
+                {suggestedProfiles.length === 0 ? (
+                  <Text style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, paddingVertical: 12 }}>No suggestions right now</Text>
+                ) : (
+                  suggestedProfiles.map((p) => (
+                    <View key={p.id} style={styles.suggestedCard}>
+                      <TouchableOpacity style={styles.suggestedCloseBtn} onPress={() => {
+                        triggerHaptic("light");
+                        setSuggestedProfiles(prev => prev.filter(x => x.id !== p.id));
+                      }}>
+                        <Lucide name="close" size={14} color="rgba(255,255,255,0.3)" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => router.push(`/profile/${p.username}` as any)}>
+                        {p.avatar ? (
+                          <Image source={{ uri: p.avatar }} style={styles.suggestedAvatar} />
+                        ) : (
+                          <View style={[styles.suggestedAvatar, { backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" }]}>
+                            <Text style={{ color: "#fff", fontWeight: "700" }}>{p.name[0]?.toUpperCase()}</Text>
+                          </View>
+                        )}
+                        <Text style={styles.suggestedName} numberOfLines={1}>{p.name}</Text>
+                        <Text style={styles.suggestedHandle} numberOfLines={1}>@{p.username}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.suggestedFollowBtn,
+                          p.followed ? styles.suggestedFollowBtnActive : styles.suggestedFollowBtnPrimary
+                        ]}
+                        onPress={() => handleSuggestedFollow(p)}
+                      >
+                        <Text style={[
+                          styles.suggestedFollowText,
+                          p.followed && { color: "#ffffff" }
+                        ]}>
+                          {p.followed ? "Following" : "Follow"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
               </ScrollView>
             </View>
           )}
 
           {/* 🔴 HIGHLIGHTS ROW (no "New" / "+" button for other user) */}
+          {viewingHighlights.length > 0 && (
           <View style={styles.highlightsContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.highlightsScroll}>
-              {viewingHighlights.length > 0 ? (
-                viewingHighlights.map((hl: any) => (
-                  <TouchableOpacity
-                    key={hl.id}
-                    style={styles.highlightItem}
-                    onPress={() => {
-                      triggerHaptic("light");
-                      Alert.alert("Highlight", `Viewing "${hl.title}" story highlight.`);
-                    }}
-                  >
-                    <View style={styles.highlightCircle}>
-                      <Image source={{ uri: hl.avatar }} style={styles.highlightImage} />
-                    </View>
-                    <Text style={styles.highlightTitle} numberOfLines={1}>{hl.title}</Text>
-                  </TouchableOpacity>
-                ))
-              ) : (
-                // Fallback mock highlights for empty profiles
-                [
-                  { id: "fh1", title: "Community", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150" },
-                  { id: "fh2", title: "Looks", avatar: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150" },
-                  { id: "fh3", title: "Brand", avatar: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=150" },
-                ].map((hl) => (
-                  <TouchableOpacity key={hl.id} style={styles.highlightItem} onPress={() => triggerHaptic("light")}>
-                    <View style={styles.highlightCircle}>
-                      <Image source={{ uri: hl.avatar }} style={styles.highlightImage} />
-                    </View>
-                    <Text style={styles.highlightTitle} numberOfLines={1}>{hl.title}</Text>
-                  </TouchableOpacity>
-                ))
-              )}
+              {viewingHighlights.map((hl: any) => (
+                <TouchableOpacity
+                  key={hl.id}
+                  style={styles.highlightItem}
+                  onPress={() => {
+                    triggerHaptic("light");
+                    Alert.alert("Highlight", `Viewing "${hl.title}" story highlight.`);
+                  }}
+                >
+                  <View style={styles.highlightCircle}>
+                    <Image source={{ uri: hl.avatar }} style={styles.highlightImage} />
+                  </View>
+                  <Text style={styles.highlightTitle} numberOfLines={1}>{hl.title}</Text>
+                </TouchableOpacity>
+              ))}
             </ScrollView>
           </View>
+          )}
 
           {/* 🔮 CREATOR SCORE INFLUENCE BANNER (CREATOR ONLY) */}
           {isCreatorProfile && (
@@ -744,45 +808,63 @@ export default function ViewProfileScreen() {
 
               {/* 🔴 GRID OF PRODUCTS / PERSONAL POSTS */}
               <View style={styles.gridWrapper}>
+                {loadingPosts && (activeGridTab === "posts" || activeGridTab === "reels") ? (
+                  <ActivityIndicator size="small" color="#00f5ff" style={{ marginVertical: 32, width: "100%" }} />
+                ) : null}
+
                 {activeGridTab === "posts" && (
-                  // 👥 Posts lookbook - photo items
-                  PRESET_POSTS.filter(post => !post.isVideo).map((post) => (
-                    <TouchableOpacity
-                      key={post.id}
-                      style={styles.gridImageContainer}
-                      onPress={() => { triggerHaptic("medium"); Alert.alert("Post", "Opening post detail view..."); }}
-                    >
-                      <Image source={{ uri: post.url }} style={styles.gridPostImage} />
-                    </TouchableOpacity>
-                  ))
+                  profilePosts.filter((post) => !post.isVideo).length > 0 ? (
+                    profilePosts.filter((post) => !post.isVideo).map((post) => (
+                      <TouchableOpacity
+                        key={post.id}
+                        style={styles.gridImageContainer}
+                        onPress={() => {
+                          triggerHaptic("medium");
+                          openGridItem("posts", post.id);
+                        }}
+                      >
+                        <Image source={{ uri: post.thumbnail || post.url }} style={styles.gridPostImage} />
+                      </TouchableOpacity>
+                    ))
+                  ) : !loadingPosts ? (
+                    <ProfileGridEmpty tab="posts" />
+                  ) : null
                 )}
 
                 {activeGridTab === "reels" && (
-                  // 🎥 Reels - video items exactly matching reels player
-                  PRESET_POSTS.filter(post => post.isVideo).map((post) => (
-                    <TouchableOpacity
-                      key={post.id}
-                      style={styles.gridImageContainer}
-                      onPress={() => { triggerHaptic("medium"); Alert.alert("Reel Curation", "Playing high-fidelity visual reel..."); }}
-                    >
-                      <Image source={{ uri: post.url }} style={styles.gridPostImage} />
-                      <View style={styles.gridVideoBadge}>
-                        <Lucide name="play" size={11} color="#ffffff" />
-                      </View>
-                    </TouchableOpacity>
-                  ))
+                  profilePosts.filter((post) => post.isVideo).length > 0 ? (
+                    profilePosts.filter((post) => post.isVideo).map((post) => (
+                      <TouchableOpacity
+                        key={post.id}
+                        style={styles.gridImageContainer}
+                        onPress={() => {
+                          triggerHaptic("medium");
+                          openGridItem("reels", post.id);
+                        }}
+                      >
+                        <Image source={{ uri: post.thumbnail || post.url }} style={styles.gridPostImage} />
+                        <View style={styles.gridVideoBadge}>
+                          <Lucide name="play" size={11} color="#ffffff" />
+                        </View>
+                      </TouchableOpacity>
+                    ))
+                  ) : !loadingPosts ? (
+                    <ProfileGridEmpty tab="reels" />
+                  ) : null
                 )}
 
                 {activeGridTab === "products" && (
-                  // 🏛️ Displays storefront products with price tag overlays
                   viewingProducts.length > 0 ? (
                     viewingProducts.map((product: any) => {
-                      const imageUrl = product.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400";
+                      const imageUrl = product.images?.[0] || "";
                       return (
                         <TouchableOpacity
                           key={product.id}
                           style={styles.gridImageContainer}
-                          onPress={() => { triggerHaptic("medium"); router.push(`/product/${product.id}` as any); }}
+                          onPress={() => {
+                            triggerHaptic("medium");
+                            openGridItem("products", product.id);
+                          }}
                         >
                           <Image source={{ uri: imageUrl }} style={styles.gridPostImage} />
                           <View style={styles.gridPriceBadge}>
@@ -792,36 +874,22 @@ export default function ViewProfileScreen() {
                       );
                     })
                   ) : (
-                    // Fallback storefront products mock grid
-                    [
-                      { id: "fp1", price: 185000, img: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400" },
-                      { id: "fp2", price: 245000, img: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400" },
-                      { id: "fp3", price: 340000, img: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=400" }
-                    ].map((product) => (
-                      <TouchableOpacity
-                        key={product.id}
-                        style={styles.gridImageContainer}
-                        onPress={() => triggerHaptic("medium")}
-                      >
-                        <Image source={{ uri: product.img }} style={styles.gridPostImage} />
-                        <View style={styles.gridPriceBadge}>
-                          <Text style={styles.gridPriceText}>₹{product.price.toLocaleString()}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))
+                    <ProfileGridEmpty tab="products" />
                   )
                 )}
 
                 {activeGridTab === "collabs" && (
-                  // 🔮 Collabs - affiliate commission lookbook
                   viewingProducts.length > 0 ? (
                     viewingProducts.map((product: any) => {
-                      const imageUrl = product.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400";
+                      const imageUrl = product.images?.[0] || "";
                       return (
                         <TouchableOpacity
                           key={product.id}
                           style={styles.gridImageContainer}
-                          onPress={() => { triggerHaptic("medium"); router.push(`/product/${product.id}` as any); }}
+                          onPress={() => {
+                            triggerHaptic("medium");
+                            openGridItem("collabs", product.id);
+                          }}
                         >
                           <Image source={{ uri: imageUrl }} style={styles.gridPostImage} />
                           <View style={styles.gridAffiliateBadge}>
@@ -831,23 +899,7 @@ export default function ViewProfileScreen() {
                       );
                     })
                   ) : (
-                    // Fallback collabs affiliate lookbook grid
-                    [
-                      { id: "fc1", rate: "10% Commission", img: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=400" },
-                      { id: "fc2", rate: "12% Commission", img: "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=400" },
-                      { id: "fc3", rate: "8% Commission", img: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=400" }
-                    ].map((collab) => (
-                      <TouchableOpacity
-                        key={collab.id}
-                        style={styles.gridImageContainer}
-                        onPress={() => triggerHaptic("medium")}
-                      >
-                        <Image source={{ uri: collab.img }} style={styles.gridPostImage} />
-                        <View style={styles.gridAffiliateBadge}>
-                          <Text style={styles.gridAffiliateText}>{collab.rate}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))
+                    <ProfileGridEmpty tab="collabs" />
                   )
                 )}
               </View>
@@ -878,7 +930,7 @@ export default function ViewProfileScreen() {
                 onPress={() => { triggerHaptic("light"); setNetworkTab("followers"); }}
               >
                 <Text style={[styles.networkTabText, networkTab === "followers" && styles.networkTabTextActive]}>
-                  {profile.followersCount} Followers
+                  {formatCompactNumber(profile.followersCount || 0)} Followers
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity 
@@ -886,42 +938,65 @@ export default function ViewProfileScreen() {
                 onPress={() => { triggerHaptic("light"); setNetworkTab("following"); }}
               >
                 <Text style={[styles.networkTabText, networkTab === "following" && styles.networkTabTextActive]}>
-                  {profile.followingCount} Following
+                  {formatCompactNumber(profile.followingCount || 0)} Following
                 </Text>
               </TouchableOpacity>
             </View>
 
-            <FlatList
-              data={networkUsers.filter(u => networkTab === "followers" ? u.isFollower : !u.isFollower)}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 40 }}
-              renderItem={({ item }) => (
-                <View style={styles.networkUserRow}>
-                  <View style={styles.networkUserLeft}>
-                    <Image source={{ uri: item.avatar }} style={styles.networkUserAvatar} />
-                    <View>
-                      <Text style={styles.networkUserName}>{item.name}</Text>
-                      <Text style={styles.networkUserHandle}>@{item.username}</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={[
-                      styles.networkFollowBtn,
-                      item.followed ? styles.networkFollowBtnOutline : styles.networkFollowBtnPrimary
-                    ]}
-                    onPress={() => {
-                      triggerHaptic("medium");
-                      setNetworkUsers(prev => prev.map(u => u.id === item.id ? { ...u, followed: !u.followed } : u));
-                    }}
-                  >
-                    <Text style={[styles.networkFollowBtnText, item.followed && { color: "#fff" }]}>
-                      {item.followed ? "Following" : "Follow"}
+            {loadingNetwork ? (
+              <ActivityIndicator size="small" color="#00f5ff" style={{ marginTop: 24 }} />
+            ) : (
+              <FlatList
+                data={networkUsers}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 40, flexGrow: 1 }}
+                ListEmptyComponent={
+                  <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                    <Text style={{ color: "rgba(255,255,255,0.45)", fontSize: 14 }}>
+                      {networkTab === "followers" ? "No followers yet" : "Not following anyone yet"}
                     </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            />
+                  </View>
+                }
+                renderItem={({ item }) => (
+                  <View style={styles.networkUserRow}>
+                    <TouchableOpacity
+                      style={styles.networkUserLeft}
+                      onPress={() => {
+                        triggerHaptic("light");
+                        setShowNetworkModal(false);
+                        router.push(`/profile/${item.username}` as any);
+                      }}
+                    >
+                      {item.avatar ? (
+                        <Image source={{ uri: item.avatar }} style={styles.networkUserAvatar} />
+                      ) : (
+                        <View style={[styles.networkUserAvatar, { backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center" }]}>
+                          <Text style={{ color: "#fff", fontWeight: "700" }}>{item.name[0]?.toUpperCase() || "?"}</Text>
+                        </View>
+                      )}
+                      <View>
+                        <Text style={styles.networkUserName}>{item.name}</Text>
+                        <Text style={styles.networkUserHandle}>@{item.username}</Text>
+                      </View>
+                    </TouchableOpacity>
+                    {item.id !== activeProfile?.id && activeProfile?.id && (
+                      <TouchableOpacity
+                        style={[
+                          styles.networkFollowBtn,
+                          item.followed ? styles.networkFollowBtnOutline : styles.networkFollowBtnPrimary
+                        ]}
+                        onPress={() => handleNetworkFollowToggle(item)}
+                      >
+                        <Text style={[styles.networkFollowBtnText, item.followed && { color: "#fff" }]}>
+                          {item.followed ? "Following" : "Follow"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              />
+            )}
             
             <TouchableOpacity 
               style={styles.modalCloseButton} 
@@ -1127,6 +1202,31 @@ export default function ViewProfileScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {profile ? (
+        <ProfileGridViewer
+          visible={gridViewer.visible}
+          onClose={closeGridViewer}
+          tab={gridViewer.tab}
+          initialItemId={gridViewer.initialItemId}
+          profile={{
+            username: profile.username,
+            name: profile.profileName || profile.username,
+            logo: profile.logo,
+          }}
+          posts={profilePosts}
+          products={viewingProducts}
+          isOwnProfile={isOwnProfile}
+          onPostDeleted={(postId) => {
+            setProfilePosts((prev) => {
+              const next = prev.filter((p) => p.id !== postId);
+              if (next.length === 0) closeGridViewer();
+              return next;
+            });
+            if (username) fetchViewProfile(username, activeProfile?.id);
+          }}
+        />
+      ) : null}
 
     </View>
   );

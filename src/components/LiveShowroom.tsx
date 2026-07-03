@@ -46,6 +46,8 @@ export interface LiveShowroomProps {
   maisonName?: string;
   pinnedProductId?: string;
   sessionId?: string;
+  /** Skip lobby and go straight to broadcast (Create → Live) */
+  skipLobby?: boolean;
 }
 
 export const LiveShowroom: React.FC<LiveShowroomProps> = ({
@@ -56,11 +58,14 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
   maisonName = "Rare Raven",
   pinnedProductId,
   sessionId,
+  skipLobby = false,
 }) => {
   const { triggerHaptic, products, currentUser, activeProfile } = useStore();
 
   // Mode states
-  const [activeLiveMode, setActiveLiveMode] = useState<"lobby" | "viewer" | "broadcaster">(initialMode);
+  const [activeLiveMode, setActiveLiveMode] = useState<"lobby" | "viewer" | "broadcaster">(
+    skipLobby && initialMode === "broadcaster" ? "broadcaster" : initialMode
+  );
   const [joining, setJoining] = useState(false);
   const [joined, setJoined] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(sessionId || null);
@@ -95,6 +100,16 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
       setPinnedProduct(products[0]);
     }
   }, [pinnedProductId, products]);
+
+  // Reset mode when modal opens from Create → Live
+  useEffect(() => {
+    if (!visible) return;
+    if (skipLobby && initialMode === "broadcaster") {
+      setActiveLiveMode("broadcaster");
+    } else {
+      setActiveLiveMode(initialMode);
+    }
+  }, [visible, initialMode, skipLobby]);
 
   // Synchronize sessionId prop
   useEffect(() => {
@@ -440,15 +455,14 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
       }
     }
 
-    const revenue = Math.floor(180000 + Math.random() * 420000);
-    const keysMinted = Math.floor(2 + Math.random() * 6);
+    const revenue = Math.floor(finalHearts * 120 + finalViewers * 45);
 
     setSettlementData({
       duration: `${mm}:${ss}`,
       viewers: finalViewers,
       hearts: finalHearts,
       revenue: `₹${revenue.toLocaleString()}`,
-      keys: keysMinted,
+      keys: Math.max(0, Math.floor(finalHearts / 50)),
     });
 
     destroyWebRTCEngine();

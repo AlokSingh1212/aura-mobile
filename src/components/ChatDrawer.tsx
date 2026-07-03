@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
+import { getProfileDisplayName } from "@/lib/sessionIdentity";
 import { API_HOST } from "@/constants/api";
 import { getLocalConversations, cacheConversations, addPendingAction } from "@/utils/localDb";
 
@@ -71,7 +72,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   initialConversationId = null,
 }) => {
   const { triggerHaptic, currentUser, activeProfile } = useStore();
-  const currentUserId = currentUser?.id || "user_2pk5xskr";
+  const currentUserId = currentUser?.id || "";
+  const inboxTitle = isSeller
+    ? getProfileDisplayName(activeProfile, currentUser)
+    : getProfileDisplayName(activeProfile, currentUser);
 
   // Chat states
   const [activeChat, setActiveChat] = useState<any>(null);
@@ -578,7 +582,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                 }
               }}
             >
-              <Text style={styles.dmTitleText}>{isSeller ? (activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()))) : "Alok Singh"}</Text>
+              <Text style={styles.dmTitleText}>{inboxTitle}</Text>
               <Lucide name="chevron-down" size={17} color="#fff" />
               <View style={styles.dmTitleRedDot} />
             </TouchableOpacity>

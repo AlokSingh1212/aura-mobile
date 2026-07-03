@@ -175,8 +175,8 @@ export default function DashboardScreen() {
       arMetadata: pForm.specs
     };
 
-    const success = await createProduct(payload);
-    if (success) {
+    const result = await createProduct(payload);
+    if (result.success) {
       triggerHaptic("success");
       setProductModalVisible(false);
       setPForm({ title: "", price: "", vibe: "Quiet Luxury", category: "Fashion", specs: {} });

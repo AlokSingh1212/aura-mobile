@@ -50,6 +50,12 @@
       "expo-video",
       "expo-audio",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "AURA needs access to your photos to update your profile picture and publish stories."
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "AURA needs your camera to record Reels and capture product moments.",

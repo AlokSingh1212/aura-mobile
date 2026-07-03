@@ -16,6 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useStore } from "@/store/useStore";
 import { AuraPixel } from "@/lib/auraPixel";
 import { API_HOST } from "@/constants/api";
+import { IS_PRODUCTION_APP } from "@/lib/apiClient";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -330,6 +331,9 @@ export default function CartScreen() {
         }).finally(() => {
           setIsCheckingOut(false);
         });
+      } else if (IS_PRODUCTION_APP) {
+        setIsCheckingOut(false);
+        await handleOpenWebCheckout();
       } else {
         setIsCheckingOut(false);
         setPaymentSimVisible(true);

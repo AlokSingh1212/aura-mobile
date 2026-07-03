@@ -27,6 +27,7 @@ import { createAudioPlayer } from "expo-audio";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
+import { getProfileAvatarOrDefault, getProfileDisplayName, resolveMaisonId } from "@/lib/sessionIdentity";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
@@ -35,6 +36,8 @@ import * as ImagePicker from "expo-image-picker";
 import { CameraView } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
 import { API_HOST } from "@/constants/api";
+import { authHeaders, IS_PRODUCTION_APP } from "@/lib/apiClient";
+import { uploadMediaFromUri } from "@/lib/uploadMedia";
 import { formatCompactNumber } from "@/constants/format";
 import { CameraStudio } from "@/components/CameraStudio";
 import { ChatDrawer } from "@/components/ChatDrawer";
@@ -492,6 +495,7 @@ export default function ReelsScreen() {
     triggerHaptic, 
     activeMaisonId, 
     currentUser, 
+    authHydrated,
     authOnboard, 
     setCurrentUser, 
     activeProfile, 
@@ -518,7 +522,10 @@ export default function ReelsScreen() {
     formatPrice,
     addToCart
   } = useStore();
-  const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : (activeMaisonId ? activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "AURA Client"));
+  const currentMaisonName = getProfileDisplayName(activeProfile, currentUser);
+  const profileLogo = activeProfile?.logo || null;
+  const profileTabInitial = (getProfileDisplayName(activeProfile, currentUser) || "U")[0]?.toUpperCase();
+  const loadUserStories = useStore((s) => s.loadUserStories);
   const params = useLocalSearchParams<{ openDMs?: string; openSearch?: string; activeTab?: string; openCamera?: string; conversationId?: string }>();
   const insets = useSafeAreaInsets();
   const { getLayoutHeight } = useLayoutCache();
@@ -564,13 +571,20 @@ export default function ReelsScreen() {
   }, []);
 
   useEffect(() => {
+    if (currentUser?.id) {
+      loadUserStories(currentUser.id);
+    }
+  }, [currentUser?.id, activeProfile?.logo]);
+
+  useEffect(() => {
+    if (!authHydrated) return;
     if (!currentUser) {
       const timer = setTimeout(() => {
         router.replace("/login");
-      }, 200); // 200ms safety margin for Expo Router mounting
+      }, 200);
       return () => clearTimeout(timer);
     }
-  }, [currentUser]);
+  }, [currentUser, authHydrated]);
 
   // 🔔 Push notification interaction click listener & deep-linking
   useEffect(() => {
@@ -640,6 +654,8 @@ export default function ReelsScreen() {
       changed = true;
     }
     if (params?.openCamera === "true") {
+      setActiveFeedTab("reels");
+      setIsReelsFullScreen(true);
       setShowReelCamera(true);
       cleanParams.openCamera = undefined;
       changed = true;
@@ -733,10 +749,16 @@ export default function ReelsScreen() {
   const [leadGenVisible, setLeadGenVisible] = useState(false);
   const [leadGenMeta, setLeadGenMeta] = useState<any>({});
   const [showReelCamera, setShowReelCamera] = useState(false);
+  const openReelRecorder = useCallback(() => {
+    triggerHaptic("medium");
+    setShowReelCamera(true);
+  }, [triggerHaptic]);
 
   // Reels created locally by the user
   const [localReels, setLocalReels] = useState<any[]>([]);
   const { instaStories: activeInstaStories, addInstaStorySlide } = useStore();
+  const yourStoryNode = activeInstaStories.find((s) => s.isYourStory);
+  const yourStoryHasSlides = (yourStoryNode?.slides?.filter((sl: { url?: string }) => sl?.url)?.length || 0) > 0;
 
   // Premium collapsible headers & full screen states
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
@@ -974,7 +996,7 @@ export default function ReelsScreen() {
         if (!isVideo) {
           setShowImageEditor(true);
         }
-      } else {
+      } else if (!IS_PRODUCTION_APP) {
         Alert.alert(
           "Curation Sandbox",
           "No media chosen. Would you like to use a premium mock curation asset for testing?",
@@ -988,28 +1010,44 @@ export default function ReelsScreen() {
             }
           ]
         );
+      } else {
+        Alert.alert("No media", "Choose a photo or video to publish.");
       }
     } catch (error) {
-      console.warn("Native picker issue, falling back:", error);
-      setSelectedMediaUri("https://assets.mixkit.co/videos/preview/mixkit-fashion-woman-with-silver-glitter-makeup-40149-large.mp4");
+      console.warn("Native picker issue:", error);
+      if (!IS_PRODUCTION_APP) {
+        setSelectedMediaUri("https://assets.mixkit.co/videos/preview/mixkit-fashion-woman-with-silver-glitter-makeup-40149-large.mp4");
+      }
     }
   };
 
   const handleSharePost = async () => {
     if (!selectedMediaUri) return;
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required", "Please sign in to publish posts.");
+      return;
+    }
     setIsPublishingPost(true);
     triggerHaptic("success");
 
     try {
+      let publicUrl = selectedMediaUri;
+      if (
+        !publicUrl.startsWith("http://") &&
+        !publicUrl.startsWith("https://") &&
+        !publicUrl.startsWith("data:")
+      ) {
+        publicUrl = await uploadMediaFromUri(publicUrl, "post");
+      }
+
       const res = await fetch(`${API_HOST}/api/mobile/feed`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: authHeaders(),
         body: JSON.stringify({
-          userId: isSeller ? activeMaisonId : (currentUser?.id || activeProfile?.id || "user_2pk5xskr"),
-          url: selectedMediaUri,
-          thumbnail: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400",
+          userId: currentUser.id,
+          profileId: activeProfile?.id,
+          url: publicUrl,
+          thumbnail: publicUrl,
           caption: newPostCaption || null,
           location: newPostLocation || null,
           music: newPostAudio || null,
@@ -1417,34 +1455,53 @@ export default function ReelsScreen() {
   ];
 
   const displayStories = React.useMemo(() => {
-    // 1. Get all video posts from the Home feed (feedItems) and translate them to reels/stories format
     const feedReels = feedItems
-      .filter((item: any) => item.type === "CREATOR_COMMERCE" || item.type === "SPONSORED_AD" || item.content?.videoUrl)
+      .filter((item: any) => {
+        const media =
+          item.content?.videoUrl ||
+          item.content?.mediaUrl ||
+          item.sponsoredMetadata?.creativeMediaUrl;
+        return (
+          !!media &&
+          (item.type === "CREATOR_COMMERCE" ||
+            item.type === "SPONSORED_AD" ||
+            item.type === "CREATOR_POST")
+        );
+      })
       .map((item: any) => ({
         id: item.id,
-        url: item.content?.videoUrl || item.content?.mediaUrl || item.sponsoredMetadata?.creativeMediaUrl || "",
+        url:
+          item.content?.videoUrl ||
+          item.content?.mediaUrl ||
+          item.sponsoredMetadata?.creativeMediaUrl ||
+          "",
         caption: item.content?.caption || item.sponsoredMetadata?.ctaText || "",
         creator: item.creator,
         music: "AURA Original Sound",
         likes: item.content?.likesCount || 0,
         commentsCount: item.content?.commentsCount || 0,
         comments: item.comments || [],
-        isVideo: true,
+        isVideo: !!item.content?.videoUrl || item.type === "CREATOR_COMMERCE",
         product: item.product,
         type: item.type,
         sponsoredMetadata: item.sponsoredMetadata,
       }));
 
-    // 2. Get base stories
+    const apiStoryReels = stories.filter(
+      (s: any) => s.music !== "STORY_ONLY" && s.url && (s.isVideo || s.url.includes(".mp4"))
+    );
+
+    // Logged-in users: server + optimistic local only — no demo reels
+    const useDemoReels = !currentUser?.id && stories.length === 0 && feedReels.length === 0;
     const baseStories = [
-      ...localReels,
-      ...(stories.length > 0 ? stories.filter((s: any) => s.music !== "STORY_ONLY") : simulatedStories)
+      ...localReels.filter((r) => r.url),
+      ...apiStoryReels,
+      ...(useDemoReels ? simulatedStories : []),
     ];
 
-    // Combine them, avoiding duplicates
     const combined = [...baseStories];
     feedReels.forEach((fr) => {
-      if (!combined.some((s) => s.id === fr.id)) {
+      if (fr.url && !combined.some((s) => s.id === fr.id || s.url === fr.url)) {
         combined.push(fr);
       }
     });
@@ -1491,7 +1548,7 @@ export default function ReelsScreen() {
     }
 
     return combined;
-  }, [tappedReelItem, localReels, stories, simulatedStories, feedItems, reelsSponsoredAd]);
+  }, [tappedReelItem, localReels, stories, simulatedStories, feedItems, reelsSponsoredAd, currentUser?.id]);
 
   const handleOpenFeedReel = (item: any) => {
     triggerHaptic("medium");
@@ -2200,13 +2257,63 @@ export default function ReelsScreen() {
               {/* Your Story */}
               <TouchableOpacity 
                 style={{ alignItems: "center" }}
-                onPress={() => triggerHaptic("medium")}
+                onPress={() => {
+                  triggerHaptic("medium");
+                  if (yourStoryHasSlides && yourStoryNode) {
+                    setSelectedStoriesGroup(yourStoryNode);
+                    setActiveSlideIndex(0);
+                    setStoryProgress(0);
+                  } else {
+                    router.push("/create/story");
+                  }
+                }}
               >
                 <View style={{ position: "relative" }}>
-                  <Image 
-                    source={{ uri: currentUser?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80" }} 
-                    style={{ width: 62, height: 62, borderRadius: 31, borderWidth: 1, borderColor: "#EAEAEA" }} 
-                  />
+                  {yourStoryHasSlides ? (
+                    <LinearGradient
+                      colors={["#fb923c", "#d946ef", "#8b5cf6"]}
+                      style={{
+                        width: 66,
+                        height: 66,
+                        borderRadius: 33,
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
+                    >
+                      <View style={{
+                        width: 60,
+                        height: 60,
+                        borderRadius: 30,
+                        backgroundColor: "#FFFFFF",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        overflow: "hidden",
+                      }}>
+                        {profileLogo ? (
+                          <Image 
+                            source={{ uri: profileLogo }} 
+                            key={profileLogo.slice(0, 64)}
+                            style={{ width: 54, height: 54, borderRadius: 27 }} 
+                          />
+                        ) : (
+                          <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: "#111", alignItems: "center", justifyContent: "center" }}>
+                            <Text style={{ color: "#fff", fontSize: 18, fontWeight: "700" }}>{profileTabInitial}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </LinearGradient>
+                  ) : profileLogo ? (
+                    <Image 
+                      source={{ uri: profileLogo }} 
+                      key={profileLogo.slice(0, 64)}
+                      style={{ width: 62, height: 62, borderRadius: 31, borderWidth: 1, borderColor: "#EAEAEA" }} 
+                    />
+                  ) : (
+                    <View style={{ width: 62, height: 62, borderRadius: 31, borderWidth: 1, borderColor: "#EAEAEA", backgroundColor: "#111", alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ color: "#fff", fontSize: 22, fontWeight: "700" }}>{profileTabInitial}</Text>
+                    </View>
+                  )}
+                  {!yourStoryHasSlides ? (
                   <View style={{
                     position: "absolute",
                     bottom: 0,
@@ -2222,6 +2329,7 @@ export default function ReelsScreen() {
                   }}>
                     <Lucide name="add" size={12} color="#FFFFFF" />
                   </View>
+                  ) : null}
                 </View>
                 <Text style={{ fontSize: 11, color: "#8E8E93", marginTop: 6, fontWeight: "500" }}>Your Story</Text>
               </TouchableOpacity>
@@ -2411,15 +2519,14 @@ export default function ReelsScreen() {
                   getItemLayout={getReelItemLayout}
                 />
 
-                {/* Floating top-left camera button to record a Reel */}
+                {/* Instagram-style: camera opens reel recorder (not the reels browse feed) */}
                 <TouchableOpacity 
-                  style={[styles.reelsCameraBtn, { top: insets.top + 16 }]} 
-                  onPress={() => {
-                    triggerHaptic("medium");
-                    setShowReelCamera(true);
-                  }}
+                  style={[styles.reelsCameraBtn, { top: insets.top + 12 }]} 
+                  onPress={openReelRecorder}
+                  accessibilityLabel="Record reel"
+                  accessibilityRole="button"
                 >
-                  <Lucide name="add" size={28} color="#fff" />
+                  <Lucide name="camera-outline" size={26} color="#fff" />
                 </TouchableOpacity>
               </View>
             )
@@ -2560,15 +2667,16 @@ export default function ReelsScreen() {
             router.push("/account");
           }}
         >
-          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", overflow: "hidden" }]}>
-            {activeMaisonId === "aloksingh" ? (
+          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", overflow: "hidden", backgroundColor: "#111" }]}>
+            {profileLogo ? (
               <Image
-                source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80" }}
+                source={{ uri: profileLogo }}
+                key={profileLogo.slice(0, 64)}
                 style={styles.profileTabImg}
               />
             ) : (
-              <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
-                <Text style={{ color: "#000", fontSize: 10, fontWeight: "bold" }}>{activeMaisonId?.[0]?.toUpperCase() || "R"}</Text>
+              <View style={[styles.profileTabImg, { alignItems: "center", justifyContent: "center" }]}>
+                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>{profileTabInitial}</Text>
               </View>
             )}
           </View>
@@ -4973,6 +5081,10 @@ export default function ReelsScreen() {
                   disabled={addProfileLoading || !newProfileName.trim() || !newProfileUsername.trim()}
                   onPress={async () => {
                     if (!newProfileName.trim() || !newProfileUsername.trim()) return;
+                    if (!currentUser?.id) {
+                      Alert.alert("Sign in required", "Log in before minting a new profile.");
+                      return;
+                    }
                     setAddProfileLoading(true);
                     triggerHaptic("medium");
 
@@ -6853,11 +6965,14 @@ const styles = StyleSheet.create({
   reelsCameraBtn: {
     position: "absolute",
     left: 16,
-    zIndex: 90,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    zIndex: 200,
+    elevation: 200,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
     alignItems: "center",
     justifyContent: "center",
   },

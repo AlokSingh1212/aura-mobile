@@ -1,30 +1,60 @@
-import React from "react";
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  ScrollView, 
-  TouchableOpacity, 
-  TextInput, 
-  Image 
+import React, { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
 } from "react-native";
 import Lucide from "@expo/vector-icons/Ionicons";
+import { Image } from "expo-image";
 import { useStore } from "@/store/useStore";
-import { AUDIO_LIBRARY } from "@/constants/audio";
+import { fetchAudioCatalog, searchAudioTracks, type AudioTrack } from "@/lib/audioLibrary";
+import { formatDurationMs, formatUses } from "@/constants/reelStudio";
+
+export type AudioCategory =
+  | "all"
+  | "trending"
+  | "pop"
+  | "bollywood"
+  | "hiphop"
+  | "electronic"
+  | "house"
+  | "lofi"
+  | "ambient"
+  | "cinematic"
+  | "acoustic";
 
 export interface AudioSelectorDrawerProps {
   setShowAudioDrawer: (show: boolean) => void;
   stopTrack: () => void;
   audioSearchQuery: string;
   setAudioSearchQuery: (query: string) => void;
-  activeAudioCategory: "all" | "trending" | "pop" | "bollywood" | "hiphop" | "electronic";
-  setActiveAudioCategory: (cat: any) => void;
-  selectedAudio: any;
-  setSelectedAudio: (track: any) => void;
+  activeAudioCategory: AudioCategory;
+  setActiveAudioCategory: (cat: AudioCategory) => void;
+  selectedAudio: AudioTrack | null;
+  setSelectedAudio: (track: AudioTrack) => void;
   isPlayingAudio: boolean;
   soundRef: React.RefObject<any>;
   playTrack: (url: string) => void;
+  onSegmentReset?: () => void;
 }
+
+const CATEGORY_TABS: { key: AudioCategory; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "trending", label: "Trending" },
+  { key: "pop", label: "Pop" },
+  { key: "bollywood", label: "Bollywood" },
+  { key: "hiphop", label: "Hip Hop" },
+  { key: "electronic", label: "Electronic" },
+  { key: "house", label: "House" },
+  { key: "lofi", label: "Lo-fi" },
+  { key: "ambient", label: "Ambient" },
+  { key: "cinematic", label: "Cinematic" },
+  { key: "acoustic", label: "Acoustic" },
+];
 
 export const AudioSelectorDrawer: React.FC<AudioSelectorDrawerProps> = ({
   setShowAudioDrawer,
@@ -38,247 +68,195 @@ export const AudioSelectorDrawer: React.FC<AudioSelectorDrawerProps> = ({
   isPlayingAudio,
   soundRef,
   playTrack,
+  onSegmentReset,
 }) => {
   const { triggerHaptic } = useStore();
+  const [tracks, setTracks] = useState<AudioTrack[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const list =
+        audioSearchQuery.trim() || activeAudioCategory !== "all"
+          ? await searchAudioTracks(
+              audioSearchQuery,
+              activeAudioCategory === "trending" ? "trending" : activeAudioCategory
+            )
+          : (await fetchAudioCatalog()).tracks;
+      if (!cancelled) {
+        const filtered =
+          activeAudioCategory === "trending"
+            ? list.filter((t) => t.isTrending)
+            : list;
+        setTracks(filtered);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [audioSearchQuery, activeAudioCategory]);
 
   return (
-    <View style={styles.cameraOverlayDrawer}>
-      <View style={styles.drawerHeader}>
-        <Text style={styles.drawerTitle}>Select Luxury Curation Soundtrack</Text>
+    <View style={styles.drawer}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Audio library</Text>
+          <Text style={styles.subtitle}>{tracks.length} tracks · baked into reel on Share</Text>
+        </View>
         <TouchableOpacity onPress={() => { setShowAudioDrawer(false); stopTrack(); }}>
-          <Lucide name="close-circle" size={24} color="#00f5ff" />
+          <Lucide name="close-circle" size={26} color="#00f5ff" />
         </TouchableOpacity>
       </View>
 
-      {/* Interactive Search bar with magnifying glass and clear icons */}
-      <View style={styles.audioSearchContainer}>
-        <Lucide name="search-outline" size={21} color="#aaa" style={styles.audioSearchIcon} />
+      <View style={styles.searchRow}>
+        <Lucide name="search-outline" size={20} color="#888" />
         <TextInput
-          style={styles.audioSearchInput}
-          placeholder="Search real songs, artists, genres..."
-          placeholderTextColor="#888"
+          style={styles.searchInput}
+          placeholder="Search songs, artists, moods..."
+          placeholderTextColor="#666"
           value={audioSearchQuery}
           onChangeText={setAudioSearchQuery}
           autoCapitalize="none"
         />
         {audioSearchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setAudioSearchQuery("")}>
-            <Lucide name="close-circle" size={21} color="#aaa" />
+            <Lucide name="close-circle" size={20} color="#888" />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Category Slider Tabs */}
-      <View style={{ height: 38, marginBottom: 8 }}>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          contentContainerStyle={{ paddingHorizontal: 20, gap: 8, alignItems: 'center' }}
-        >
-          {[
-            { key: "all", label: "All Music" },
-            { key: "trending", label: "🔥 Trending" },
-            { key: "pop", label: "Pop Hits" },
-            { key: "bollywood", label: "Bollywood" },
-            { key: "hiphop", label: "Hip Hop" },
-            { key: "electronic", label: "Electronic" }
-          ].map((cat) => (
-            <TouchableOpacity 
-              key={cat.key} 
-              style={[
-                styles.audioCategoryTab, 
-                activeAudioCategory === cat.key && styles.audioCategoryTabActive
-              ]}
-              onPress={() => {
-                triggerHaptic("light");
-                setActiveAudioCategory(cat.key as any);
-              }}
-            >
-              <Text style={[
-                styles.audioCategoryTabText, 
-                activeAudioCategory === cat.key && styles.audioCategoryTabTextActive
-              ]}>{cat.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabs}>
+        {CATEGORY_TABS.map((cat) => (
+          <TouchableOpacity
+            key={cat.key}
+            style={[styles.tab, activeAudioCategory === cat.key && styles.tabActive]}
+            onPress={() => { triggerHaptic("light"); setActiveAudioCategory(cat.key); }}
+          >
+            <Text style={[styles.tabText, activeAudioCategory === cat.key && styles.tabTextActive]}>
+              {cat.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
-      {/* Playlist mapping with live preview actions */}
-      <ScrollView style={styles.drawerScroll}>
-        {AUDIO_LIBRARY.filter(track => {
-          const matchesSearch = track.title.toLowerCase().includes(audioSearchQuery.toLowerCase()) || 
-                                track.artist.toLowerCase().includes(audioSearchQuery.toLowerCase());
-          const matchesCategory = activeAudioCategory === "all" || 
-                                  (activeAudioCategory === "trending" && track.isTrending) || 
-                                  track.category === activeAudioCategory;
-          return matchesSearch && matchesCategory;
-        }).map((track, i) => {
-          const isCurrentlySelected = selectedAudio && selectedAudio.title === track.title;
-          const isThisPlaying = isPlayingAudio && soundRef.current && selectedAudio && selectedAudio.url === track.url;
-          
-          return (
-            <TouchableOpacity 
-              key={i} 
-              style={[
-                styles.drawerItem, 
-                isCurrentlySelected && styles.drawerItemCurrentlySelected
-              ]} 
-              onPress={() => {
-                triggerHaptic("medium");
-                setSelectedAudio(track);
-                stopTrack(); // Silence the audition preview
-                setShowAudioDrawer(false); // Close drawer
-              }}
-            >
-              <Image source={{ uri: track.cover }} style={styles.drawerItemArt} />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.drawerItemText} numberOfLines={1}>{track.title}</Text>
-                <Text style={styles.drawerItemSub} numberOfLines={1}>{track.artist}</Text>
-              </View>
-              
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                {/* Live preview play/pause trigger */}
-                <TouchableOpacity 
-                  style={styles.audioPreviewBtn}
+      {loading ? (
+        <ActivityIndicator color="#00f5ff" style={{ marginTop: 40 }} />
+      ) : (
+        <ScrollView style={styles.list}>
+          {tracks.map((track) => {
+            const selected = selectedAudio?.id === track.id;
+            const playing = isPlayingAudio && selectedAudio?.url === track.url;
+            return (
+              <TouchableOpacity
+                key={track.id}
+                style={[styles.row, selected && styles.rowSelected]}
+                onPress={() => {
+                  triggerHaptic("medium");
+                  setSelectedAudio(track);
+                  onSegmentReset?.();
+                  stopTrack();
+                  setShowAudioDrawer(false);
+                }}
+              >
+                <Image source={{ uri: track.cover }} style={styles.art} />
+                <View style={styles.meta}>
+                  <Text style={styles.trackTitle} numberOfLines={1}>{track.title}</Text>
+                  <Text style={styles.trackArtist} numberOfLines={1}>{track.artist}</Text>
+                  <Text style={styles.trackMeta}>
+                    {formatDurationMs(track.durationMs)}
+                    {track.bpm ? ` · ${track.bpm} BPM` : ""}
+                    {track.isTrending ? " · 🔥" : ""}
+                    {` · ${formatUses(track.usesCount)} reels`}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.playBtn}
                   onPress={(e) => {
-                    e.stopPropagation(); // Avoid triggering row selection
+                    e.stopPropagation?.();
                     triggerHaptic("light");
-                    if (isThisPlaying) {
-                      stopTrack();
-                    } else {
+                    if (playing) stopTrack();
+                    else {
                       setSelectedAudio(track);
                       playTrack(track.url);
                     }
                   }}
                 >
-                  <Lucide 
-                    name={isThisPlaying ? "pause-circle" : "play-circle"} 
-                    size={24} 
-                    color="#00f5ff" 
-                  />
+                  <Lucide name={playing ? "pause-circle" : "play-circle"} size={28} color="#00f5ff" />
                 </TouchableOpacity>
-
-                {/* Selected checkmark indicator */}
-                {isCurrentlySelected && (
-                  <Lucide name="checkmark-circle" size={21} color="#39ff14" />
-                )}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+                {selected && <Lucide name="checkmark-circle" size={22} color="#39ff14" />}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  cameraOverlayDrawer: {
+  drawer: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    height: 420,
+    height: "72%",
     backgroundColor: "#080415",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderTopWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
-    paddingTop: 16,
     zIndex: 999,
   },
-  drawerHeader: {
+  header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     paddingHorizontal: 20,
-    marginBottom: 16,
+    paddingTop: 18,
+    paddingBottom: 10,
   },
-  drawerTitle: {
-    color: "#fff",
-    fontSize: 13.5,
-    fontWeight: "bold",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  drawerScroll: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  drawerItem: {
+  title: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  subtitle: { color: "rgba(255,255,255,0.45)", fontSize: 11, marginTop: 2 },
+  searchRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.04)",
-    gap: 12,
-  },
-  drawerItemArt: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-  },
-  drawerItemText: {
-    color: "#fff",
-    fontSize: 13.5,
-    fontWeight: "600",
-  },
-  drawerItemSub: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: 12,
-    marginTop: 2,
-  },
-  audioSearchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 12,
-    marginHorizontal: 20,
+    gap: 8,
+    marginHorizontal: 16,
     paddingHorizontal: 12,
-    height: 38,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  audioSearchIcon: {
-    marginRight: 8,
-  },
-  audioSearchInput: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 14.5,
-    paddingVertical: 0,
-  },
-  audioCategoryTab: {
-    paddingHorizontal: 14,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  audioCategoryTabActive: {
-    backgroundColor: "#00f5ff",
-    borderColor: "#00f5ff",
-  },
-  audioCategoryTabText: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  audioCategoryTabTextActive: {
-    color: "#080415",
-    fontWeight: "bold",
-  },
-  drawerItemCurrentlySelected: {
-    backgroundColor: "rgba(0, 245, 255, 0.08)",
-    borderColor: "rgba(0, 245, 255, 0.2)",
-    borderWidth: 1,
+    height: 42,
     borderRadius: 12,
-    paddingHorizontal: 8,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    marginBottom: 10,
   },
-  audioPreviewBtn: {
-    padding: 4,
+  searchInput: { flex: 1, color: "#fff", fontSize: 15 },
+  tabs: { maxHeight: 40, marginBottom: 8 },
+  tab: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginHorizontal: 4,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
+  tabActive: { backgroundColor: "#00f5ff" },
+  tabText: { color: "rgba(255,255,255,0.55)", fontSize: 12, fontWeight: "600" },
+  tabTextActive: { color: "#080415", fontWeight: "800" },
+  list: { flex: 1, paddingHorizontal: 12 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    marginBottom: 6,
+    borderRadius: 12,
+    gap: 10,
+  },
+  rowSelected: { backgroundColor: "rgba(0,245,255,0.1)", borderWidth: 1, borderColor: "rgba(0,245,255,0.25)" },
+  art: { width: 48, height: 48, borderRadius: 8 },
+  meta: { flex: 1 },
+  trackTitle: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  trackArtist: { color: "rgba(255,255,255,0.5)", fontSize: 12, marginTop: 1 },
+  trackMeta: { color: "rgba(255,255,255,0.35)", fontSize: 10, marginTop: 3 },
+  playBtn: { padding: 4 },
 });
