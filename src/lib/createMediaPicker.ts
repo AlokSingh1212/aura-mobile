@@ -1,9 +1,23 @@
-import { Alert, Platform } from "react-native";
+import { Alert, InteractionManager, Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
 export type MediaPickMode = "story" | "avatar" | "reel" | "post";
 
 export type ProductMediaItem = { uri: string; type: "image" | "video" };
+
+/** Delay after closing a Modal before launching the native picker (iOS requirement). */
+export function delayAfterModalClose(): number {
+  return Platform.OS === "ios" ? 550 : 280;
+}
+
+/** Wait for navigation/modal transitions to finish before presenting the system picker. */
+export function waitForNativePickerReady(): Promise<void> {
+  return new Promise((resolve) => {
+    InteractionManager.runAfterInteractions(() => {
+      setTimeout(resolve, delayAfterModalClose());
+    });
+  });
+}
 
 export async function ensureMediaLibraryAccess(): Promise<boolean> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -22,9 +36,11 @@ export async function pickProductMediaFromLibrary(maxItems = 6): Promise<Product
   const allowed = await ensureMediaLibraryAccess();
   if (!allowed) return [];
 
+  await waitForNativePickerReady();
+
   try {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
       allowsMultipleSelection: true,
       selectionLimit: maxItems,
       quality: 0.85,
@@ -38,6 +54,10 @@ export async function pickProductMediaFromLibrary(maxItems = 6): Promise<Product
     }));
   } catch (error) {
     console.warn("pickProductMediaFromLibrary failed:", error);
+    Alert.alert(
+      "Could not open gallery",
+      error instanceof Error ? error.message : "Try again after closing other screens."
+    );
     return [];
   }
 }
@@ -47,9 +67,11 @@ export async function pickMultipleImages(max = 10): Promise<ImagePicker.ImagePic
   const allowed = await ensureMediaLibraryAccess();
   if (!allowed) return [];
 
+  await waitForNativePickerReady();
+
   try {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       selectionLimit: max,
       quality: 0.85,
@@ -58,23 +80,35 @@ export async function pickMultipleImages(max = 10): Promise<ImagePicker.ImagePic
     return result.assets;
   } catch (error) {
     console.warn("pickMultipleImages failed:", error);
+    Alert.alert(
+      "Could not open gallery",
+      error instanceof Error ? error.message : "Try again after closing other screens."
+    );
     return [];
   }
 }
 
-/** Opens the system gallery. Call only after any RN Modal has fully dismissed. */
+/** Opens the system gallery. Call after any RN Modal has fully dismissed. */
 export async function pickMediaFromLibrary(
   mode: MediaPickMode
 ): Promise<ImagePicker.ImagePickerAsset | null> {
   const allowed = await ensureMediaLibraryAccess();
   if (!allowed) return null;
 
+  await waitForNativePickerReady();
+
   const isVideo = mode === "reel";
+  const isStory = mode === "story";
   try {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: isVideo ? ["videos"] : ["images"],
-      allowsEditing: mode === "story" || mode === "avatar" || mode === "post",
-      aspect: mode === "story" ? [9, 16] : mode === "avatar" || mode === "post" ? [1, 1] : undefined,
+      mediaTypes: isVideo
+        ? ImagePicker.MediaTypeOptions.Videos
+        : isStory
+          ? ImagePicker.MediaTypeOptions.All
+          : ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: mode === "story" || mode === "avatar",
+      aspect:
+        mode === "story" ? [9, 16] : mode === "avatar" ? [1, 1] : undefined,
       quality: 0.85,
       videoMaxDuration: 90,
     });
@@ -91,9 +125,4 @@ export async function pickMediaFromLibrary(
     );
     return null;
   }
-}
-
-/** Delay after closing a Modal before launching the native picker (iOS requirement). */
-export function delayAfterModalClose(): number {
-  return Platform.OS === "ios" ? 550 : 280;
 }

@@ -11,6 +11,7 @@ import {
   Switch,
 } from "react-native";
 import { router } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { ComposerShell } from "@/components/create/ComposerShell";
 import { StoryCompositor } from "@/components/create/StoryCompositor";
@@ -45,7 +46,7 @@ export default function StoryComposerScreen() {
     try {
       const asset = await pickMediaFromLibrary("story");
       if (!asset?.uri) {
-        if (!localUri) router.back();
+        setStep("pick");
         return;
       }
       triggerHaptic("success");
@@ -67,17 +68,28 @@ export default function StoryComposerScreen() {
         "Photo error",
         e instanceof Error ? e.message : "Could not process photo."
       );
-      if (!localUri) router.back();
+      setStep("pick");
     } finally {
       setPicking(false);
     }
-  }, [localUri, triggerHaptic]);
+  }, [triggerHaptic]);
 
-  useEffect(() => {
-    if (!ready || pickerStarted.current) return;
-    pickerStarted.current = true;
-    openGallery();
-  }, [ready, openGallery]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!ready) return;
+      let cancelled = false;
+      if (!pickerStarted.current) {
+        pickerStarted.current = true;
+        openGallery().finally(() => {
+          if (cancelled) return;
+        });
+      }
+      return () => {
+        cancelled = true;
+        pickerStarted.current = false;
+      };
+    }, [ready, openGallery])
+  );
 
   const handleCompositorExport = async (uri: string, exportedStickers: StickerLayer[]) => {
     setBakedUri(uri);
@@ -129,11 +141,11 @@ export default function StoryComposerScreen() {
     }
   };
 
-  if (!ready || (step === "pick" && picking)) {
+  if (!ready) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#00f5ff" />
-        <Text style={styles.loadingText}>Opening gallery…</Text>
+        <Text style={styles.loadingText}>Loading…</Text>
       </View>
     );
   }
@@ -157,9 +169,15 @@ export default function StoryComposerScreen() {
       {step === "pick" && (
         <ComposerShell title="New story" stepLabel="Select photo">
           <View style={styles.emptyPick}>
-            <Lucide name="add-circle-outline" size={48} color="rgba(255,255,255,0.3)" />
-            <Text style={styles.emptyText}>Choose a vertical photo for your story</Text>
-            <TouchableOpacity style={styles.primaryBtn} onPress={openGallery}>
+            {picking ? (
+              <ActivityIndicator size="large" color="#00f5ff" />
+            ) : (
+              <Lucide name="add-circle-outline" size={48} color="rgba(255,255,255,0.3)" />
+            )}
+            <Text style={styles.emptyText}>
+              {picking ? "Opening gallery…" : "Choose a vertical photo for your story"}
+            </Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={openGallery} disabled={picking}>
               <Text style={styles.primaryBtnText}>Open gallery</Text>
             </TouchableOpacity>
           </View>

@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
 import type { EngagementPostItem } from "@/hooks/usePostEngagement";
+import { CaptionText } from "@/components/CaptionText";
 
 const { height } = Dimensions.get("window");
 
@@ -60,7 +61,7 @@ export function PostCommentsSheet({
                 <Text style={styles.username}>
                   {authorLabel} <Text style={styles.badge}>Author</Text>
                 </Text>
-                <Text style={styles.commentText}>{post.caption || "—"}</Text>
+                <CaptionText caption={post.caption || "—"} style={styles.commentText} />
               </View>
             </View>
 
@@ -73,7 +74,7 @@ export function PostCommentsSheet({
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.username}>{c.username}</Text>
-                  <Text style={styles.commentText}>{c.text}</Text>
+                  <CaptionText caption={c.text} style={styles.commentText} />
                   <Text style={styles.time}>{c.time}</Text>
                 </View>
               </View>

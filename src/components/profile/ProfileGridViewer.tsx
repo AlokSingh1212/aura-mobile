@@ -20,6 +20,7 @@ import type { ProfilePost } from "@/lib/profileApi";
 import type { ProfileGridTab } from "@/lib/profileGridNavigation";
 import { usePostEngagement, toEngagementItem } from "@/hooks/usePostEngagement";
 import { PostCommentsSheet } from "@/components/post/PostCommentsSheet";
+import { CaptionText } from "@/components/CaptionText";
 import { PostOptionsSheet } from "@/components/post/PostOptionsSheet";
 import { PostShareSheet } from "@/components/post/PostShareSheet";
 
@@ -150,7 +151,7 @@ function ProfilePostPage({
       {post.caption ? (
         <Text style={styles.postCaption} numberOfLines={4}>
           <Text style={styles.postCaptionUser}>{profile.username} </Text>
-          {post.caption}
+          <CaptionText caption={post.caption} />
         </Text>
       ) : null}
     </View>

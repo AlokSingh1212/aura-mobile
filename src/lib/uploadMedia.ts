@@ -75,6 +75,9 @@ export async function uploadMediaFromUri(
   });
 
   const data = await parseUploadResponse(res);
+  if (res.status === 401) {
+    throw new Error(data.error || "Session expired. Please sign in again.");
+  }
   if (!data.success || !data.url) {
     throw new Error(data.error || "Could not upload media to server.");
   }

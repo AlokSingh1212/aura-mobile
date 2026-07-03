@@ -214,7 +214,14 @@ export async function addPostComment(
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ postId, userId, content }),
   });
-  return res.json();
+  const data = await res.json();
+  if (res.status === 401) {
+    return {
+      success: false,
+      error: data.message || "Session expired. Please sign in again.",
+    };
+  }
+  return data;
 }
 
 export async function fetchPostEngagement(

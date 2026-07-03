@@ -15,6 +15,7 @@ import { router } from "expo-router";
 import { formatCompactNumber } from "@/constants/format";
 import { getCachedVideo } from "@/utils/videoCache";
 import { PeekPreviewModal } from "./PeekPreviewModal";
+import { CaptionText } from "@/components/CaptionText";
 
 const { height, width } = Dimensions.get("window");
 
@@ -353,9 +354,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             </Text>
           </View>
         </View>
-        <Text style={styles.caption} numberOfLines={2}>
-          {item.caption || "Atelier Masterpiece"}
-        </Text>
+        <CaptionText caption={item.caption || "Atelier Masterpiece"} style={styles.caption} numberOfLines={2} />
       </View>
 
       {/* Right Interaction Column (Likes, Comments, Share) */}

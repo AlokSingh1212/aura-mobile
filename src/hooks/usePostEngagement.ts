@@ -82,13 +82,22 @@ export function usePostEngagement(opts?: {
         ...prev,
         [id]: Math.max(0, (prev[id] || 0) + (wasLiked ? -1 : 1)),
       }));
-      logEngagement(id, "like").catch(() => {
-        setLikedPosts((prev) => ({ ...prev, [id]: wasLiked }));
-        setLikeCounts((prev) => ({
-          ...prev,
-          [id]: Math.max(0, (prev[id] || 0) + (wasLiked ? 1 : -1)),
-        }));
-      });
+      logEngagement(id, "like")
+        .then((result) => {
+          if (result?.likeCount != null) {
+            setLikeCounts((prev) => ({ ...prev, [id]: result.likeCount! }));
+          }
+          if (typeof result?.liked === "boolean") {
+            setLikedPosts((prev) => ({ ...prev, [id]: result.liked! }));
+          }
+        })
+        .catch(() => {
+          setLikedPosts((prev) => ({ ...prev, [id]: wasLiked }));
+          setLikeCounts((prev) => ({
+            ...prev,
+            [id]: Math.max(0, (prev[id] || 0) + (wasLiked ? 1 : -1)),
+          }));
+        });
     },
     [likedPosts, logEngagement, triggerHaptic]
   );
@@ -212,6 +221,11 @@ export function usePostEngagement(opts?: {
       if (!text.trim()) return;
       if (!currentUser?.id) {
         Alert.alert("Sign in required", "Sign in to comment.");
+        return;
+      }
+      const { authToken } = useStore.getState();
+      if (!authToken) {
+        Alert.alert("Session expired", "Please sign in again to comment.");
         return;
       }
 

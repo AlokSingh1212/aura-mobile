@@ -268,7 +268,10 @@ interface StoreState {
   loadingFeedItems: boolean;
   fetchFeedItems: (category?: string, tab?: "For You" | "Following", reset?: boolean) => Promise<void>;
   fetchSearchResults: (query: string) => Promise<void>;
-  logEngagement: (feedItemId: string, type: "view" | "like" | "save" | "share" | "cart_add" | "purchase") => Promise<void>;
+  logEngagement: (
+    feedItemId: string,
+    type: "view" | "like" | "save" | "share" | "cart_add" | "purchase"
+  ) => Promise<{ likeCount?: number; liked?: boolean } | null>;
   toggleFeedSave: (feedItemId: string) => Promise<void>;
   logFeedShare: (feedItemId: string) => Promise<string | null>;
   logFeedCartAdd: (feedItemId: string, productId: string) => Promise<void>;
@@ -1551,17 +1554,23 @@ export const useStore = create<StoreState>((set, get) => ({
 
   logEngagement: async (feedItemId, type) => {
     const user = get().currentUser;
-    if (!user) return;
+    if (!user) return null;
     try {
       const res = await fetch(`${API_BASE}/feed/engagement`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ userId: user.id, postId: feedItemId, type }),
       });
       if (!res.ok) throw new Error("Server returned error status");
+      const data = await res.json();
+      if (data.success) {
+        return { likeCount: data.likeCount, liked: data.liked };
+      }
+      return null;
     } catch (e) {
       console.warn("logEngagement failed, queuing action offline:", e);
       addPendingAction("logEngagement", { userId: user.id, postId: feedItemId, type });
+      return null;
     }
   },
 
@@ -1571,7 +1580,7 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const res = await fetch(`${API_BASE}/feed/save`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ userId: user.id, postId: feedItemId }),
       });
       const data = await res.json();
@@ -1589,7 +1598,7 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const res = await fetch(`${API_BASE}/feed/share`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ userId, postId: feedItemId }),
       });
       const data = await res.json();

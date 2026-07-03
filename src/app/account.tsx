@@ -49,6 +49,7 @@ import {
   fetchProfileHighlights,
   createProfileHighlight,
   toggleFollowProfile,
+  sharePostToUser,
   type NetworkProfile,
   type ProfileCatalogProduct,
 } from "@/lib/profileApi";
@@ -398,6 +399,16 @@ export default function AccountScreen() {
   // Highlights — seeded from real stories when available
   const [highlights, setHighlights] = useState<{ id: string; title: string; avatar: string }[]>([]);
 
+  const loadProfileHighlights = useCallback(async () => {
+    if (!activeProfile?.id) return;
+    try {
+      const list = await fetchProfileHighlights(activeProfile.id);
+      setHighlights(list);
+    } catch {
+      setHighlights([]);
+    }
+  }, [activeProfile?.id]);
+
   // Redirect to login if user is not authenticated dynamically
   useEffect(() => {
     if (!authHydrated) return;
@@ -626,9 +637,6 @@ export default function AccountScreen() {
     setEditCategory(category);
     setEditBioText(bioText);
     setEditWebsiteLink(websiteLink);
-    setEditPostsCount(postsCount.toString());
-    setEditFollowersCount(followersCount.toString());
-    setEditFollowingCount(followingCount.toString());
     setEditLogo(logo);
     setShowEditModal(true);
   };
@@ -695,6 +703,9 @@ export default function AccountScreen() {
       }),
     });
     const data = await res.json();
+    if (res.status === 401) {
+      throw new Error(data.message || "Session expired. Please sign in again.");
+    }
     if (!data.success) {
       throw new Error(data.error || "Could not save story to the server.");
     }
@@ -969,7 +980,7 @@ export default function AccountScreen() {
     }
   };
 
-  type CreateMode = "reel" | "edit" | "post" | "story" | "highlight" | "live" | "ai";
+  type CreateMode = "reel" | "product" | "post" | "story" | "highlight" | "live" | "ai";
   const pendingCreateRef = useRef<CreateMode | null>(null);
   const [isOpeningPicker, setIsOpeningPicker] = useState(false);
 
@@ -1074,8 +1085,8 @@ export default function AccountScreen() {
       case "story":
         router.push("/create/story");
         break;
-      case "edit":
-        handleEditProfilePress();
+      case "product":
+        handleOpenAddProduct();
         break;
       case "highlight":
         handleAddHighlight();
@@ -1159,6 +1170,11 @@ export default function AccountScreen() {
       return;
     }
 
+    if (!useStore.getState().authToken) {
+      Alert.alert("Session expired", "Please sign out and sign in again to save your profile.");
+      return;
+    }
+
     triggerHaptic("success");
     profileSaveInFlight.current = true;
     setIsSavingProfile(true);
@@ -1200,6 +1216,9 @@ export default function AccountScreen() {
         syncProfileIdentity();
         setShowEditModal(false);
         Alert.alert("Profile saved", "Your changes are stored on the server.");
+      } else if (res.status === 401) {
+        triggerHaptic("heavy");
+        Alert.alert("Session expired", "Please sign out and sign in again.");
       } else {
         triggerHaptic("heavy");
         if (data.error === "USERNAME_TAKEN") {
@@ -1226,16 +1245,6 @@ export default function AccountScreen() {
       setIsSavingProfile(false);
     }
   };
-
-  const loadProfileHighlights = useCallback(async () => {
-    if (!activeProfile?.id) return;
-    try {
-      const list = await fetchProfileHighlights(activeProfile.id);
-      setHighlights(list);
-    } catch {
-      setHighlights([]);
-    }
-  }, [activeProfile?.id]);
 
   const handleAddHighlight = () => {
     if (!currentUser?.id || !activeProfile?.id) {
@@ -1407,6 +1416,10 @@ export default function AccountScreen() {
   const handlePublishPost = async () => {
     if (!currentUser?.id) {
       Alert.alert("Not signed in", "Sign in again to publish.");
+      return;
+    }
+    if (!useStore.getState().authToken) {
+      Alert.alert("Session expired", "Please sign out and sign in again to publish.");
       return;
     }
     if (!postImage?.trim()) {
@@ -2398,12 +2411,9 @@ export default function AccountScreen() {
                 <Text style={styles.createItemText}>Reel</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("edit")}>
-                <Lucide name="copy-outline" size={24} color="#ffffff" />
-                <Text style={styles.createItemText}>Edits</Text>
-                <View style={styles.newBadge}>
-                  <Text style={styles.newBadgeText}>New</Text>
-                </View>
+              <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("product")}>
+                <Lucide name="pricetag-outline" size={24} color="#ffffff" />
+                <Text style={styles.createItemText}>Add products</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.createItem} onPress={() => queueCreateAction("post")}>
@@ -3213,24 +3223,24 @@ export default function AccountScreen() {
                           style={styles.shareContactCard}
                           onPress={async () => {
                             triggerHaptic("success");
+                            if (!currentUser?.id || !contact.userId) {
+                              Alert.alert("Sign in required", "Sign in and follow people to share via DM.");
+                              return;
+                            }
                             setShowShareProfileSheet(false);
                             try {
-                              const res = await fetch(`${API_HOST}/api/mobile/chat/initiate`, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json", ...authHeaders() },
-                                body: JSON.stringify({
-                                  userId: currentUser?.id,
-                                  userName: profileName,
-                                  maisonId: contact.username,
-                                  maisonName: contact.name,
-                                  initialMessage: `Check out my profile: https://aura.app/${username}`,
-                                }),
+                              const profileUrl = `https://aura.app/${username}`;
+                              const result = await sharePostToUser({
+                                senderId: currentUser.id,
+                                receiverUserId: contact.userId,
+                                postId: `profile_${activeProfile?.id || currentUser.id}`,
+                                postUrl: profileUrl,
+                                caption: `Check out my profile @${username}`,
                               });
-                              const data = await res.json();
-                              if (data.success) {
+                              if (result.success) {
                                 Alert.alert("Sent", `Profile shared with ${contact.name}`);
                               } else {
-                                Alert.alert("Could not send", data.error || "Try again");
+                                Alert.alert("Could not send", result.error || "Try again");
                               }
                             } catch {
                               Alert.alert("Could not send", "Network error");

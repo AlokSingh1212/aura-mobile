@@ -54,6 +54,8 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { InAppBrowserModal } from "@/components/InAppBrowserModal";
 import { ExploreProductsSheet } from "@/components/ExploreProductsSheet";
 import { LeadGenSheet } from "@/components/LeadGenSheet";
+import { PostShareSheet } from "@/components/post/PostShareSheet";
+import { CaptionText } from "@/components/CaptionText";
 
 const MOCK_PRODUCTS = [
   {
@@ -881,7 +883,7 @@ export default function ReelsScreen() {
   const [savedPosts, setSavedPosts] = useState<Record<string, boolean>>({});
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [shareTargetPost, setShareTargetPost] = useState<any>(null);
-  const [shareSearch, setShareSearch] = useState("");
+  const [shareLink, setShareLink] = useState<string | null>(null);
   const [showThreeDotsModal, setShowThreeDotsModal] = useState(false);
   const [threeDotsTargetPost, setThreeDotsTargetPost] = useState<any>(null);
   const [showCommentsModal, setShowCommentsModal] = useState(false);
@@ -898,6 +900,10 @@ export default function ReelsScreen() {
     if (!newCommentText.trim() || !commentsTargetPost?.id) return;
     if (!currentUser?.id) {
       Alert.alert("Sign in required", "Sign in to comment.");
+      return;
+    }
+    if (!useStore.getState().authToken) {
+      Alert.alert("Session expired", "Please sign in again to comment.");
       return;
     }
     triggerHaptic("success");
@@ -1341,6 +1347,10 @@ export default function ReelsScreen() {
   }, [feedItems]);
 
   const handleLikePress = (id: string) => {
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required", "Sign in to like posts.");
+      return;
+    }
     triggerHaptic("heavy");
     const wasLiked = !!likedReels[id];
 
@@ -1350,13 +1360,22 @@ export default function ReelsScreen() {
       [id]: Math.max(0, (prev[id] ?? 0) + (wasLiked ? -1 : 1)),
     }));
 
-    logEngagement(id, "like").catch(() => {
-      setLikedReels((prev) => ({ ...prev, [id]: wasLiked }));
-      setLikeCounts((prev) => ({
-        ...prev,
-        [id]: Math.max(0, (prev[id] ?? 0) + (wasLiked ? 1 : -1)),
-      }));
-    });
+    logEngagement(id, "like")
+      .then((result) => {
+        if (result?.likeCount != null) {
+          setLikeCounts((prev) => ({ ...prev, [id]: result.likeCount! }));
+        }
+        if (typeof result?.liked === "boolean") {
+          setLikedReels((prev) => ({ ...prev, [id]: result.liked! }));
+        }
+      })
+      .catch(() => {
+        setLikedReels((prev) => ({ ...prev, [id]: wasLiked }));
+        setLikeCounts((prev) => ({
+          ...prev,
+          [id]: Math.max(0, (prev[id] ?? 0) + (wasLiked ? 1 : -1)),
+        }));
+      });
   };
 
   // ── Sponsored Ad CTA Handler ──
@@ -1436,11 +1455,13 @@ export default function ReelsScreen() {
     }
   };
 
-  const handleShare = (item: any) => {
+  const handleShare = async (item: any) => {
     triggerHaptic("medium");
-    setShareSearch("");
     setShareTargetPost(item);
+    setShareLink(null);
     setShowShareSheet(true);
+    const url = await logFeedShare(item.id);
+    setShareLink(url || `https://aura.app/post/${item.id}`);
   };
 
   const reelHeight = (isReelsFullScreen && activeFeedTab === "reels") 
@@ -3592,218 +3613,30 @@ export default function ReelsScreen() {
       />
 
 
-      {/* 📤 PREMIUM INSTAGRAM-STYLE SHARE BOTTOM SHEET MODAL */}
-      {showShareSheet && (
-        <Modal
-          visible={showShareSheet}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowShareSheet(false)}
-        >
-          <TouchableOpacity 
-            style={styles.bottomSheetBackdrop} 
-            activeOpacity={1} 
-            onPress={() => setShowShareSheet(false)}
-          >
-            <View style={styles.shareSheetContent} onStartShouldSetResponder={() => true}>
-              {/* Drag Handle */}
-              <View style={styles.bottomSheetDragHandle} />
-              
-              {/* Search Bar Row */}
-              <View style={styles.shareSearchRow}>
-                <View style={styles.shareSearchBox}>
-                  <Lucide name="search-outline" size={20} color="rgba(255,255,255,0.4)" />
-                  <TextInput
-                    style={styles.shareSearchInput}
-                    placeholder="Search"
-                    placeholderTextColor="rgba(255,255,255,0.3)"
-                    keyboardAppearance="dark"
-                    value={shareSearch}
-                    onChangeText={setShareSearch}
-                  />
-                </View>
-                <TouchableOpacity style={styles.shareAddFriendBtn} onPress={() => { triggerHaptic("light"); alert("Syncing your contact nodes..."); }}>
-                  <Lucide name="person-add-outline" size={20} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Direct Message Contacts Grid */}
-              <View style={styles.shareContactsContainer}>
-                {(() => {
-                  const allShareContacts = [
-                    { id: "c1", name: "Kiran Soni", username: "kiran_soni", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150" },
-                    { id: "c2", name: "S U R A J", username: "suraj_official", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150" },
-                    { id: "c3", name: "Dr. Rashneet ✨", username: "dr_rashneet", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150" },
-                    { id: "c4", name: "Rhythm Bhatia", username: "rhythm_bhatia", avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150" },
-                    { id: "c5", name: "the.priyas...", username: "priya_luxury", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150" },
-                    { id: "c6", name: "Mandy", username: "mandy_c", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=150" },
-                  ];
-
-                  const filtered = allShareContacts.filter(
-                    c => c.name.toLowerCase().includes(shareSearch.toLowerCase()) ||
-                         c.username.toLowerCase().includes(shareSearch.toLowerCase())
-                  );
-
-                  const chunked = [];
-                  for (let i = 0; i < filtered.length; i += 3) {
-                    chunked.push(filtered.slice(i, i + 3));
-                  }
-
-                  if (chunked.length === 0) {
-                    return (
-                      <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                        <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>No results found</Text>
-                      </View>
-                    );
-                  }
-
-                  return chunked.map((row, rowIndex) => (
-                    <View key={`row-${rowIndex}`} style={styles.shareContactsRow}>
-                      {row.map((contact) => (
-                        <TouchableOpacity 
-                          key={contact.id} 
-                          style={styles.shareContactCard} 
-                          onPress={() => {
-                            triggerHaptic("success");
-                            setShowShareSheet(false);
-                            alert(`Direct message sent successfully to ${contact.name}!`);
-                          }}
-                        >
-                          <Image source={{ uri: contact.avatar }} style={styles.shareContactAvatar} />
-                          <Text style={styles.shareContactName} numberOfLines={1}>{contact.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ));
-                })()}
-              </View>
-
-              <View style={styles.shareHorizontalDivider} />
-
-              {/* Bottom Row of Action Shortcuts */}
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false} 
-                contentContainerStyle={styles.shareActionsScroll}
-              >
-                {/* 🔗 COPY LINK */}
-                <TouchableOpacity style={styles.shareActionBtn} onPress={async () => {
-                  triggerHaptic("success");
-                  setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `${API_HOST}/reel/${shareTargetPost?.id || "s1"}`;
-                  try {
-                    await Clipboard.setStringAsync(postUrl);
-                    Alert.alert("Link Copied", "Instant match! The luxury curation link has been copied to your clipboard.");
-                  } catch (e) {
-                    console.warn("Clipboard copy failed:", e);
-                    Alert.alert("Link Copied", `Coordinate: ${postUrl}`);
-                  }
-                }}>
-                  <View style={styles.shareActionCircle}>
-                    <Lucide name="link-outline" size={22} color="#fff" />
-                  </View>
-                  <Text style={styles.shareActionLabel}>Copy link</Text>
-                </TouchableOpacity>
-
-                {/* ➕ ADD TO STORY */}
-                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
-                  triggerHaptic("success");
-                  setShowShareSheet(false);
-                  if (!shareTargetPost) return;
-                  
-                  const newSlide = {
-                    id: `ys_${Date.now()}`,
-                    url: shareTargetPost.thumbnail || shareTargetPost.url || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400",
-                    caption: shareTargetPost.caption || "Obsidian Gold curation added to AURA Story coordinates.",
-                    isVideo: shareTargetPost.isVideo || false,
-                    artifact: shareTargetPost.artifact || null
-                  };
-
-                  addInstaStorySlide(newSlide);
-                  Alert.alert("Story Shared", "Shared successfully to your Stories feed! View it at the top of your home screen.");
-                }}>
-                  <View style={styles.shareActionCircle}>
-                    <Lucide name="add-circle-outline" size={22} color="#fff" />
-                  </View>
-                  <Text style={styles.shareActionLabel}>Add to story</Text>
-                </TouchableOpacity>
-
-                {/* 💬 WHATSAPP */}
-                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
-                  triggerHaptic("success");
-                  setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `${API_HOST}/reel/${shareTargetPost?.id || "s1"}`;
-                  const caption = shareTargetPost?.caption || "Check out this luxury curation!";
-                  const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"\n\nLink: ${postUrl}`;
-                  const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(text)}`;
-                  Linking.openURL(whatsappUrl).catch(() => {
-                    Linking.openURL(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`);
-                  });
-                }}>
-                  <View style={[styles.shareActionCircle, { backgroundColor: "#25d366" }]}>
-                    <Lucide name="logo-whatsapp" size={22} color="#fff" />
-                  </View>
-                  <Text style={styles.shareActionLabel}>WhatsApp</Text>
-                </TouchableOpacity>
-
-                {/* 📸 INSTAGRAM */}
-                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
-                  triggerHaptic("success");
-                  setShowShareSheet(false);
-                  Linking.openURL("instagram://camera").catch(() => {
-                    Linking.openURL("https://instagram.com");
-                  });
-                }}>
-                  <View style={[styles.shareActionCircle, { backgroundColor: "#e1306c" }]}>
-                    <Lucide name="logo-instagram" size={22} color="#fff" />
-                  </View>
-                  <Text style={styles.shareActionLabel}>Instagram</Text>
-                </TouchableOpacity>
-
-                {/* ✈️ TELEGRAM */}
-                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
-                  triggerHaptic("success");
-                  setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `${API_HOST}/reel/${shareTargetPost?.id || "s1"}`;
-                  const caption = shareTargetPost?.caption || "Check out this luxury curation!";
-                  const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"\n\nLink: ${postUrl}`;
-                  const telegramUrl = `tg://msg?text=${encodeURIComponent(text)}`;
-                  Linking.openURL(telegramUrl).catch(() => {
-                    Linking.openURL(`https://t.me/share/url?url=${encodeURIComponent(postUrl)}&text=${encodeURIComponent(text)}`);
-                  });
-                }}>
-                  <View style={[styles.shareActionCircle, { backgroundColor: "#0088cc" }]}>
-                    <Lucide name="paper-plane-outline" size={22} color="#fff" />
-                  </View>
-                  <Text style={styles.shareActionLabel}>Telegram</Text>
-                </TouchableOpacity>
-
-                {/* 📤 NATIVE SYSTEM SHARE ("MORE") */}
-                <TouchableOpacity style={styles.shareActionBtn} onPress={() => {
-                  triggerHaptic("success");
-                  setShowShareSheet(false);
-                  const postUrl = shareTargetPost?.url || `${API_HOST}/reel/${shareTargetPost?.id || "s1"}`;
-                  const caption = shareTargetPost?.caption || "Check out this luxury curation!";
-                  const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"`;
-                  Share.share({
-                    message: `${text}\n\nLink: ${postUrl}`,
-                    url: postUrl,
-                    title: "AURA Luxury Curation"
-                  }).catch(err => {
-                    console.warn("Native share failed:", err);
-                  });
-                }}>
-                  <View style={styles.shareActionCircle}>
-                    <Lucide name="share-social-outline" size={22} color="#fff" />
-                  </View>
-                  <Text style={styles.shareActionLabel}>More</Text>
-                </TouchableOpacity>
-              </ScrollView>
-
-            </View>
-          </TouchableOpacity>
-        </Modal>
-      )}
+      <PostShareSheet
+        visible={showShareSheet}
+        onClose={() => {
+          setShowShareSheet(false);
+          setShareTargetPost(null);
+          setShareLink(null);
+        }}
+        post={
+          shareTargetPost
+            ? {
+                id: shareTargetPost.id,
+                caption: shareTargetPost.caption,
+                url:
+                  shareTargetPost.videoUrl ||
+                  shareTargetPost.mediaUrl ||
+                  shareTargetPost.thumbnail ||
+                  shareTargetPost.url,
+                profile: shareTargetPost.profile,
+                user: shareTargetPost.user,
+              }
+            : null
+        }
+        shareLink={shareLink}
+      />
 
       {/* 🔴 THREE DOTS OPTIONS BOTTOM SHEET MODAL */}
       {showThreeDotsModal && (
@@ -4001,9 +3834,10 @@ export default function ReelsScreen() {
                             {authorUsername} <Text style={styles.commentBadge}>Author</Text>
                           </Text>
                         </TouchableOpacity>
-                        <Text style={styles.commentTextContent}>
-                          {commentsTargetPost.caption || "Atelier Masterpiece Collection."}
-                        </Text>
+                        <CaptionText
+                          caption={commentsTargetPost.caption || "Atelier Masterpiece Collection."}
+                          style={styles.commentTextContent}
+                        />
                         
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginTop: 4 }}>
                           <Text style={styles.commentTime}>Pinned • 1d</Text>
@@ -4100,7 +3934,7 @@ export default function ReelsScreen() {
                             >
                               <Text style={styles.commentUsername}>{comm.username}</Text>
                             </TouchableOpacity>
-                            <Text style={styles.commentTextContent}>{comm.text}</Text>
+                            <CaptionText caption={comm.text} style={styles.commentTextContent} />
                             
                             {/* Inline Actions Row (Like, Reply, Share) */}
                             <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginTop: 4 }}>
@@ -4203,7 +4037,7 @@ export default function ReelsScreen() {
                                     >
                                       <Text style={styles.commentUsername}>{reply.username}</Text>
                                     </TouchableOpacity>
-                                    <Text style={styles.commentTextContent}>{reply.text}</Text>
+                                    <CaptionText caption={reply.text} style={styles.commentTextContent} />
                                     
                                     <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginTop: 4 }}>
                                       <Text style={styles.commentTime}>{reply.time || "now"}</Text>

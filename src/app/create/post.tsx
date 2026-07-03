@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,9 +12,10 @@ import {
   ScrollView,
 } from "react-native";
 import { router } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { ComposerShell } from "@/components/create/ComposerShell";
-import { pickMediaFromLibrary, pickMultipleImages } from "@/lib/createMediaPicker";
+import { pickMultipleImages } from "@/lib/createMediaPicker";
 import { compressImageForPost } from "@/lib/compressMedia";
 import { uploadAndPublish, uploadCarouselImages } from "@/lib/publishContent";
 import { FilterBakeCanvas, captureFilteredImage, FILTER_PRESETS } from "@/lib/bakeImageFilter";
@@ -48,20 +49,14 @@ export default function PostComposerScreen() {
     try {
       const assets = await pickMultipleImages(10);
       if (!assets.length) {
-        const single = await pickMediaFromLibrary("post");
-        if (!single?.uri) {
-          if (!localUris.length) router.back();
-          return;
-        }
-        const compressed = await compressImageForPost(single.uri);
-        setLocalUris([compressed]);
-      } else {
-        const compressed: string[] = [];
-        for (const a of assets) {
-          compressed.push(await compressImageForPost(a.uri));
-        }
-        setLocalUris(compressed);
+        setStep("pick");
+        return;
       }
+      const compressed: string[] = [];
+      for (const a of assets) {
+        compressed.push(await compressImageForPost(a.uri));
+      }
+      setLocalUris(compressed);
       triggerHaptic("success");
       setStep("edit");
 
@@ -70,17 +65,28 @@ export default function PostComposerScreen() {
       await saveDraft(draft);
     } catch (e) {
       Alert.alert("Photo error", e instanceof Error ? e.message : "Could not process photos.");
-      if (!localUris.length) router.back();
+      setStep("pick");
     } finally {
       setPicking(false);
     }
-  }, [localUris.length, triggerHaptic]);
+  }, [triggerHaptic]);
 
-  useEffect(() => {
-    if (!ready || pickerStarted.current) return;
-    pickerStarted.current = true;
-    openGallery();
-  }, [ready, openGallery]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!ready) return;
+      let cancelled = false;
+      if (!pickerStarted.current) {
+        pickerStarted.current = true;
+        openGallery().finally(() => {
+          if (cancelled) return;
+        });
+      }
+      return () => {
+        cancelled = true;
+        pickerStarted.current = false;
+      };
+    }, [ready, openGallery])
+  );
 
   const bakeAndAdvance = async () => {
     if (!localUri) return;
@@ -103,6 +109,10 @@ export default function PostComposerScreen() {
   const handleShare = async () => {
     if (!localUris.length || !caption.trim()) {
       Alert.alert("Caption required", "Write a caption before sharing.");
+      return;
+    }
+    if (!useStore.getState().authToken) {
+      Alert.alert("Session expired", "Please sign out and sign in again to publish.");
       return;
     }
     setPublishing(true);
@@ -132,11 +142,11 @@ export default function PostComposerScreen() {
     }
   };
 
-  if (!ready || (step === "pick" && picking)) {
+  if (!ready) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#00f5ff" />
-        <Text style={styles.loadingText}>Opening gallery…</Text>
+        <Text style={styles.loadingText}>Loading…</Text>
       </View>
     );
   }
@@ -145,9 +155,15 @@ export default function PostComposerScreen() {
     return (
       <ComposerShell title="New post" stepLabel="Select photos">
         <View style={styles.emptyPick}>
-          <Lucide name="images-outline" size={48} color="rgba(255,255,255,0.3)" />
-          <Text style={styles.emptyText}>Choose one or more photos (carousel)</Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={openGallery}>
+          {picking ? (
+            <ActivityIndicator size="large" color="#00f5ff" />
+          ) : (
+            <Lucide name="images-outline" size={48} color="rgba(255,255,255,0.3)" />
+          )}
+          <Text style={styles.emptyText}>
+            {picking ? "Opening gallery…" : "Choose one or more photos (carousel)"}
+          </Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={openGallery} disabled={picking}>
             <Text style={styles.primaryBtnText}>Open gallery</Text>
           </TouchableOpacity>
         </View>

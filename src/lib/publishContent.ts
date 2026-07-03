@@ -75,6 +75,9 @@ async function postToFeedApi(
   });
 
   const data = await res.json();
+  if (res.status === 401) {
+    throw new Error(data.message || "Session expired. Please sign in again.");
+  }
   if (!data.success) {
     throw new Error(data.error || "Could not publish to server.");
   }
