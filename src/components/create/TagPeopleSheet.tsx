@@ -14,18 +14,30 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { searchProfiles } from "@/lib/postComposerSearch";
-import { MAX_PHOTO_TAGS, type PhotoTag } from "@/lib/postComposerTypes";
+import { MAX_PHOTO_TAGS, type PhotoTag, type CollabPartner } from "@/lib/postComposerTypes";
+
+type Tab = "tag" | "collab";
 
 interface TagPeopleSheetProps {
   visible: boolean;
-  selected: PhotoTag[];
+  photoTags: PhotoTag[];
+  collabPartner: CollabPartner | null;
   onClose: () => void;
-  onChange: (tags: PhotoTag[]) => void;
+  onPhotoTagsChange: (tags: PhotoTag[]) => void;
+  onCollabChange: (partner: CollabPartner | null) => void;
 }
 
-/** Tag people *in the photo* — not @mentions, not collab co-authors. */
-export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeopleSheetProps) {
+/** Tag people in the photo + invite one collab partner — same place, two tabs. */
+export function TagPeopleSheet({
+  visible,
+  photoTags,
+  collabPartner,
+  onClose,
+  onPhotoTagsChange,
+  onCollabChange,
+}: TagPeopleSheetProps) {
   const insets = useSafeAreaInsets();
+  const [tab, setTab] = useState<Tab>("tag");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<
     { id: string; title: string; subtitle: string; imageUri: string | null }[]
@@ -59,35 +71,47 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
     if (!visible) {
       setQuery("");
       setResults([]);
+      setTab("tag");
       return;
     }
     const timer = setTimeout(() => runSearch(query), 280);
     return () => clearTimeout(timer);
   }, [visible, query, runSearch]);
 
-  const addTag = (item: { id: string; title: string; subtitle: string; imageUri: string | null }) => {
-    if (selected.length >= MAX_PHOTO_TAGS) {
+  const addPhotoTag = (item: { id: string; title: string; subtitle: string; imageUri: string | null }) => {
+    if (photoTags.length >= MAX_PHOTO_TAGS) {
       Alert.alert("Limit reached", `You can tag up to ${MAX_PHOTO_TAGS} people in the photo.`);
       return;
     }
     const username = item.subtitle.replace(/^@/, "");
-    if (selected.some((p) => p.profileId === item.id)) {
+    if (photoTags.some((p) => p.profileId === item.id)) {
       Alert.alert("Already tagged", `${item.title} is already tagged in this photo.`);
       return;
     }
-    onChange([
-      ...selected,
-      {
-        profileId: item.id,
-        username,
-        name: item.title,
-        logo: item.imageUri,
-      },
+    onPhotoTagsChange([
+      ...photoTags,
+      { profileId: item.id, username, name: item.title, logo: item.imageUri },
     ]);
   };
 
-  const removeTag = (profileId: string) => {
-    onChange(selected.filter((p) => p.profileId !== profileId));
+  const removePhotoTag = (profileId: string) => {
+    onPhotoTagsChange(photoTags.filter((p) => p.profileId !== profileId));
+  };
+
+  const pickCollab = (item: { id: string; title: string; subtitle: string; imageUri: string | null }) => {
+    onCollabChange({
+      profileId: item.id,
+      username: item.subtitle.replace(/^@/, ""),
+      name: item.title,
+      logo: item.imageUri,
+      status: "pending",
+    });
+    onClose();
+  };
+
+  const onRowPress = (item: { id: string; title: string; subtitle: string; imageUri: string | null }) => {
+    if (tab === "tag") addPhotoTag(item);
+    else pickCollab(item);
   };
 
   return (
@@ -97,36 +121,76 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
           <TouchableOpacity onPress={onClose}>
             <Lucide name="close" size={26} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.title}>Tag people</Text>
+          <Text style={styles.title}>Tag & collab</Text>
           <View style={{ width: 26 }} />
         </View>
 
+        <View style={styles.tabs}>
+          <TouchableOpacity
+            style={[styles.tab, tab === "tag" && styles.tabActive]}
+            onPress={() => setTab("tag")}
+          >
+            <Lucide name="person-outline" size={16} color={tab === "tag" ? "#ff9500" : "#fff"} />
+            <Text style={[styles.tabText, tab === "tag" && styles.tabTextTag]}>In photo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, tab === "collab" && styles.tabActiveCollab]}
+            onPress={() => setTab("collab")}
+          >
+            <Lucide name="people-outline" size={16} color={tab === "collab" ? "#00f5ff" : "#fff"} />
+            <Text style={[styles.tabText, tab === "collab" && styles.tabTextCollab]}>Collab</Text>
+          </TouchableOpacity>
+        </View>
+
         <Text style={styles.hint}>
-          People tagged here appear on your photo — not in the caption. Use @ in the caption to mention someone in text.
-        </Text>
-        <Text style={styles.limitHint}>
-          {selected.length}/{MAX_PHOTO_TAGS} on photo
+          {tab === "tag"
+            ? "Tag people who appear in your photo — they show as bubbles on the image."
+            : "Invite an influencer as co-author — shows in the post header when they accept."}
         </Text>
 
-        {selected.length > 0 ? (
-          <View style={styles.chipRow}>
-            {selected.map((person) => (
-              <View key={person.profileId} style={styles.chip}>
-                {person.logo ? (
-                  <Image source={{ uri: person.logo }} style={styles.chipAvatar} />
-                ) : (
-                  <View style={styles.chipAvatarFallback}>
-                    <Text style={styles.chipInitial}>{person.name[0]?.toUpperCase()}</Text>
+        {tab === "tag" ? (
+          <>
+            <Text style={styles.limitHint}>
+              {photoTags.length}/{MAX_PHOTO_TAGS} tagged in photo
+            </Text>
+            {photoTags.length > 0 ? (
+              <View style={styles.chipRow}>
+                {photoTags.map((person) => (
+                  <View key={person.profileId} style={styles.chipTag}>
+                    {person.logo ? (
+                      <Image source={{ uri: person.logo }} style={styles.chipAvatar} />
+                    ) : (
+                      <View style={styles.chipAvatarFallback}>
+                        <Text style={styles.chipInitial}>{person.name[0]?.toUpperCase()}</Text>
+                      </View>
+                    )}
+                    <Text style={styles.chipText} numberOfLines={1}>
+                      {person.name}
+                    </Text>
+                    <TouchableOpacity onPress={() => removePhotoTag(person.profileId)} hitSlop={8}>
+                      <Lucide name="close-circle" size={16} color="rgba(255,255,255,0.55)" />
+                    </TouchableOpacity>
                   </View>
-                )}
-                <Text style={styles.chipText} numberOfLines={1}>
-                  {person.name}
-                </Text>
-                <TouchableOpacity onPress={() => removeTag(person.profileId)} hitSlop={8}>
-                  <Lucide name="close-circle" size={16} color="rgba(255,255,255,0.55)" />
-                </TouchableOpacity>
+                ))}
               </View>
-            ))}
+            ) : null}
+          </>
+        ) : collabPartner ? (
+          <View style={styles.collabSelected}>
+            {collabPartner.logo ? (
+              <Image source={{ uri: collabPartner.logo }} style={styles.thumb} />
+            ) : (
+              <View style={styles.iconCircle}>
+                <Text style={styles.iconLetter}>{collabPartner.name[0]?.toUpperCase()}</Text>
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{collabPartner.name}</Text>
+              <Text style={styles.rowSub}>@{collabPartner.username} · pending</Text>
+            </View>
+            <TouchableOpacity onPress={() => onCollabChange(null)} hitSlop={8}>
+              <Lucide name="close-circle" size={22} color="rgba(255,255,255,0.45)" />
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -134,7 +198,7 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
           <Lucide name="search-outline" size={20} color="rgba(255,255,255,0.4)" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search people in this photo…"
+            placeholder={tab === "tag" ? "Search people in this photo…" : "Search influencer to collab…"}
             placeholderTextColor="rgba(255,255,255,0.35)"
             value={query}
             onChangeText={setQuery}
@@ -157,7 +221,7 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
               </Text>
             }
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.row} onPress={() => addTag(item)}>
+              <TouchableOpacity style={styles.row} onPress={() => onRowPress(item)}>
                 {item.imageUri ? (
                   <Image source={{ uri: item.imageUri }} style={styles.thumb} />
                 ) : (
@@ -173,7 +237,11 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
                     {item.subtitle}
                   </Text>
                 </View>
-                <Lucide name="person-add-outline" size={18} color="#ff9500" />
+                <Lucide
+                  name={tab === "tag" ? "person-add-outline" : "people"}
+                  size={18}
+                  color={tab === "tag" ? "#ff9500" : "#00f5ff"}
+                />
               </TouchableOpacity>
             )}
           />
@@ -193,12 +261,41 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   title: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  tabs: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginBottom: 10,
+    gap: 8,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  tabActive: {
+    backgroundColor: "rgba(255,149,0,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,149,0,0.35)",
+  },
+  tabActiveCollab: {
+    backgroundColor: "rgba(0,245,255,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(0,245,255,0.35)",
+  },
+  tabText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  tabTextTag: { color: "#ff9500" },
+  tabTextCollab: { color: "#00f5ff" },
   hint: {
     color: "rgba(255,255,255,0.45)",
     fontSize: 13,
     lineHeight: 18,
     paddingHorizontal: 16,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   limitHint: {
     color: "rgba(255,255,255,0.4)",
@@ -213,7 +310,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 12,
   },
-  chip: {
+  chipTag: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
@@ -234,6 +331,18 @@ const styles = StyleSheet.create({
   },
   chipInitial: { color: "#fff", fontSize: 10, fontWeight: "700" },
   chipText: { color: "#fff", fontSize: 13, fontWeight: "600", maxWidth: 120 },
+  collabSelected: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(0,245,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(0,245,255,0.25)",
+  },
   searchBox: {
     flexDirection: "row",
     alignItems: "center",

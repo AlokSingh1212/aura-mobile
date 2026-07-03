@@ -26,6 +26,11 @@ export interface ProductSearchResult {
   maisonId?: string;
 }
 
+export interface HashtagSearchResult {
+  tag: string;
+  count: number;
+}
+
 export async function searchLocations(q: string): Promise<LocationResult[]> {
   if (q.trim().length < 2) return [];
   const res = await fetch(
@@ -43,6 +48,16 @@ export async function searchProfiles(q: string): Promise<ProfileSearchResult[]> 
   );
   const data = await res.json();
   if (data.success && Array.isArray(data.profiles)) return data.profiles;
+  return [];
+}
+
+export async function searchHashtags(q: string): Promise<HashtagSearchResult[]> {
+  const params = new URLSearchParams();
+  if (q.trim()) params.set("q", q.trim().replace(/^#/, ""));
+  params.set("limit", "15");
+  const res = await fetch(`${API_HOST}/api/mobile/hashtags/search?${params}`);
+  const data = await res.json();
+  if (data.success && Array.isArray(data.hashtags)) return data.hashtags;
   return [];
 }
 
