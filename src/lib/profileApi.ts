@@ -9,6 +9,14 @@ export interface ProfilePost {
   caption?: string;
   isVideo: boolean;
   createdAt?: string;
+  artifactId?: string | null;
+  product?: {
+    id: string;
+    title: string;
+    price: number;
+    images: string[];
+    maisonId?: string;
+  } | null;
 }
 
 export interface NetworkProfile {
@@ -85,6 +93,8 @@ export async function fetchProfilePosts(opts: {
         caption?: string;
         isVideo?: boolean;
         createdAt?: string;
+        artifactId?: string | null;
+        product?: ProfilePost["product"];
       }) => ({
         id: p.id,
         url: p.url,
@@ -93,6 +103,8 @@ export async function fetchProfilePosts(opts: {
         caption: p.caption,
         isVideo: !!p.isVideo,
         createdAt: p.createdAt,
+        artifactId: p.artifactId ?? null,
+        product: p.product ?? null,
       })
     );
   }

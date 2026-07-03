@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
+import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
@@ -57,6 +58,7 @@ function ProfilePostPage({
   onShare,
   onSave,
   onThreeDots,
+  storeProducts,
 }: {
   post: ProfilePost;
   profile: ProfileGridViewerProfile;
@@ -70,8 +72,15 @@ function ProfilePostPage({
   onShare: () => void;
   onSave: () => void;
   onThreeDots: () => void;
+  storeProducts: any[];
 }) {
+  const { triggerHaptic, formatPrice } = useStore();
   const [carouselIndex, setCarouselIndex] = useState(0);
+
+  const linkedProduct =
+    post.product ||
+    (post.artifactId ? storeProducts.find((p) => p.id === post.artifactId) : null);
+  const productTitle = linkedProduct?.title || linkedProduct?.name || "Product";
 
   const mediaUrls =
     post.mediaUrls && post.mediaUrls.length > 0 ? post.mediaUrls : [displayUrl];
@@ -153,6 +162,26 @@ function ProfilePostPage({
           <Text style={styles.postCaptionUser}>{profile.username} </Text>
           <CaptionText caption={post.caption} />
         </Text>
+      ) : null}
+
+      {linkedProduct ? (
+        <TouchableOpacity
+          style={styles.viewProductBtn}
+          onPress={() => {
+            triggerHaptic("medium");
+            router.push(`/product/${linkedProduct.id}` as any);
+          }}
+        >
+          <Lucide name="bag-handle-outline" size={18} color="#00f5ff" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.viewProductLabel}>View product</Text>
+            <Text style={styles.viewProductTitle} numberOfLines={1}>
+              {productTitle}
+              {linkedProduct.price ? ` · ${formatPrice(linkedProduct.price)}` : ""}
+            </Text>
+          </View>
+          <Lucide name="chevron-forward" size={18} color="rgba(255,255,255,0.35)" />
+        </TouchableOpacity>
       ) : null}
     </View>
   );
@@ -352,6 +381,7 @@ export function ProfileGridViewer({
               onShare={() => engagement.handleShare(engagementItem)}
               onSave={() => engagement.handleSave(postItem.id)}
               onThreeDots={() => engagement.handleThreeDots(engagementItem)}
+              storeProducts={storeProducts}
             />
           )}
         </View>
@@ -630,6 +660,31 @@ const styles = StyleSheet.create({
   },
   postCaptionUser: {
     fontWeight: "700",
+  },
+  viewProductBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 14,
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0,245,255,0.25)",
+  },
+  viewProductLabel: {
+    color: "#00f5ff",
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  viewProductTitle: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: 2,
   },
   productBody: {
     paddingHorizontal: 16,

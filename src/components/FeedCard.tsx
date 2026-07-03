@@ -262,8 +262,11 @@ export const FeedCard: React.FC<FeedCardProps> = ({
 
       {/* Floating Shoppable Card */}
       {(() => {
-        const associatedProduct = item.artifact || products.find((p: any) => p.id === item.artifactId);
+        const associatedProduct =
+          item.product || item.artifact || products.find((p: any) => p.id === item.artifactId);
         if (!associatedProduct) return null;
+        const productTitle = associatedProduct.title || associatedProduct.name || "Product";
+        const productPrice = associatedProduct.price ?? 0;
         return (
           <TouchableOpacity
             style={styles.shoppableCard}
@@ -278,8 +281,8 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             </View>
             <View style={styles.shopInfo}>
               <Text style={styles.shopSub}>Shop The Look</Text>
-              <Text style={styles.shopTitle} numberOfLines={1}>{associatedProduct.title}</Text>
-              <Text style={styles.shopPrice}>{formatPrice(associatedProduct.price)}</Text>
+              <Text style={styles.shopTitle} numberOfLines={1}>{productTitle}</Text>
+              <Text style={styles.shopPrice}>{formatPrice(productPrice)}</Text>
             </View>
             <Lucide name="chevron-forward" size={17} color="#00f5ff" />
           </TouchableOpacity>

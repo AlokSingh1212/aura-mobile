@@ -1,11 +1,9 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   Image,
   StyleSheet,
-  TextInput,
-  Dimensions,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
@@ -14,7 +12,6 @@ import {
 import { router } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import Lucide from "@expo/vector-icons/Ionicons";
-import { ComposerShell } from "@/components/create/ComposerShell";
 import { pickMultipleImages } from "@/lib/createMediaPicker";
 import { compressImageForPost } from "@/lib/compressMedia";
 import { uploadAndPublish, uploadCarouselImages } from "@/lib/publishContent";
@@ -23,24 +20,47 @@ import { createEmptyDraft, saveDraft } from "@/lib/createDraft";
 import { resetExportJob } from "@/lib/exportJob";
 import { useCreateAuth, syncAfterPublish } from "@/hooks/useCreateAuth";
 import { useStore } from "@/store/useStore";
+import {
+  NewPostDetailsForm,
+  type NewPostDetails,
+} from "@/components/create/NewPostDetailsForm";
+import { fetchProfileProducts } from "@/lib/profileApi";
+import type { ProductSearchResult } from "@/lib/postComposerSearch";
 
-const { width } = Dimensions.get("window");
-
-type Step = "pick" | "edit" | "caption";
+type Step = "pick" | "compose" | "filters";
 
 export default function PostComposerScreen() {
   const { ready, userId, profileId, profileName } = useCreateAuth();
-  const triggerHaptic = useStore((s) => s.triggerHaptic);
+  const { triggerHaptic, activeProfile } = useStore();
+  const username = activeProfile?.username || "you";
+
   const [step, setStep] = useState<Step>("pick");
   const [localUris, setLocalUris] = useState<string[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [filterId, setFilterId] = useState("normal");
-  const [caption, setCaption] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [picking, setPicking] = useState(false);
   const [baking, setBaking] = useState(false);
+  const [catalogProducts, setCatalogProducts] = useState<ProductSearchResult[]>([]);
   const canvasRef = useRef<View>(null);
   const pickerStarted = useRef(false);
+
+  useEffect(() => {
+    if (!userId && !profileId) return;
+    fetchProfileProducts({ userId, profileId: profileId || undefined })
+      .then(({ products }) =>
+        setCatalogProducts(
+          products.map((p) => ({
+            id: p.id,
+            title: p.title,
+            price: p.price,
+            images: p.images || [],
+            maisonId: p.maisonId,
+          }))
+        )
+      )
+      .catch(() => setCatalogProducts([]));
+  }, [userId, profileId]);
 
   const localUri = localUris[activeIndex] ?? null;
 
@@ -57,11 +77,12 @@ export default function PostComposerScreen() {
         compressed.push(await compressImageForPost(a.uri));
       }
       setLocalUris(compressed);
+      setActiveIndex(0);
       triggerHaptic("success");
-      setStep("edit");
+      setStep("compose");
 
       const draft = createEmptyDraft("post");
-      draft.step = "edit";
+      draft.step = "compose";
       await saveDraft(draft);
     } catch (e) {
       Alert.alert("Photo error", e instanceof Error ? e.message : "Could not process photos.");
@@ -88,7 +109,7 @@ export default function PostComposerScreen() {
     }, [ready, openGallery])
   );
 
-  const bakeAndAdvance = async () => {
+  const applyFilterAndReturn = async () => {
     if (!localUri) return;
     setBaking(true);
     try {
@@ -98,23 +119,42 @@ export default function PostComposerScreen() {
         next[activeIndex] = baked;
         setLocalUris(next);
       }
-      setStep("caption");
+      setStep("compose");
     } catch (e) {
-      Alert.alert("Filter error", e instanceof Error ? e.message : "Could not bake filter.");
+      Alert.alert("Filter error", e instanceof Error ? e.message : "Could not apply filter.");
     } finally {
       setBaking(false);
     }
   };
 
-  const handleShare = async () => {
-    if (!localUris.length || !caption.trim()) {
-      Alert.alert("Caption required", "Write a caption before sharing.");
+  const buildCaption = (details: NewPostDetails) => {
+    let text = details.caption.trim();
+    if (details.taggedPeople) {
+      for (const raw of details.taggedPeople.split(",")) {
+        const tag = raw.trim();
+        if (tag && !text.includes(`@${tag}`)) {
+          text = `${text} @${tag}`.trim();
+        }
+      }
+    }
+    if (details.aiLabel && !text.toLowerCase().includes("#ai")) {
+      text = `${text}\n\n#AI`.trim();
+    }
+    return text;
+  };
+
+  const handleShare = async (details: NewPostDetails) => {
+    if (!localUris.length) {
+      Alert.alert("No photo", "Pick a photo before sharing.");
       return;
     }
     if (!useStore.getState().authToken) {
       Alert.alert("Session expired", "Please sign out and sign in again to publish.");
       return;
     }
+
+    const caption = buildCaption(details) || `✨ ${profileName || "Your"} on AURA`;
+
     setPublishing(true);
     resetExportJob();
     try {
@@ -124,14 +164,19 @@ export default function PostComposerScreen() {
         userId,
         profileId,
         profileName,
-        caption: caption.trim(),
+        caption,
+        productId: details.productId || null,
+        location: details.location || undefined,
+        music: details.audio || undefined,
         mediaUrls: uploaded.length > 1 ? uploaded : undefined,
       });
-      syncAfterPublish("post", result, caption.trim());
+      syncAfterPublish("post", result, caption);
       triggerHaptic("success");
       Alert.alert(
         localUris.length > 1 ? "Carousel posted" : "Post shared",
-        "Your post is live on profile and feed.",
+        details.shareToFeed
+          ? "Your post is live on profile and feed."
+          : "Your post is on your profile.",
         [{ text: "OK", onPress: () => router.replace("/account") }]
       );
     } catch (e) {
@@ -153,51 +198,61 @@ export default function PostComposerScreen() {
 
   if (step === "pick") {
     return (
-      <ComposerShell title="New post" stepLabel="Select photos">
-        <View style={styles.emptyPick}>
-          {picking ? (
-            <ActivityIndicator size="large" color="#00f5ff" />
-          ) : (
-            <Lucide name="images-outline" size={48} color="rgba(255,255,255,0.3)" />
-          )}
-          <Text style={styles.emptyText}>
-            {picking ? "Opening gallery…" : "Choose one or more photos (carousel)"}
-          </Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={openGallery} disabled={picking}>
-            <Text style={styles.primaryBtnText}>Open gallery</Text>
-          </TouchableOpacity>
-        </View>
-      </ComposerShell>
+      <View style={styles.loading}>
+        {picking ? (
+          <ActivityIndicator size="large" color="#00f5ff" />
+        ) : (
+          <Lucide name="images-outline" size={48} color="rgba(255,255,255,0.3)" />
+        )}
+        <Text style={styles.loadingText}>{picking ? "Opening gallery…" : "Select photos"}</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={openGallery} disabled={picking}>
+          <Text style={styles.primaryBtnText}>Open gallery</Text>
+        </TouchableOpacity>
+      </View>
     );
   }
 
-  if (step === "edit" && localUri) {
+  if (step === "compose" && localUris.length > 0) {
     return (
-      <ComposerShell
-        title="New post"
-        stepLabel={`Edit ${localUris.length > 1 ? `${activeIndex + 1}/${localUris.length}` : ""}`}
+      <NewPostDetailsForm
+        mediaUris={localUris}
+        activeIndex={activeIndex}
+        onActiveIndexChange={setActiveIndex}
+        username={username}
+        userId={userId}
+        profileId={profileId}
+        catalogProducts={catalogProducts}
+        publishing={publishing}
         onBack={() => {
-          setStep("pick");
-          openGallery();
+          Alert.alert("Discard post?", "Your selected photos will be lost.", [
+            { text: "Keep editing", style: "cancel" },
+            { text: "Discard", style: "destructive", onPress: () => router.back() },
+          ]);
         }}
-        rightLabel="Next"
-        onRightPress={bakeAndAdvance}
-        rightLoading={baking}
-      >
-        <View style={styles.previewWrap}>
+        onShare={handleShare}
+        onEditPhoto={() => setStep("filters")}
+      />
+    );
+  }
+
+  if (step === "filters" && localUri) {
+    return (
+      <View style={styles.filterScreen}>
+        <View style={styles.filterHeader}>
+          <TouchableOpacity onPress={() => setStep("compose")}>
+            <Lucide name="chevron-back" size={28} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.filterTitle}>Edit photo</Text>
+          <TouchableOpacity onPress={applyFilterAndReturn} disabled={baking}>
+            {baking ? (
+              <ActivityIndicator color="#00f5ff" />
+            ) : (
+              <Text style={styles.filterDone}>Done</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+        <View style={styles.filterPreview}>
           <FilterBakeCanvas imageUri={localUri} filterId={filterId} canvasRef={canvasRef} />
-          {localUris.length > 1 ? (
-            <ScrollView horizontal style={styles.thumbRow}>
-              {localUris.map((uri, i) => (
-                <TouchableOpacity key={uri + i} onPress={() => setActiveIndex(i)}>
-                  <Image
-                    source={{ uri }}
-                    style={[styles.thumb, i === activeIndex && styles.thumbActive]}
-                  />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          ) : null}
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
           {FILTER_PRESETS.map((f) => (
@@ -210,50 +265,36 @@ export default function PostComposerScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
-        <Text style={styles.hint}>Filters are baked into the exported image</Text>
-      </ComposerShell>
+      </View>
     );
   }
 
-  return (
-    <ComposerShell
-      title="New post"
-      stepLabel="Caption"
-      onBack={() => setStep("edit")}
-      rightLabel="Share"
-      onRightPress={handleShare}
-      rightDisabled={!caption.trim()}
-      rightLoading={publishing}
-    >
-      <View style={styles.captionWrap}>
-        {localUri ? <Image source={{ uri: localUri }} style={styles.captionThumb} /> : null}
-        <TextInput
-          style={styles.captionInput}
-          placeholder="Write a caption…"
-          placeholderTextColor="rgba(255,255,255,0.35)"
-          value={caption}
-          onChangeText={setCaption}
-          multiline
-          autoFocus
-          maxLength={2200}
-        />
-      </View>
-    </ComposerShell>
-  );
+  return null;
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, backgroundColor: "#080415", alignItems: "center", justifyContent: "center" },
-  loadingText: { color: "rgba(255,255,255,0.6)", marginTop: 12, fontSize: 14 },
-  emptyPick: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
-  emptyText: { color: "rgba(255,255,255,0.5)", fontSize: 15, marginTop: 16, marginBottom: 24, textAlign: "center" },
-  primaryBtn: { backgroundColor: "#00f5ff", paddingHorizontal: 28, paddingVertical: 14, borderRadius: 12 },
-  primaryBtnText: { color: "#080415", fontWeight: "700", fontSize: 16 },
-  previewWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16 },
-  thumbRow: { maxHeight: 56, marginTop: 12 },
-  thumb: { width: 48, height: 48, borderRadius: 6, marginRight: 8, backgroundColor: "#111" },
-  thumbActive: { borderWidth: 2, borderColor: "#00f5ff" },
-  filterRow: { maxHeight: 44, paddingHorizontal: 12, marginTop: 8 },
+  loading: {
+    flex: 1,
+    backgroundColor: "#080415",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+  },
+  loadingText: { color: "rgba(255,255,255,0.6)", marginTop: 12, fontSize: 14, marginBottom: 20 },
+  primaryBtn: { backgroundColor: "#4a90d9", paddingHorizontal: 28, paddingVertical: 14, borderRadius: 10 },
+  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  filterScreen: { flex: 1, backgroundColor: "#080415", paddingTop: 48 },
+  filterHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  filterTitle: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  filterDone: { color: "#00f5ff", fontSize: 16, fontWeight: "700" },
+  filterPreview: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16 },
+  filterRow: { maxHeight: 48, paddingHorizontal: 12, marginBottom: 24 },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -264,8 +305,4 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: "rgba(0,245,255,0.15)", borderWidth: 1, borderColor: "#00f5ff" },
   filterText: { color: "rgba(255,255,255,0.5)", fontSize: 12, fontWeight: "600" },
   filterTextActive: { color: "#00f5ff" },
-  hint: { color: "rgba(255,255,255,0.35)", fontSize: 11, textAlign: "center", paddingBottom: 16 },
-  captionWrap: { flex: 1, flexDirection: "row", padding: 16, gap: 14 },
-  captionThumb: { width: 64, height: 64, borderRadius: 6, backgroundColor: "#111" },
-  captionInput: { flex: 1, color: "#fff", fontSize: 16, lineHeight: 22, textAlignVertical: "top", minHeight: 120 },
 });

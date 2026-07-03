@@ -20,6 +20,8 @@ export interface PublishOptions {
   profileName?: string;
   caption?: string;
   productId?: string | null;
+  location?: string;
+  music?: string;
   alsoPostToGrid?: boolean;
   audioTrack?: ReelAudioTrack | null;
   /** Server ffmpeg filter bake (reel) */
@@ -68,8 +70,8 @@ async function postToFeedApi(
       url: publicUrl,
       thumbnail: carousel ? JSON.stringify(carousel) : publicUrl,
       caption,
-      location: "Atelier Flagship",
-      music: opts.storyOnly ? "STORY_ONLY" : "Cinematic Luxury Waves",
+      location: opts.location || undefined,
+      music: opts.storyOnly ? "STORY_ONLY" : opts.music || undefined,
       mediaUrls: carousel,
     }),
   });
