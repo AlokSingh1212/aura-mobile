@@ -119,10 +119,24 @@ export function TagPeopleSheet({
       <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose}>
-            <Lucide name="close" size={26} color="#fff" />
+            <Text style={styles.cancelBtn}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Tag & collab</Text>
-          <View style={{ width: 26 }} />
+          <Text style={styles.title}>Tag people</Text>
+          <View style={{ width: 64 }} />
+        </View>
+
+        <View style={styles.searchHeader}>
+          <Lucide name="search-outline" size={18} color="rgba(255,255,255,0.4)" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            value={query}
+            onChangeText={setQuery}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
         </View>
 
         <View style={styles.tabs}>
@@ -197,12 +211,11 @@ export function TagPeopleSheet({
         <View style={styles.searchBox}>
           <Lucide name="search-outline" size={20} color="rgba(255,255,255,0.4)" />
           <TextInput
-            style={styles.searchInput}
-            placeholder={tab === "tag" ? "Search people in this photo…" : "Search influencer to collab…"}
+            style={styles.searchInputInner}
+            placeholder={tab === "tag" ? "Search people…" : "Search influencer…"}
             placeholderTextColor="rgba(255,255,255,0.35)"
             value={query}
             onChangeText={setQuery}
-            autoFocus
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -261,6 +274,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   title: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  cancelBtn: { color: "#fff", fontSize: 16, width: 64 },
+  searchHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 40,
+  },
+  searchInput: { flex: 1, color: "#fff", fontSize: 16 },
   tabs: {
     flexDirection: "row",
     marginHorizontal: 16,
@@ -354,7 +380,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 44,
   },
-  searchInput: { flex: 1, color: "#fff", fontSize: 16 },
+  searchInputInner: { flex: 1, color: "#fff", fontSize: 16 },
   empty: {
     color: "rgba(255,255,255,0.4)",
     textAlign: "center",

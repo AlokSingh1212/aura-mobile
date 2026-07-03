@@ -5,14 +5,14 @@ import {
   Modal,
   TextInput,
   TouchableOpacity,
-  FlatList,
-  ActivityIndicator,
+  ScrollView,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
-import { LocationCaptureSheet } from "@/components/create/LocationCaptureSheet";
-import { searchLocations } from "@/lib/postComposerSearch";
+import * as Location from "expo-location";
+import { searchLocations, searchNearbyLocations } from "@/lib/postComposerSearch";
 import type { VerifiedLocation } from "@/lib/postComposerTypes";
 
 interface LocationPickerSheetProps {
@@ -21,16 +21,50 @@ interface LocationPickerSheetProps {
   onSelect: (location: VerifiedLocation) => void;
 }
 
+function formatDistance(km?: number): string {
+  if (km == null) return "";
+  if (km < 0.1) return "<0.1km";
+  if (km < 1) return `${(km * 1000).toFixed(0)}m`;
+  return `${km.toFixed(1)}km`;
+}
+
 export function LocationPickerSheet({ visible, onClose, onSelect }: LocationPickerSheetProps) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<VerifiedLocation[]>([]);
+  const [results, setResults] = useState<(VerifiedLocation & { distanceKm?: number })[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showGps, setShowGps] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
+
+  const loadNearby = useCallback(async () => {
+    setGpsLoading(true);
+    try {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== "granted") {
+        setResults([]);
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const nearby = await searchNearbyLocations(pos.coords.latitude, pos.coords.longitude);
+      setResults(
+        nearby.map((r) => ({
+          id: r.id,
+          label: r.label,
+          fullName: r.fullName,
+          lat: r.lat,
+          lon: r.lon,
+          distanceKm: r.distanceKm,
+        }))
+      );
+    } catch {
+      setResults([]);
+    } finally {
+      setGpsLoading(false);
+    }
+  }, []);
 
   const runSearch = useCallback(async (text: string) => {
     if (text.trim().length < 2) {
-      setResults([]);
+      loadNearby();
       return;
     }
     setLoading(true);
@@ -50,161 +84,146 @@ export function LocationPickerSheet({ visible, onClose, onSelect }: LocationPick
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadNearby]);
 
   useEffect(() => {
     if (!visible) {
       setQuery("");
       setResults([]);
-      setShowGps(false);
       return;
     }
+    loadNearby();
+  }, [visible, loadNearby]);
+
+  useEffect(() => {
+    if (!visible) return;
     const timer = setTimeout(() => runSearch(query), 280);
     return () => clearTimeout(timer);
   }, [visible, query, runSearch]);
 
-  if (showGps) {
-    return (
-      <LocationCaptureSheet
-        visible={visible}
-        onClose={() => setShowGps(false)}
-        onConfirm={(location) => {
-          onSelect(location);
-          onClose();
-        }}
-      />
-    );
-  }
+  const pick = (item: VerifiedLocation) => {
+    onSelect(item);
+    onClose();
+  };
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={styles.handle} />
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose}>
-            <Lucide name="close" size={26} color="#fff" />
+            <Text style={styles.cancel}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Add location</Text>
-          <View style={{ width: 26 }} />
+          <Text style={styles.title}>Locations</Text>
+          <View style={{ width: 64 }} />
         </View>
 
-        <Text style={styles.hint}>
-          Search and tag a place — post now or later, even if you are somewhere else.
+        <Text style={styles.lead}>Choose a location to tag</Text>
+        <Text style={styles.leadSub}>
+          People you share with can see the location you tag and view this on the map.
         </Text>
 
-        <TouchableOpacity style={styles.gpsBtn} onPress={() => setShowGps(true)}>
-          <Lucide name="navigate-outline" size={20} color="#00f5ff" />
-          <Text style={styles.gpsBtnText}>Use my current GPS on map</Text>
-        </TouchableOpacity>
-
         <View style={styles.searchBox}>
-          <Lucide name="search-outline" size={20} color="rgba(255,255,255,0.4)" />
+          <Lucide name="search-outline" size={18} color="rgba(255,255,255,0.4)" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search cities, venues, landmarks…"
+            placeholder="Search"
             placeholderTextColor="rgba(255,255,255,0.35)"
             value={query}
             onChangeText={setQuery}
-            autoFocus
-            autoCapitalize="words"
-            autoCorrect={false}
           />
         </View>
 
-        {loading ? (
-          <ActivityIndicator color="#00f5ff" style={{ marginTop: 24 }} />
+        {gpsLoading || loading ? (
+          <ActivityIndicator color="#0095f6" style={{ marginTop: 24 }} />
         ) : (
-          <FlatList
-            data={results}
-            keyExtractor={(item) => item.id}
-            keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={
-              <Text style={styles.empty}>
-                {query.trim().length < 2 ? "Type at least 2 characters to search" : "No places found"}
-              </Text>
-            }
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.row}
-                onPress={() => {
-                  onSelect(item);
-                  onClose();
-                }}
-              >
-                <Lucide name="location-outline" size={20} color="#00f5ff" />
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.rowTitle} numberOfLines={1}>
-                    {item.label}
-                  </Text>
-                  <Text style={styles.rowSub} numberOfLines={2}>
-                    {item.fullName}
-                  </Text>
-                </View>
+          <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
+            {results.map((item) => (
+              <TouchableOpacity key={item.id} style={styles.row} onPress={() => pick(item)}>
+                <Text style={styles.rowTitle} numberOfLines={1}>
+                  {item.label}
+                </Text>
+                <Text style={styles.rowSub} numberOfLines={2}>
+                  {item.distanceKm != null
+                    ? `${formatDistance(item.distanceKm)} · ${item.fullName}`
+                    : item.fullName}
+                </Text>
               </TouchableOpacity>
-            )}
-          />
+            ))}
+          </ScrollView>
         )}
+
+        <TouchableOpacity style={styles.addBtn} onPress={loadNearby} disabled={gpsLoading}>
+          <Text style={styles.addBtnText}>Refresh nearby</Text>
+        </TouchableOpacity>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#080415" },
+  root: { flex: 1, backgroundColor: "#000" },
+  handle: {
+    alignSelf: "center",
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    marginTop: 8,
+    marginBottom: 4,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
+  cancel: { color: "#fff", fontSize: 16, width: 64 },
   title: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  hint: {
-    color: "rgba(255,255,255,0.45)",
+  lead: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    paddingHorizontal: 16,
+    marginTop: 4,
+  },
+  leadSub: {
+    color: "#0095f6",
     fontSize: 13,
     lineHeight: 18,
     paddingHorizontal: 16,
-    marginBottom: 10,
-  },
-  gpsBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginHorizontal: 16,
+    marginTop: 6,
     marginBottom: 12,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: "rgba(0,245,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(0,245,255,0.25)",
   },
-  gpsBtnText: { color: "#00f5ff", fontSize: 14, fontWeight: "600" },
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
     marginHorizontal: 16,
     marginBottom: 8,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.1)",
     borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 44,
+    paddingHorizontal: 12,
+    height: 40,
   },
   searchInput: { flex: 1, color: "#fff", fontSize: 16 },
-  empty: {
-    color: "rgba(255,255,255,0.4)",
-    textAlign: "center",
-    marginTop: 32,
-    paddingHorizontal: 24,
-    fontSize: 14,
-  },
+  list: { flex: 1 },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.06)",
+    borderBottomColor: "rgba(255,255,255,0.08)",
   },
-  rowTitle: { color: "#fff", fontSize: 15, fontWeight: "600" },
-  rowSub: { color: "rgba(255,255,255,0.45)", fontSize: 12, marginTop: 2 },
+  rowTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  rowSub: { color: "rgba(255,255,255,0.45)", fontSize: 13, marginTop: 3 },
+  addBtn: {
+    marginHorizontal: 16,
+    marginVertical: 12,
+    backgroundColor: "#1e3a5f",
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  addBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 });

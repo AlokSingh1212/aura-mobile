@@ -16,6 +16,9 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import { FILTER_PRESETS } from "@/lib/postEditState";
+
+export { FILTER_PRESETS } from "@/lib/postEditState";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
@@ -25,14 +28,6 @@ interface ImageEditorProps {
   onClose: () => void;
   onSave: (finalUri: string, appliedFilter: string) => void;
 }
-
-export const FILTER_PRESETS = [
-  { id: "normal", name: "Normal", overlayColor: "transparent" },
-  { id: "retro_warm", name: "Retro Warm", overlayColor: "rgba(235, 150, 50, 0.16)" },
-  { id: "cool_ice", name: "Cool Ice", overlayColor: "rgba(50, 150, 255, 0.16)" },
-  { id: "sepia", name: "Sepia Vintage", overlayColor: "rgba(180, 130, 80, 0.22)" },
-  { id: "obsidian_noir", name: "Obsidian Noir", overlayColor: "rgba(0, 0, 0, 0.55)" },
-];
 
 export const ImageEditor: React.FC<ImageEditorProps> = ({
   visible,

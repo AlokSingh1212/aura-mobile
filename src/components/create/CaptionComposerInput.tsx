@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Image,
   type TextStyle,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
@@ -33,6 +34,7 @@ interface SuggestionRow {
   label: string;
   subtitle?: string;
   value: string;
+  imageUri?: string | null;
 }
 
 interface CaptionComposerInputProps {
@@ -125,7 +127,7 @@ export function CaptionComposerInput({
             tags.map((t) => ({
               id: t.tag,
               label: `#${t.tag}`,
-              subtitle: t.count > 1 ? `${t.count.toLocaleString()} posts` : "Start this tag",
+              subtitle: t.count > 1 ? `${t.count.toLocaleString()} posts` : undefined,
               value: t.tag,
             }))
           );
@@ -141,9 +143,10 @@ export function CaptionComposerInput({
           setSuggestions(
             profiles.map((p) => ({
               id: p.id,
-              label: `@${p.username}`,
+              label: p.username,
               subtitle: p.name,
               value: p.username,
+              imageUri: p.logo,
             }))
           );
         }
@@ -240,11 +243,19 @@ export function CaptionComposerInput({
                   style={styles.suggestRow}
                   onPress={() => pickSuggestion(item, activeToken)}
                 >
-                  <Lucide
-                    name={activeToken.type === "hashtag" ? "pricetag-outline" : "at-outline"}
-                    size={18}
-                    color={activeToken.type === "hashtag" ? HASHTAG_COLOR : MENTION_COLOR}
-                  />
+                  {activeToken.type === "hashtag" ? (
+                    <View style={styles.hashCircle}>
+                      <Text style={styles.hashLetter}>#</Text>
+                    </View>
+                  ) : item.imageUri ? (
+                    <Image source={{ uri: item.imageUri }} style={styles.avatar} />
+                  ) : (
+                    <View style={styles.avatarFallback}>
+                      <Text style={styles.avatarInitial}>
+                        {item.label[0]?.toUpperCase() || "@"}
+                      </Text>
+                    </View>
+                  )}
                   <View style={{ flex: 1 }}>
                     <Text
                       style={[
@@ -252,7 +263,7 @@ export function CaptionComposerInput({
                         activeToken.type === "hashtag" ? styles.suggestHashtag : styles.suggestMention,
                       ]}
                     >
-                      {item.label}
+                      {activeToken.type === "hashtag" ? item.label : `@${item.label}`}
                     </Text>
                     {item.subtitle ? (
                       <Text style={styles.suggestSub} numberOfLines={1}>
@@ -336,20 +347,39 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   suggestList: {
-    maxHeight: 160,
+    maxHeight: 280,
   },
   suggestRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "rgba(255,255,255,0.06)",
   },
+  hashCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  hashLetter: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#222" },
+  avatarFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitial: { color: "#fff", fontWeight: "700", fontSize: 16 },
   suggestLabel: {
-    fontSize: 15,
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "700",
   },
   suggestHashtag: { color: HASHTAG_COLOR },
   suggestMention: { color: MENTION_COLOR },

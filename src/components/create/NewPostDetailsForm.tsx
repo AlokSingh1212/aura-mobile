@@ -24,6 +24,8 @@ import {
   type CollabPartner,
   type VerifiedLocation,
 } from "@/lib/postComposerTypes";
+import type { PostEditState } from "@/lib/postEditState";
+import { PostMediaPreview } from "@/components/create/PostMediaPreview";
 
 export interface NewPostDetails {
   caption: string;
@@ -63,9 +65,12 @@ interface NewPostDetailsFormProps {
   brandStores: BrandStoreOption[];
   defaultStoreId?: string | null;
   publishing?: boolean;
+  editState?: PostEditState;
+  initialAudio?: string;
+  initialProductId?: string;
+  initialProductTitle?: string;
   onBack: () => void;
   onShare: (details: NewPostDetails) => void;
-  onEditPhoto?: () => void;
 }
 
 export function NewPostDetailsForm({
@@ -76,11 +81,19 @@ export function NewPostDetailsForm({
   brandStores,
   defaultStoreId,
   publishing,
+  editState,
+  initialAudio = "",
+  initialProductId = "",
+  initialProductTitle = "",
   onBack,
   onShare,
-  onEditPhoto,
 }: NewPostDetailsFormProps) {
-  const [details, setDetails] = useState<NewPostDetails>(defaultPostDetails);
+  const [details, setDetails] = useState<NewPostDetails>(() => ({
+    ...defaultPostDetails(),
+    audio: initialAudio,
+    productId: initialProductId,
+    productTitle: initialProductTitle,
+  }));
   const [showAudience, setShowAudience] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [showAudioPicker, setShowAudioPicker] = useState(false);
@@ -125,7 +138,13 @@ export function NewPostDetailsForm({
           <Lucide name="chevron-back" size={28} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New post</Text>
-        <View style={{ width: 28 }} />
+        <TouchableOpacity onPress={() => onShare(details)} disabled={publishing} hitSlop={12}>
+          {publishing ? (
+            <ActivityIndicator size="small" color="#0095f6" />
+          ) : (
+            <Text style={styles.shareHeaderBtn}>Share</Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -141,16 +160,28 @@ export function NewPostDetailsForm({
 
         <View style={styles.captionRow}>
           {previewUri ? (
-            <TouchableOpacity onPress={onEditPhoto} disabled={!onEditPhoto} style={styles.thumbWrap}>
-              <Image source={{ uri: previewUri }} style={styles.thumb} />
-              <MediaPeopleOverlay photoTags={details.photoTags} bottom={6} left={6} />
-            </TouchableOpacity>
+            <View style={styles.thumbWrap}>
+              {editState ? (
+                <PostMediaPreview
+                  uri={previewUri}
+                  edit={editState}
+                  photoTags={details.photoTags}
+                  aspectRatio={1}
+                />
+              ) : (
+                <>
+                  <Image source={{ uri: previewUri }} style={styles.thumb} />
+                  <MediaPeopleOverlay photoTags={details.photoTags} bottom={6} left={6} />
+                </>
+              )}
+            </View>
           ) : null}
           <View style={{ flex: 1 }}>
             <CaptionComposerInput
               value={details.caption}
               onChangeText={(caption) => patch({ caption })}
-              placeholder="Write a caption… type # for tags, @ to mention"
+              placeholder="Write a caption…"
+              minHeight={100}
             />
           </View>
         </View>
@@ -322,14 +353,6 @@ export function NewPostDetailsForm({
 
         {showMore ? (
           <View style={styles.expandPanel}>
-            {onEditPhoto ? (
-              <TouchableOpacity style={styles.listItem} onPress={onEditPhoto}>
-                <Lucide name="color-wand-outline" size={20} color="#00f5ff" />
-                <Text style={[styles.listTitle, { marginLeft: 10, flex: 1 }]}>Edit photo & filters</Text>
-                <Lucide name="chevron-forward" size={18} color="rgba(255,255,255,0.3)" />
-              </TouchableOpacity>
-            ) : null}
-
             <TouchableOpacity
               style={styles.listItem}
               onPress={() => {
@@ -373,20 +396,6 @@ export function NewPostDetailsForm({
 
         <View style={{ height: 24 }} />
       </ScrollView>
-
-      <View style={styles.shareWrap}>
-        <TouchableOpacity
-          style={[styles.shareBtn, publishing && { opacity: 0.6 }]}
-          onPress={() => onShare(details)}
-          disabled={publishing}
-        >
-          {publishing ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.shareBtnText}>Share</Text>
-          )}
-        </TouchableOpacity>
-      </View>
 
       <SearchPickerSheet
         visible={showAudioPicker}
@@ -446,6 +455,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(255,255,255,0.08)",
   },
   headerTitle: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  shareHeaderBtn: { color: "#0095f6", fontSize: 16, fontWeight: "700" },
   scroll: { flex: 1 },
   carouselRow: { paddingHorizontal: 16, paddingTop: 12, maxHeight: 72 },
   carouselThumb: {
@@ -463,7 +473,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     gap: 14,
   },
-  thumbWrap: { position: "relative" },
+  thumbWrap: { position: "relative", width: 64, height: 64, borderRadius: 4, overflow: "hidden" },
   thumb: { width: 64, height: 64, borderRadius: 4, backgroundColor: "#111" },
   captionInput: {
     color: "#fff",

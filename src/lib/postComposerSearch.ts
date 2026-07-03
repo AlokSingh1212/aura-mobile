@@ -51,6 +51,18 @@ export async function searchProfiles(q: string): Promise<ProfileSearchResult[]> 
   return [];
 }
 
+export async function searchNearbyLocations(
+  lat: number,
+  lon: number
+): Promise<(LocationResult & { distanceKm?: number })[]> {
+  const res = await fetch(
+    `${API_HOST}/api/mobile/locations/nearby?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`
+  );
+  const data = await res.json();
+  if (data.success && Array.isArray(data.locations)) return data.locations;
+  return [];
+}
+
 export async function searchHashtags(q: string): Promise<HashtagSearchResult[]> {
   const params = new URLSearchParams();
   if (q.trim()) params.set("q", q.trim().replace(/^#/, ""));
