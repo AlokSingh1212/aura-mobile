@@ -264,6 +264,12 @@ export function ProfileGridViewer({
 
   useEffect(() => {
     if (!visible || isProductMode) return;
+    const ids = listData.map((item) => item.id).filter(Boolean);
+    engagement.hydratePostsEngagement(ids);
+  }, [visible, listData, isProductMode, engagement.hydratePostsEngagement]);
+
+  useEffect(() => {
+    if (!visible || isProductMode) return;
     const item = listData[activeIndex];
     if (item?.id) {
       engagement.hydratePostEngagement(item.id);
@@ -318,14 +324,14 @@ export function ProfileGridViewer({
             handleShare={() => engagement.handleShare(reelItem)}
             handleSavePress={engagement.handleSave}
             handleThreeDotsPress={() => engagement.handleThreeDots(reelItem)}
-            commentsCount={(engagement.postComments[item.id] || []).length}
+            commentsCount={engagement.commentCounts[item.id] ?? 0}
+            likesCount={engagement.likeCounts[item.id] ?? 0}
           />
         );
       }
 
       const postItem = item as ProfilePost;
       const engagementItem = openEngagement(postItem);
-      const commentList = engagement.postComments[postItem.id] || [];
 
       return (
         <View style={styles.feedItem}>
@@ -338,8 +344,8 @@ export function ProfileGridViewer({
               displayUrl={postItem.thumbnail || postItem.url}
               isLiked={!!engagement.likedPosts[postItem.id]}
               isSaved={!!engagement.savedPosts[postItem.id]}
-              likesCount={engagement.likeCounts[postItem.id] || 0}
-              commentsCount={commentList.length}
+              likesCount={engagement.likeCounts[postItem.id] ?? 0}
+              commentsCount={engagement.commentCounts[postItem.id] ?? 0}
               onLike={() => engagement.handleLike(postItem.id)}
               onComment={() => engagement.handleComments(engagementItem)}
               onShare={() => engagement.handleShare(engagementItem)}

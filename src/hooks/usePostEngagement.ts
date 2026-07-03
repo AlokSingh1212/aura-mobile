@@ -41,6 +41,7 @@ export function usePostEngagement(opts?: {
   const [likedPosts, setLikedPosts] = useState<Record<string, boolean>>({});
   const [savedPosts, setSavedPosts] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [postComments, setPostComments] = useState<Record<string, PostComment[]>>({});
   const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({});
 
@@ -60,6 +61,7 @@ export function usePostEngagement(opts?: {
       try {
         const stats = await fetchPostEngagement(postId, currentUser?.id);
         setLikeCounts((prev) => ({ ...prev, [postId]: stats.likeCount }));
+        setCommentCounts((prev) => ({ ...prev, [postId]: stats.commentCount }));
         if (currentUser?.id) {
           setLikedPosts((prev) => ({ ...prev, [postId]: stats.liked }));
           setSavedPosts((prev) => ({ ...prev, [postId]: stats.saved }));
@@ -118,25 +120,40 @@ export function usePostEngagement(opts?: {
     [logFeedShare, triggerHaptic]
   );
 
+  const hydratePostsEngagement = useCallback(
+    async (postIds: string[]) => {
+      const unique = [...new Set(postIds.filter(Boolean))];
+      await Promise.all(unique.map((id) => hydratePostEngagement(id)));
+    },
+    [hydratePostEngagement]
+  );
+
   const handleComments = useCallback(
     async (item: EngagementPostItem) => {
       triggerHaptic("medium");
       setCommentsTarget(item);
       setCommentsVisible(true);
 
-      if (postComments[item.id]?.length) return;
-
       setLoadingComments((prev) => ({ ...prev, [item.id]: true }));
       try {
-        const comments = await fetchPostComments(item.id);
+        const [comments, stats] = await Promise.all([
+          fetchPostComments(item.id),
+          fetchPostEngagement(item.id, currentUser?.id),
+        ]);
         setPostComments((prev) => ({ ...prev, [item.id]: comments }));
+        setCommentCounts((prev) => ({ ...prev, [item.id]: stats.commentCount }));
+        setLikeCounts((prev) => ({ ...prev, [item.id]: stats.likeCount }));
+        if (currentUser?.id) {
+          setLikedPosts((prev) => ({ ...prev, [item.id]: stats.liked }));
+          setSavedPosts((prev) => ({ ...prev, [item.id]: stats.saved }));
+        }
       } catch {
-        setPostComments((prev) => ({ ...prev, [item.id]: [] }));
+        setPostComments((prev) => ({ ...prev, [item.id]: prev[item.id] || [] }));
       } finally {
         setLoadingComments((prev) => ({ ...prev, [item.id]: false }));
       }
     },
-    [postComments, triggerHaptic]
+    [currentUser?.id, triggerHaptic]
   );
 
   const handleThreeDots = useCallback(
@@ -219,6 +236,10 @@ export function usePostEngagement(opts?: {
             .filter((c) => c.id !== optimistic.id)
             .concat(result.comment!),
         }));
+        setCommentCounts((prev) => ({
+          ...prev,
+          [postId]: (prev[postId] || 0) + 1,
+        }));
       } else {
         setPostComments((prev) => ({
           ...prev,
@@ -234,6 +255,7 @@ export function usePostEngagement(opts?: {
     likedPosts,
     savedPosts,
     likeCounts,
+    commentCounts,
     postComments,
     loadingComments,
     commentsVisible,
@@ -255,5 +277,6 @@ export function usePostEngagement(opts?: {
     copyPostLink,
     addComment,
     hydratePostEngagement,
+    hydratePostsEngagement,
   };
 }

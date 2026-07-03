@@ -36,6 +36,7 @@ export interface FeedCardProps {
   handleSavePress: (id: string) => void;
   handleThreeDotsPress: (item: any) => void;
   commentsCount?: number;
+  likesCount?: number;
   onCtaPress?: (ctaType: string, metadata: any) => void;
 }
 
@@ -57,11 +58,16 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   handleSavePress,
   handleThreeDotsPress,
   commentsCount,
+  likesCount: likesCountProp,
   onCtaPress,
 }) => {
   const { triggerHaptic, formatPrice, activeProfile, currentUser } = useStore();
   const isPlayed = index === activeReelIndex;
   const isLiked = likedPosts[item.id] || false;
+  const baseLikes = likesCountProp ?? item.likesCount ?? item.likes ?? 0;
+  const displayLikes = Math.max(0, baseLikes);
+  const displayComments =
+    commentsCount ?? item.commentsCount ?? item.content?.commentsCount ?? 0;
   const [peekVisible, setPeekVisible] = useState(false);
 
   // ── Double-Tap Heart Animation ──────────────────────────
@@ -359,7 +365,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             <Lucide name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#ff3b30" : "#fff"} />
           </View>
           <Text style={styles.iconLabel}>
-            {formatCompactNumber(item.likesCount ? (isLiked ? item.likesCount + 1 : item.likesCount) : 412)}
+            {formatCompactNumber(displayLikes)}
           </Text>
         </TouchableOpacity>
 
@@ -368,7 +374,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             <Lucide name="chatbubble-outline" size={24} color="#fff" />
           </View>
           <Text style={styles.iconLabel}>
-            {formatCompactNumber(commentsCount !== undefined ? commentsCount : (item.comments?.length || 18))}
+            {formatCompactNumber(displayComments)}
           </Text>
         </TouchableOpacity>
 

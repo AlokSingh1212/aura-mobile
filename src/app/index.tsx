@@ -38,7 +38,7 @@ import * as Clipboard from "expo-clipboard";
 import { API_HOST } from "@/constants/api";
 import { authHeaders, IS_PRODUCTION_APP } from "@/lib/apiClient";
 import { uploadMediaFromUri } from "@/lib/uploadMedia";
-import { fetchPostComments, addPostComment } from "@/lib/profileApi";
+import { fetchPostComments, addPostComment, fetchPostEngagement } from "@/lib/profileApi";
 import { formatCompactNumber } from "@/constants/format";
 import { CameraStudio } from "@/components/CameraStudio";
 import { ChatDrawer } from "@/components/ChatDrawer";
@@ -693,6 +693,8 @@ export default function ReelsScreen() {
   }, []);
 
   const [likedReels, setLikedReels] = useState<Record<string, boolean>>({});
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [isSeller, setIsSeller] = useState(false);
 
   // 🔔 ACTIVITY DRAWER & NOTIFICATIONS REAL-TIME POLLING
@@ -924,6 +926,10 @@ export default function ReelsScreen() {
           .filter((c) => c.id !== optimistic.id)
           .concat(result.comment),
       }));
+      setCommentCounts((prev) => ({
+        ...prev,
+        [postId]: (prev[postId] ?? 0) + 1,
+      }));
     } else {
       setPostComments((prev) => ({
         ...prev,
@@ -946,12 +952,20 @@ export default function ReelsScreen() {
     triggerHaptic("medium");
     setCommentsTargetPost(item);
     setShowCommentsModal(true);
-    if (postComments[item.id]?.length) return;
     try {
-      const comments = await fetchPostComments(item.id);
+      const [comments, stats] = await Promise.all([
+        fetchPostComments(item.id),
+        fetchPostEngagement(item.id, currentUser?.id),
+      ]);
       setPostComments((prev) => ({ ...prev, [item.id]: comments }));
+      setCommentCounts((prev) => ({ ...prev, [item.id]: stats.commentCount }));
+      setLikeCounts((prev) => ({ ...prev, [item.id]: stats.likeCount }));
+      if (currentUser?.id) {
+        setLikedReels((prev) => ({ ...prev, [item.id]: stats.liked }));
+        setSavedPosts((prev) => ({ ...prev, [item.id]: stats.saved }));
+      }
     } catch {
-      setPostComments((prev) => ({ ...prev, [item.id]: [] }));
+      setPostComments((prev) => ({ ...prev, [item.id]: prev[item.id] || [] }));
     }
   };
 
@@ -1308,17 +1322,40 @@ export default function ReelsScreen() {
     fetchFeedItems("", "For You", true);
   }, []);
 
+  useEffect(() => {
+    if (!feedItems?.length) return;
+    const likedPatch: Record<string, boolean> = {};
+    const savedPatch: Record<string, boolean> = {};
+    const likesPatch: Record<string, number> = {};
+    const commentsPatch: Record<string, number> = {};
+    feedItems.forEach((item: any) => {
+      if (item.content?.liked) likedPatch[item.id] = true;
+      if (item.content?.saved) savedPatch[item.id] = true;
+      likesPatch[item.id] = item.content?.likesCount ?? 0;
+      commentsPatch[item.id] = item.content?.commentsCount ?? 0;
+    });
+    setLikedReels((prev) => ({ ...prev, ...likedPatch }));
+    setSavedPosts((prev) => ({ ...prev, ...savedPatch }));
+    setLikeCounts((prev) => ({ ...prev, ...likesPatch }));
+    setCommentCounts((prev) => ({ ...prev, ...commentsPatch }));
+  }, [feedItems]);
+
   const handleLikePress = (id: string) => {
     triggerHaptic("heavy");
     const wasLiked = !!likedReels[id];
-    
-    // 1. Optimistic state change
-    setLikedReels(prev => ({ ...prev, [id]: !wasLiked }));
-    
-    // 2. Background sync
-    logEngagement(id, "like").catch(e => {
-      console.warn("Optimistic like toggle failed, reverting:", e);
-      setLikedReels(prev => ({ ...prev, [id]: wasLiked }));
+
+    setLikedReels((prev) => ({ ...prev, [id]: !wasLiked }));
+    setLikeCounts((prev) => ({
+      ...prev,
+      [id]: Math.max(0, (prev[id] ?? 0) + (wasLiked ? -1 : 1)),
+    }));
+
+    logEngagement(id, "like").catch(() => {
+      setLikedReels((prev) => ({ ...prev, [id]: wasLiked }));
+      setLikeCounts((prev) => ({
+        ...prev,
+        [id]: Math.max(0, (prev[id] ?? 0) + (wasLiked ? 1 : -1)),
+      }));
     });
   };
 
@@ -1437,7 +1474,8 @@ export default function ReelsScreen() {
         handleShare={handleShare}
         handleSavePress={handleSavePress}
         handleThreeDotsPress={handleThreeDotsPress}
-        commentsCount={postComments[item.id]?.length ?? item.content?.commentsCount ?? 0}
+        commentsCount={commentCounts[item.id] ?? postComments[item.id]?.length ?? item.content?.commentsCount ?? item.commentsCount ?? 0}
+        likesCount={likeCounts[item.id] ?? item.likes ?? item.content?.likesCount ?? 0}
         onCtaPress={handleAdCtaPress}
       />
     );
@@ -1514,6 +1552,7 @@ export default function ReelsScreen() {
         caption: item.content?.caption || item.sponsoredMetadata?.ctaText || "",
         creator: item.creator,
         music: "AURA Original Sound",
+        likesCount: item.content?.likesCount || 0,
         likes: item.content?.likesCount || 0,
         commentsCount: item.content?.commentsCount || 0,
         comments: item.comments || [],
@@ -1821,8 +1860,12 @@ export default function ReelsScreen() {
     if (item.type === "CREATOR_POST") {
       const media = item.content?.mediaUrl || "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=600";
       const caption = item.content?.caption || "";
-      const likesCount = item.content?.likesCount || 128;
-      const commentsCount = postComments[item.id]?.length ?? item.content?.commentsCount ?? 0;
+      const likesCount = likeCounts[item.id] ?? item.content?.likesCount ?? 0;
+      const commentsCount =
+        commentCounts[item.id] ??
+        postComments[item.id]?.length ??
+        item.content?.commentsCount ??
+        0;
 
       let lastTap = 0;
       const handleDoubleTap = () => {
@@ -1888,7 +1931,7 @@ export default function ReelsScreen() {
 
           <View style={{ paddingHorizontal: 16 }}>
             <Text style={{ fontWeight: "700", fontSize: 13, color: "#111111", marginBottom: 4 }}>
-              {(likesCount + (isLiked ? 1 : 0)).toLocaleString()} likes
+              {likesCount.toLocaleString()} likes
             </Text>
             <Text style={{ fontSize: 13, color: "#111111", lineHeight: 18 }}>
               <Text style={{ fontWeight: "700" }}>{creatorUsername} </Text>

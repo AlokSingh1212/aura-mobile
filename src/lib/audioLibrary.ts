@@ -50,11 +50,17 @@ export async function fetchAudioCatalog(opts?: {
     const res = await fetch(`${API_HOST}/api/mobile/media/audio?${params.toString()}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.tracks) && data.tracks.length > 0) {
+      const playable = data.tracks.filter(
+        (t: AudioTrack) =>
+          typeof t.url === "string" &&
+          (t.url.includes("soundhelix.com") || t.url.endsWith(".mp3"))
+      );
+      const tracks = playable.length > 0 ? playable : data.tracks.slice(0, 10);
       if (!opts?.q && !opts?.category) {
-        cachedTracks = data.tracks;
+        cachedTracks = tracks;
         cacheTime = now;
       }
-      return { tracks: data.tracks, categories: data.categories ?? [] };
+      return { tracks, categories: data.categories ?? [] };
     }
   } catch {
     /* fallback below */
