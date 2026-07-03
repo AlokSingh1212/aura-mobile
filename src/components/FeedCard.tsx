@@ -18,6 +18,8 @@ import { PeekPreviewModal } from "./PeekPreviewModal";
 import { CaptionText } from "@/components/CaptionText";
 import { PostMetaRotator } from "@/components/post/PostMetaRotator";
 import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
+import { PostAuthorLine } from "@/components/post/PostAuthorLine";
+import { readPostMetadata } from "@/lib/postComposerTypes";
 
 const { height, width } = Dimensions.get("window");
 
@@ -244,8 +246,11 @@ export const FeedCard: React.FC<FeedCardProps> = ({
         )}
 
         <MediaPeopleOverlay
-          tags={item.tags || item.content?.tags}
-          collabs={item.collabs || item.content?.collabs}
+          photoTags={
+            item.photoTags ||
+            item.content?.photoTags ||
+            readPostMetadata({ tags: item.tags, collabs: item.collabs }).photoTags
+          }
         />
       </TouchableOpacity>
 
@@ -346,9 +351,18 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                 onPress={() => handleMaisonProfilePress(item)}
                 activeOpacity={0.85}
               >
-                <Text style={styles.creatorName} numberOfLines={1}>
-                  {(item.profile?.name || item.user?.name || "aura_curator").toLowerCase().replace(/\s+/g, "")}
-                </Text>
+                <PostAuthorLine
+                  authorName={item.profile?.name || item.user?.name || "aura_curator"}
+                  authorUsername={(
+                    item.profile?.username ||
+                    item.user?.name ||
+                    "aura_curator"
+                  )
+                    .toLowerCase()
+                    .replace(/\s+/g, "")}
+                  collab={item.collab || item.content?.collab}
+                  nameStyle={styles.creatorName}
+                />
                 {item.type === "SPONSORED_AD" || item.sponsoredMetadata ? (
                   <Text style={styles.adTag}>Ad</Text>
                 ) : (

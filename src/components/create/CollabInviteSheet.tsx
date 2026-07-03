@@ -9,22 +9,21 @@ import {
   ActivityIndicator,
   StyleSheet,
   Image,
-  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { searchProfiles } from "@/lib/postComposerSearch";
-import { MAX_PHOTO_TAGS, type PhotoTag } from "@/lib/postComposerTypes";
+import type { CollabPartner } from "@/lib/postComposerTypes";
 
-interface TagPeopleSheetProps {
+interface CollabInviteSheetProps {
   visible: boolean;
-  selected: PhotoTag[];
+  partner: CollabPartner | null;
   onClose: () => void;
-  onChange: (tags: PhotoTag[]) => void;
+  onSelect: (partner: CollabPartner | null) => void;
 }
 
-/** Tag people *in the photo* — not @mentions, not collab co-authors. */
-export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeopleSheetProps) {
+/** Invite one co-author (Instagram-style Collab post). */
+export function CollabInviteSheet({ visible, partner, onClose, onSelect }: CollabInviteSheetProps) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<
@@ -65,29 +64,15 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
     return () => clearTimeout(timer);
   }, [visible, query, runSearch]);
 
-  const addTag = (item: { id: string; title: string; subtitle: string; imageUri: string | null }) => {
-    if (selected.length >= MAX_PHOTO_TAGS) {
-      Alert.alert("Limit reached", `You can tag up to ${MAX_PHOTO_TAGS} people in the photo.`);
-      return;
-    }
-    const username = item.subtitle.replace(/^@/, "");
-    if (selected.some((p) => p.profileId === item.id)) {
-      Alert.alert("Already tagged", `${item.title} is already tagged in this photo.`);
-      return;
-    }
-    onChange([
-      ...selected,
-      {
-        profileId: item.id,
-        username,
-        name: item.title,
-        logo: item.imageUri,
-      },
-    ]);
-  };
-
-  const removeTag = (profileId: string) => {
-    onChange(selected.filter((p) => p.profileId !== profileId));
+  const pickPartner = (item: { id: string; title: string; subtitle: string; imageUri: string | null }) => {
+    onSelect({
+      profileId: item.id,
+      username: item.subtitle.replace(/^@/, ""),
+      name: item.title,
+      logo: item.imageUri,
+      status: "pending",
+    });
+    onClose();
   };
 
   return (
@@ -97,36 +82,30 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
           <TouchableOpacity onPress={onClose}>
             <Lucide name="close" size={26} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.title}>Tag people</Text>
+          <Text style={styles.title}>Invite collab</Text>
           <View style={{ width: 26 }} />
         </View>
 
         <Text style={styles.hint}>
-          People tagged here appear on your photo — not in the caption. Use @ in the caption to mention someone in text.
-        </Text>
-        <Text style={styles.limitHint}>
-          {selected.length}/{MAX_PHOTO_TAGS} on photo
+          A collab partner is a co-author — their name appears next to yours and the post can show on both profiles. This is not a photo tag or @mention.
         </Text>
 
-        {selected.length > 0 ? (
-          <View style={styles.chipRow}>
-            {selected.map((person) => (
-              <View key={person.profileId} style={styles.chip}>
-                {person.logo ? (
-                  <Image source={{ uri: person.logo }} style={styles.chipAvatar} />
-                ) : (
-                  <View style={styles.chipAvatarFallback}>
-                    <Text style={styles.chipInitial}>{person.name[0]?.toUpperCase()}</Text>
-                  </View>
-                )}
-                <Text style={styles.chipText} numberOfLines={1}>
-                  {person.name}
-                </Text>
-                <TouchableOpacity onPress={() => removeTag(person.profileId)} hitSlop={8}>
-                  <Lucide name="close-circle" size={16} color="rgba(255,255,255,0.55)" />
-                </TouchableOpacity>
+        {partner ? (
+          <View style={styles.selectedRow}>
+            {partner.logo ? (
+              <Image source={{ uri: partner.logo }} style={styles.thumb} />
+            ) : (
+              <View style={styles.iconCircle}>
+                <Text style={styles.iconLetter}>{partner.name[0]?.toUpperCase()}</Text>
               </View>
-            ))}
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{partner.name}</Text>
+              <Text style={styles.rowSub}>@{partner.username} · pending invite</Text>
+            </View>
+            <TouchableOpacity onPress={() => onSelect(null)}>
+              <Lucide name="close-circle" size={22} color="rgba(255,255,255,0.45)" />
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -134,13 +113,12 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
           <Lucide name="search-outline" size={20} color="rgba(255,255,255,0.4)" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search people in this photo…"
+            placeholder="Search co-author…"
             placeholderTextColor="rgba(255,255,255,0.35)"
             value={query}
             onChangeText={setQuery}
-            autoFocus
+            autoFocus={!partner}
             autoCapitalize="none"
-            autoCorrect={false}
           />
         </View>
 
@@ -153,11 +131,11 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               <Text style={styles.empty}>
-                {query.trim() ? "No profiles found" : "Search by name or username"}
+                {query.trim() ? "No profiles found" : "Search for one collab partner"}
               </Text>
             }
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.row} onPress={() => addTag(item)}>
+              <TouchableOpacity style={styles.row} onPress={() => pickPartner(item)}>
                 {item.imageUri ? (
                   <Image source={{ uri: item.imageUri }} style={styles.thumb} />
                 ) : (
@@ -166,14 +144,10 @@ export function TagPeopleSheet({ visible, selected, onClose, onChange }: TagPeop
                   </View>
                 )}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.rowTitle} numberOfLines={1}>
-                    {item.title}
-                  </Text>
-                  <Text style={styles.rowSub} numberOfLines={1}>
-                    {item.subtitle}
-                  </Text>
+                  <Text style={styles.rowTitle}>{item.title}</Text>
+                  <Text style={styles.rowSub}>{item.subtitle}</Text>
                 </View>
-                <Lucide name="person-add-outline" size={18} color="#ff9500" />
+                <Lucide name="people" size={18} color="#00f5ff" />
               </TouchableOpacity>
             )}
           />
@@ -198,42 +172,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     paddingHorizontal: 16,
-    marginBottom: 6,
-  },
-  limitHint: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: 12,
-    paddingHorizontal: 16,
-    marginBottom: 10,
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    paddingHorizontal: 16,
     marginBottom: 12,
   },
-  chip: {
+  selectedRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,149,0,0.15)",
-    maxWidth: "100%",
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(0,245,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(0,245,255,0.25)",
   },
-  chipAvatar: { width: 22, height: 22, borderRadius: 11 },
-  chipAvatarFallback: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  chipInitial: { color: "#fff", fontSize: 10, fontWeight: "700" },
-  chipText: { color: "#fff", fontSize: 13, fontWeight: "600", maxWidth: 120 },
   searchBox: {
     flexDirection: "row",
     alignItems: "center",

@@ -15,13 +15,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { SearchPickerSheet, type SearchPickerItem } from "@/components/create/SearchPickerSheet";
 import { TagPeopleSheet } from "@/components/create/TagPeopleSheet";
+import { CollabInviteSheet } from "@/components/create/CollabInviteSheet";
 import { LocationPickerSheet } from "@/components/create/LocationPickerSheet";
+import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
 import { AddProductSheet, type BrandStoreOption } from "@/components/profile/AddProductSheet";
-import { searchAudio } from "@/lib/postComposerSearch";
+import { searchAudio, searchProfiles } from "@/lib/postComposerSearch";
 import {
-  MAX_POST_PEOPLE,
-  splitPeopleTags,
-  type PostPersonTag,
+  insertMentionInCaption,
+  type PhotoTag,
+  type CollabPartner,
   type VerifiedLocation,
 } from "@/lib/postComposerTypes";
 
@@ -29,7 +31,8 @@ export interface NewPostDetails {
   caption: string;
   audio: string;
   audioTrackId: string;
-  people: PostPersonTag[];
+  photoTags: PhotoTag[];
+  collabPartner: CollabPartner | null;
   verifiedLocation: VerifiedLocation | null;
   aiLabel: boolean;
   productId: string;
@@ -43,7 +46,8 @@ export const defaultPostDetails = (): NewPostDetails => ({
   caption: "",
   audio: "",
   audioTrackId: "",
-  people: [],
+  photoTags: [],
+  collabPartner: null,
   verifiedLocation: null,
   aiLabel: false,
   productId: "",
@@ -83,14 +87,13 @@ export function NewPostDetailsForm({
   const [showMore, setShowMore] = useState(false);
   const [showAudioPicker, setShowAudioPicker] = useState(false);
   const [showTagSheet, setShowTagSheet] = useState(false);
+  const [showCollabSheet, setShowCollabSheet] = useState(false);
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [showLocationSheet, setShowLocationSheet] = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
 
   const previewUri = mediaUris[activeIndex] ?? mediaUris[0];
   const patch = (p: Partial<NewPostDetails>) => setDetails((d) => ({ ...d, ...p }));
-
-  const tagCount = details.people.filter((p) => p.kind === "tag").length;
-  const collabCount = details.people.filter((p) => p.kind === "collab").length;
 
   const audienceLabel =
     details.audience === "everyone"
@@ -110,18 +113,16 @@ export function NewPostDetailsForm({
     }));
   }, []);
 
-  const handlePeopleChange = (people: PostPersonTag[]) => {
-    patch({ people });
-  };
-
-  const removePerson = (profileId: string) => {
-    handlePeopleChange(details.people.filter((p) => p.profileId !== profileId));
-  };
-
-  const peopleSummary =
-    details.people.length > 0
-      ? `${tagCount ? `${tagCount} tag${tagCount > 1 ? "s" : ""}` : ""}${tagCount && collabCount ? " · " : ""}${collabCount ? `${collabCount} collab${collabCount > 1 ? "s" : ""}` : ""}`
-      : "";
+  const searchMentionItems = useCallback(async (q: string): Promise<SearchPickerItem[]> => {
+    const profiles = await searchProfiles(q);
+    return profiles.map((p) => ({
+      id: p.id,
+      title: p.name,
+      subtitle: `@${p.username}`,
+      imageUri: p.logo,
+      icon: "at-outline" as const,
+    }));
+  }, []);
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
@@ -146,22 +147,33 @@ export function NewPostDetailsForm({
 
         <View style={styles.captionRow}>
           {previewUri ? (
-            <TouchableOpacity onPress={onEditPhoto} disabled={!onEditPhoto}>
+            <TouchableOpacity onPress={onEditPhoto} disabled={!onEditPhoto} style={styles.thumbWrap}>
               <Image source={{ uri: previewUri }} style={styles.thumb} />
+              <MediaPeopleOverlay photoTags={details.photoTags} bottom={6} left={6} />
             </TouchableOpacity>
           ) : null}
-          <TextInput
-            style={styles.captionInput}
-            placeholder="Add a caption..."
-            placeholderTextColor="rgba(255,255,255,0.35)"
-            value={details.caption}
-            onChangeText={(caption) => patch({ caption })}
-            multiline
-            maxLength={2200}
-          />
+          <View style={{ flex: 1 }}>
+            <TextInput
+              style={styles.captionInput}
+              placeholder="Write a caption… #hashtags and @mentions go here"
+              placeholderTextColor="rgba(255,255,255,0.35)"
+              value={details.caption}
+              onChangeText={(caption) => patch({ caption })}
+              multiline
+              maxLength={2200}
+            />
+            <TouchableOpacity style={styles.mentionBtn} onPress={() => setShowMentionPicker(true)}>
+              <Lucide name="at-outline" size={16} color="#ff9500" />
+              <Text style={styles.mentionBtnText}>Add @mention</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.chipsRow}>
+          <TouchableOpacity style={styles.chip} onPress={() => setShowMentionPicker(true)}>
+            <Lucide name="at-outline" size={17} color="#ff9500" />
+            <Text style={[styles.chipText, { color: "#ff9500" }]}>@ Mention</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.chip}
             onPress={() =>
@@ -210,31 +222,35 @@ export function NewPostDetailsForm({
 
         <TouchableOpacity style={styles.optionRow} onPress={() => setShowTagSheet(true)}>
           <View style={styles.optionLeft}>
-            <Lucide name="person-outline" size={23} color={details.people.length ? "#ff9500" : "#fff"} />
-            <Text style={[styles.optionText, details.people.length > 0 && { color: "#ff9500" }]}>
-              {peopleSummary || "Tag people"}
+            <Lucide name="person-outline" size={23} color={details.photoTags.length ? "#ff9500" : "#fff"} />
+            <Text style={[styles.optionText, details.photoTags.length > 0 && { color: "#ff9500" }]}>
+              {details.photoTags.length
+                ? `${details.photoTags.length} tagged in photo`
+                : "Tag people in photo"}
             </Text>
           </View>
           <Lucide name="chevron-forward" size={21} color="rgba(255,255,255,0.3)" />
         </TouchableOpacity>
 
-        {details.people.length > 0 ? (
-          <View style={styles.inlineChips}>
-            {details.people.map((person) => (
-              <View
-                key={person.profileId}
-                style={[styles.personChip, person.kind === "collab" && styles.personChipCollab]}
-              >
-                <Text style={styles.personChipText} numberOfLines={1}>
-                  {person.kind === "collab" ? "Collab · " : ""}@{person.username}
-                </Text>
-                <TouchableOpacity onPress={() => removePerson(person.profileId)} hitSlop={6}>
-                  <Lucide name="close" size={14} color="rgba(255,255,255,0.55)" />
-                </TouchableOpacity>
-              </View>
-            ))}
+        <View style={styles.divider} />
+
+        <TouchableOpacity style={styles.optionRow} onPress={() => setShowCollabSheet(true)}>
+          <View style={styles.optionLeft}>
+            <Lucide name="people-outline" size={23} color={details.collabPartner ? "#00f5ff" : "#fff"} />
+            <Text style={[styles.optionText, details.collabPartner && styles.optionTextActive]}>
+              {details.collabPartner
+                ? `Collab with @${details.collabPartner.username}`
+                : "Invite collab"}
+            </Text>
           </View>
-        ) : null}
+          {details.collabPartner ? (
+            <TouchableOpacity onPress={() => patch({ collabPartner: null })} hitSlop={8}>
+              <Lucide name="close-circle" size={20} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
+          ) : (
+            <Lucide name="chevron-forward" size={21} color="rgba(255,255,255,0.3)" />
+          )}
+        </TouchableOpacity>
 
         <View style={styles.divider} />
 
@@ -425,9 +441,29 @@ export function NewPostDetailsForm({
 
       <TagPeopleSheet
         visible={showTagSheet}
-        selected={details.people}
+        selected={details.photoTags}
         onClose={() => setShowTagSheet(false)}
-        onChange={handlePeopleChange}
+        onChange={(photoTags) => patch({ photoTags })}
+      />
+
+      <CollabInviteSheet
+        visible={showCollabSheet}
+        partner={details.collabPartner}
+        onClose={() => setShowCollabSheet(false)}
+        onSelect={(collabPartner) => patch({ collabPartner })}
+      />
+
+      <SearchPickerSheet
+        visible={showMentionPicker}
+        title="Add @mention"
+        placeholder="Search username to mention in caption…"
+        minQueryLength={1}
+        onClose={() => setShowMentionPicker(false)}
+        onSelect={(item) => {
+          const username = item.subtitle?.replace(/^@/, "") || item.title;
+          patch({ caption: insertMentionInCaption(details.caption, username) });
+        }}
+        search={searchMentionItems}
       />
 
       <LocationPickerSheet
@@ -481,9 +517,17 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     gap: 14,
   },
+  thumbWrap: { position: "relative" },
   thumb: { width: 64, height: 64, borderRadius: 4, backgroundColor: "#111" },
+  mentionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    alignSelf: "flex-start",
+  },
+  mentionBtnText: { color: "#ff9500", fontSize: 13, fontWeight: "600" },
   captionInput: {
-    flex: 1,
     color: "#fff",
     fontSize: 16,
     lineHeight: 22,

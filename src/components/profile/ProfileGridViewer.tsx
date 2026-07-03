@@ -24,6 +24,7 @@ import { PostCommentsSheet } from "@/components/post/PostCommentsSheet";
 import { CaptionText } from "@/components/CaptionText";
 import { PostMetaRotator } from "@/components/post/PostMetaRotator";
 import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
+import { PostAuthorLine, PostAuthorAvatars } from "@/components/post/PostAuthorLine";
 import { PostOptionsSheet } from "@/components/post/PostOptionsSheet";
 import { PostShareSheet } from "@/components/post/PostShareSheet";
 
@@ -91,15 +92,18 @@ function ProfilePostPage({
     <View style={styles.postPage}>
       <View style={styles.postHeader}>
         <View style={styles.postHeaderLeft}>
-          {profile.logo ? (
-            <Image source={{ uri: profile.logo }} style={styles.postHeaderAvatar} />
-          ) : (
-            <View style={[styles.postHeaderAvatar, styles.postHeaderAvatarFallback]}>
-              <Text style={styles.postHeaderAvatarText}>{profile.name[0]?.toUpperCase() || "A"}</Text>
-            </View>
-          )}
+          <PostAuthorAvatars
+            authorLogo={profile.logo}
+            authorInitial={profile.name[0]?.toUpperCase() || "A"}
+            collab={post.collab}
+          />
           <View style={{ flex: 1 }}>
-            <Text style={styles.postHeaderName}>{profile.name}</Text>
+            <PostAuthorLine
+              authorName={profile.name}
+              authorUsername={profile.username}
+              collab={post.collab}
+              nameStyle={styles.postHeaderName}
+            />
             <PostMetaRotator
               location={post.location}
               audio={post.music}
@@ -128,7 +132,7 @@ function ProfilePostPage({
               <Image source={{ uri: item }} style={styles.postImage} contentFit="cover" />
             )}
           />
-          <MediaPeopleOverlay tags={post.tags} collabs={post.collabs} />
+          <MediaPeopleOverlay photoTags={post.photoTags} bottom={10} left={10} />
           <View style={styles.carouselDots}>
             {mediaUrls.map((_, i) => (
               <View
@@ -141,7 +145,7 @@ function ProfilePostPage({
       ) : (
         <View style={styles.mediaWrap}>
           <Image source={{ uri: mediaUrls[0] }} style={styles.postImage} contentFit="cover" />
-          <MediaPeopleOverlay tags={post.tags} collabs={post.collabs} />
+          <MediaPeopleOverlay photoTags={post.photoTags} bottom={10} left={10} />
         </View>
       )}
 

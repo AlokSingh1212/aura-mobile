@@ -24,8 +24,14 @@ export interface PublishOptions {
   latitude?: number;
   longitude?: number;
   aiLabel?: boolean;
-  tags?: { profileId: string; username: string; name: string }[];
-  collabs?: { profileId: string; username: string; name: string }[];
+  photoTags?: { profileId: string; username: string; name: string; logo?: string | null }[];
+  collab?: {
+    profileId: string;
+    username: string;
+    name: string;
+    logo?: string | null;
+    status?: string;
+  } | null;
   music?: string;
   alsoPostToGrid?: boolean;
   audioTrack?: ReelAudioTrack | null;
@@ -79,8 +85,8 @@ async function postToFeedApi(
       latitude: opts.latitude,
       longitude: opts.longitude,
       aiLabel: !!opts.aiLabel,
-      tags: opts.tags || [],
-      collabs: opts.collabs || [],
+      photoTags: opts.photoTags || [],
+      collab: opts.collab || null,
       music: opts.storyOnly ? "STORY_ONLY" : opts.music || undefined,
       mediaUrls: carousel,
     }),

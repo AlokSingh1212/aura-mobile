@@ -23,7 +23,6 @@ import {
 } from "@/components/create/NewPostDetailsForm";
 import { ImageEditor } from "@/components/ImageEditor";
 import type { BrandStoreOption } from "@/components/profile/AddProductSheet";
-import { splitPeopleTags } from "@/lib/postComposerTypes";
 
 type Step = "pick" | "compose";
 
@@ -74,7 +73,7 @@ export default function PostComposerScreen() {
       setStep("compose");
 
       const draft = createEmptyDraft("post");
-      draft.step = "compose";
+      draft.step = "preview";
       await saveDraft(draft);
     } catch (e) {
       Alert.alert("Photo error", e instanceof Error ? e.message : "Could not process photos.");
@@ -120,7 +119,6 @@ export default function PostComposerScreen() {
     }
 
     const caption = buildCaption(details) || `✨ ${profileName || "Your"} on AURA`;
-    const { tags, collabs } = splitPeopleTags(details.people);
 
     setPublishing(true);
     resetExportJob();
@@ -137,8 +135,8 @@ export default function PostComposerScreen() {
         latitude: details.verifiedLocation?.lat,
         longitude: details.verifiedLocation?.lon,
         aiLabel: details.aiLabel,
-        tags,
-        collabs,
+        photoTags: details.photoTags,
+        collab: details.collabPartner,
         music: details.audio || undefined,
         mediaUrls: uploaded.length > 1 ? uploaded : undefined,
       });

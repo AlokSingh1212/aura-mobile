@@ -1,5 +1,6 @@
 import { API_HOST } from "@/constants/api";
 import { authHeaders } from "@/lib/apiClient";
+import type { CollabPartner, PhotoTag } from "@/lib/postComposerTypes";
 
 export interface ProfilePost {
   id: string;
@@ -22,8 +23,8 @@ export interface ProfilePost {
   longitude?: number | null;
   music?: string | null;
   aiLabel?: boolean;
-  tags?: { profileId: string; username: string; name: string; kind?: string }[];
-  collabs?: { profileId: string; username: string; name: string; kind?: string }[];
+  photoTags?: PhotoTag[];
+  collab?: CollabPartner | null;
 }
 
 export interface NetworkProfile {
@@ -107,8 +108,8 @@ export async function fetchProfilePosts(opts: {
         longitude?: number | null;
         music?: string | null;
         aiLabel?: boolean;
-        tags?: ProfilePost["tags"];
-        collabs?: ProfilePost["collabs"];
+        photoTags?: ProfilePost["photoTags"];
+        collab?: ProfilePost["collab"];
       }) => ({
         id: p.id,
         url: p.url,
@@ -124,8 +125,8 @@ export async function fetchProfilePosts(opts: {
         longitude: p.longitude ?? null,
         music: p.music ?? null,
         aiLabel: !!p.aiLabel,
-        tags: p.tags || [],
-        collabs: p.collabs || [],
+        photoTags: p.photoTags || [],
+        collab: p.collab ?? null,
       })
     );
   }

@@ -1,51 +1,32 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { Image } from "expo-image";
-
-export interface MediaPerson {
-  profileId: string;
-  username: string;
-  name: string;
-  logo?: string | null;
-  kind?: "tag" | "collab";
-}
+import type { PhotoTag } from "@/lib/postComposerTypes";
 
 interface MediaPeopleOverlayProps {
-  tags?: MediaPerson[];
-  collabs?: MediaPerson[];
+  photoTags?: PhotoTag[];
   onPress?: () => void;
   bottom?: number;
   left?: number;
 }
 
+/** Photo tags only — shown on media. Not collab, not @mentions. */
 export function MediaPeopleOverlay({
-  tags = [],
-  collabs = [],
-  onPress,
+  photoTags = [],
   bottom = 14,
   left = 14,
 }: MediaPeopleOverlayProps) {
-  const people: MediaPerson[] = [
-    ...tags.map((p) => ({ ...p, kind: "tag" as const })),
-    ...collabs.map((p) => ({ ...p, kind: "collab" as const })),
-  ];
+  if (!photoTags.length) return null;
 
-  if (!people.length) return null;
+  const visible = photoTags.slice(0, 3);
+  const extra = photoTags.length - visible.length;
 
-  const visible = people.slice(0, 3);
-  const extra = people.length - visible.length;
-
-  const content = (
-    <View style={[styles.wrap, { bottom, left }]}>
+  return (
+    <View style={[styles.wrap, { bottom, left }]} pointerEvents="none">
       {visible.map((person, i) => (
         <View
-          key={`${person.kind}_${person.profileId}`}
-          style={[
-            styles.bubble,
-            person.kind === "collab" ? styles.bubbleCollab : styles.bubbleTag,
-            i > 0 && { marginLeft: -11 },
-            { zIndex: 10 - i },
-          ]}
+          key={person.profileId}
+          style={[styles.bubble, i > 0 && { marginLeft: -11 }, { zIndex: 10 - i }]}
         >
           {person.logo ? (
             <Image source={{ uri: person.logo }} style={styles.avatar} />
@@ -61,16 +42,6 @@ export function MediaPeopleOverlay({
       ) : null}
     </View>
   );
-
-  if (onPress) {
-    return (
-      <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
-        {content}
-      </TouchableOpacity>
-    );
-  }
-
-  return content;
 }
 
 const styles = StyleSheet.create({
@@ -85,16 +56,11 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 16,
     borderWidth: 2,
+    borderColor: "#ff9500",
     backgroundColor: "#1a1a1a",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-  },
-  bubbleTag: {
-    borderColor: "#ff9500",
-  },
-  bubbleCollab: {
-    borderColor: "#00f5ff",
   },
   bubbleMore: {
     borderColor: "rgba(255,255,255,0.35)",

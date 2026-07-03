@@ -1,11 +1,20 @@
-import { API_HOST } from "@/constants/api";
 import type { LocationResult } from "@/lib/postComposerSearch";
 
-export interface PostPersonTag {
+/** Person tagged *in the photo/video* — overlay on media, not caption. */
+export interface PhotoTag {
   profileId: string;
   username: string;
   name: string;
-  kind: "tag" | "collab";
+  logo?: string | null;
+}
+
+/** Co-author invite — header credit, dual profile (Instagram Collab). */
+export interface CollabPartner {
+  profileId: string;
+  username: string;
+  name: string;
+  logo?: string | null;
+  status?: "pending" | "accepted" | "declined";
 }
 
 export interface VerifiedLocation {
@@ -16,7 +25,11 @@ export interface VerifiedLocation {
   lon: number;
 }
 
+export const MAX_PHOTO_TAGS = 5;
+export const MAX_COLLAB_PARTNERS = 1;
+
 export async function reverseGeocodeLocation(lat: number, lon: number): Promise<VerifiedLocation | null> {
+  const { API_HOST } = await import("@/constants/api");
   const res = await fetch(
     `${API_HOST}/api/mobile/locations/reverse?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`
   );
@@ -35,11 +48,47 @@ export function locationResultToVerified(loc: LocationResult): VerifiedLocation 
   };
 }
 
-export const MAX_POST_PEOPLE = 5;
+/** Parse #hashtags and @mentions from caption (text-only; separate from photo tags). */
+export function parseCaptionEntities(caption: string) {
+  const hashtags: string[] = [];
+  const mentions: string[] = [];
+  const hashRe = /#([\w\u00C0-\u024F\u0900-\u097F]+)/gi;
+  const mentionRe = /@([\w.]+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = hashRe.exec(caption)) !== null) hashtags.push(m[1].toLowerCase());
+  while ((m = mentionRe.exec(caption)) !== null) mentions.push(m[1].toLowerCase());
+  return { hashtags, mentions };
+}
 
-export function splitPeopleTags(people: PostPersonTag[]) {
-  return {
-    tags: people.filter((p) => p.kind === "tag"),
-    collabs: people.filter((p) => p.kind === "collab"),
+export function insertMentionInCaption(caption: string, username: string): string {
+  const mention = `@${username.replace(/^@/, "")}`;
+  if (caption.includes(mention)) return caption;
+  const trimmed = caption.trimEnd();
+  return trimmed ? `${trimmed} ${mention}` : mention;
+}
+
+/** Normalize legacy metadata from older posts. */
+export function readPostMetadata(meta: unknown): {
+  photoTags: PhotoTag[];
+  collab: CollabPartner | null;
+} {
+  if (!meta || typeof meta !== "object") {
+    return { photoTags: [], collab: null };
+  }
+  const m = meta as {
+    photoTags?: PhotoTag[];
+    tags?: PhotoTag[];
+    collab?: CollabPartner | null;
+    collabs?: CollabPartner[];
   };
+  const photoTags = Array.isArray(m.photoTags)
+    ? m.photoTags
+    : Array.isArray(m.tags)
+      ? m.tags.map((t) => ({ ...t, kind: undefined }))
+      : [];
+  let collab: CollabPartner | null = m.collab ?? null;
+  if (!collab && Array.isArray(m.collabs) && m.collabs[0]) {
+    collab = m.collabs[0];
+  }
+  return { photoTags, collab };
 }
