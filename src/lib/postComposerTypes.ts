@@ -6,6 +6,11 @@ export interface PhotoTag {
   username: string;
   name: string;
   logo?: string | null;
+  /** Position on media (0–100), Instagram-style bubble anchor. */
+  x?: number;
+  y?: number;
+  /** Links tag to detected face slot from scan. */
+  faceId?: string;
 }
 
 /** Co-author invite — header credit, dual profile (Instagram Collab). */

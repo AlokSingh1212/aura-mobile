@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { SearchPickerSheet, type SearchPickerItem } from "@/components/create/SearchPickerSheet";
 import { TagPeopleSheet } from "@/components/create/TagPeopleSheet";
+import { FaceTagEditor } from "@/components/create/FaceTagEditor";
 import { CaptionComposerInput } from "@/components/create/CaptionComposerInput";
 import { LocationPickerSheet } from "@/components/create/LocationPickerSheet";
 import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
@@ -98,6 +99,7 @@ export function NewPostDetailsForm({
   const [showMore, setShowMore] = useState(false);
   const [showAudioPicker, setShowAudioPicker] = useState(false);
   const [showTagSheet, setShowTagSheet] = useState(false);
+  const [showFaceTagEditor, setShowFaceTagEditor] = useState(false);
   const [showLocationSheet, setShowLocationSheet] = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
 
@@ -169,10 +171,10 @@ export function NewPostDetailsForm({
                   aspectRatio={1}
                 />
               ) : (
-                <>
+                <TouchableOpacity activeOpacity={0.95} onPress={() => setShowFaceTagEditor(true)}>
                   <Image source={{ uri: previewUri }} style={styles.thumb} />
-                  <MediaPeopleOverlay photoTags={details.photoTags} bottom={6} left={6} />
-                </>
+                  <MediaPeopleOverlay photoTags={details.photoTags} />
+                </TouchableOpacity>
               )}
             </View>
           ) : null}
@@ -233,16 +235,29 @@ export function NewPostDetailsForm({
 
         <View style={styles.divider} />
 
-        <TouchableOpacity style={styles.optionRow} onPress={() => setShowTagSheet(true)}>
+        <TouchableOpacity style={styles.optionRow} onPress={() => setShowFaceTagEditor(true)}>
           <View style={styles.optionLeft}>
             <Lucide
               name="people-outline"
               size={23}
               color={tagCollabActive ? "#00f5ff" : "#fff"}
             />
-            <Text style={[styles.optionText, tagCollabActive && styles.optionTextActive]}>
-              {tagCollabLabel}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.optionText, tagCollabActive && styles.optionTextActive]}>
+                {tagCollabLabel}
+              </Text>
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  setShowTagSheet(true);
+                }}
+                hitSlop={8}
+              >
+                <Text style={styles.collabLink}>
+                  {details.collabPartner ? "Edit collab partner" : "Invite collab partner"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Lucide name="chevron-forward" size={21} color="rgba(255,255,255,0.3)" />
         </TouchableOpacity>
@@ -412,6 +427,14 @@ export function NewPostDetailsForm({
         search={searchAudioItems}
       />
 
+      <FaceTagEditor
+        visible={showFaceTagEditor}
+        imageUri={previewUri || ""}
+        photoTags={details.photoTags}
+        onClose={() => setShowFaceTagEditor(false)}
+        onPhotoTagsChange={(photoTags) => patch({ photoTags })}
+      />
+
       <TagPeopleSheet
         visible={showTagSheet}
         photoTags={details.photoTags}
@@ -525,6 +548,7 @@ const styles = StyleSheet.create({
   optionRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   optionText: { color: "#fff", fontSize: 16, flexShrink: 1 },
   optionTextActive: { color: "#00f5ff" },
+  collabLink: { color: "rgba(255,255,255,0.45)", fontSize: 12, marginTop: 2 },
   optionSub: { color: "rgba(255,255,255,0.4)", fontSize: 13, marginTop: 3, lineHeight: 18 },
   optionValue: { color: "rgba(255,255,255,0.45)", fontSize: 15 },
   inlineChips: {
