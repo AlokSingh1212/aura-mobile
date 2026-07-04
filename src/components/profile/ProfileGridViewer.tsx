@@ -24,6 +24,11 @@ import { PostCommentsSheet } from "@/components/post/PostCommentsSheet";
 import { CaptionText } from "@/components/CaptionText";
 import { PostMetaRotator } from "@/components/post/PostMetaRotator";
 import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
+import {
+  ProductThumbnailStrip,
+  ShopNowBar,
+  resolvePostProducts,
+} from "@/components/post/PostProductOverlay";
 import { PostAuthorLine, PostAuthorAvatars } from "@/components/post/PostAuthorLine";
 import { PostOptionsSheet } from "@/components/post/PostOptionsSheet";
 import { PostShareSheet } from "@/components/post/PostShareSheet";
@@ -83,7 +88,10 @@ function ProfilePostPage({
   const linkedProduct =
     post.product ||
     (post.artifactId ? storeProducts.find((p) => p.id === post.artifactId) : null);
-  const productTitle = linkedProduct?.title || linkedProduct?.name || "Product";
+  const postProducts = resolvePostProducts(
+    { ...post, product: linkedProduct, artifactId: post.artifactId },
+    storeProducts
+  );
 
   const mediaUrls =
     post.mediaUrls && post.mediaUrls.length > 0 ? post.mediaUrls : [displayUrl];
@@ -132,7 +140,8 @@ function ProfilePostPage({
               <Image source={{ uri: item }} style={styles.postImage} contentFit="cover" />
             )}
           />
-          <MediaPeopleOverlay photoTags={post.photoTags} bottom={10} left={10} />
+          <MediaPeopleOverlay photoTags={post.photoTags} bottom={postProducts.length ? 58 : 10} left={10} />
+          <ProductThumbnailStrip products={postProducts} bottom={8} />
           <View style={styles.carouselDots}>
             {mediaUrls.map((_, i) => (
               <View
@@ -145,7 +154,8 @@ function ProfilePostPage({
       ) : (
         <View style={styles.mediaWrap}>
           <Image source={{ uri: mediaUrls[0] }} style={styles.postImage} contentFit="cover" />
-          <MediaPeopleOverlay photoTags={post.photoTags} bottom={10} left={10} />
+          <MediaPeopleOverlay photoTags={post.photoTags} bottom={postProducts.length ? 58 : 10} left={10} />
+          <ProductThumbnailStrip products={postProducts} bottom={8} />
         </View>
       )}
 
@@ -166,6 +176,8 @@ function ProfilePostPage({
         </TouchableOpacity>
       </View>
 
+      <ShopNowBar products={postProducts} style={styles.shopNowInPost} />
+
       <Text style={styles.postLikes}>{formatCompactNumber(likesCount)} likes</Text>
       {commentsCount > 0 && (
         <TouchableOpacity onPress={onComment}>
@@ -177,26 +189,6 @@ function ProfilePostPage({
           <Text style={styles.postCaptionUser}>{profile.username} </Text>
           <CaptionText caption={post.caption} />
         </Text>
-      ) : null}
-
-      {linkedProduct ? (
-        <TouchableOpacity
-          style={styles.viewProductBtn}
-          onPress={() => {
-            triggerHaptic("medium");
-            router.push(`/product/${linkedProduct.id}` as any);
-          }}
-        >
-          <Lucide name="bag-handle-outline" size={18} color="#00f5ff" />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.viewProductLabel}>View product</Text>
-            <Text style={styles.viewProductTitle} numberOfLines={1}>
-              {productTitle}
-              {linkedProduct.price ? ` · ${formatPrice(linkedProduct.price)}` : ""}
-            </Text>
-          </View>
-          <Lucide name="chevron-forward" size={18} color="rgba(255,255,255,0.35)" />
-        </TouchableOpacity>
       ) : null}
     </View>
   );
@@ -683,30 +675,10 @@ const styles = StyleSheet.create({
   postCaptionUser: {
     fontWeight: "700",
   },
-  viewProductBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+  shopNowInPost: {
     marginHorizontal: 14,
-    marginBottom: 14,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(0,245,255,0.25)",
-  },
-  viewProductLabel: {
-    color: "#00f5ff",
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  viewProductTitle: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-    marginTop: 2,
+    marginTop: 4,
+    marginBottom: 6,
   },
   aiLabelRow: {
     flexDirection: "row",

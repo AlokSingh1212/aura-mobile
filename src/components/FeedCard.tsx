@@ -20,6 +20,11 @@ import { PostMetaRotator } from "@/components/post/PostMetaRotator";
 import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
 import { PostAuthorLine } from "@/components/post/PostAuthorLine";
 import { readPostMetadata } from "@/lib/postComposerTypes";
+import {
+  ProductThumbnailStrip,
+  ShopNowBar,
+  resolvePostProducts,
+} from "@/components/post/PostProductOverlay";
 
 const { height, width } = Dimensions.get("window");
 
@@ -73,6 +78,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   const displayLikes = Math.max(0, baseLikes);
   const displayComments =
     commentsCount ?? item.commentsCount ?? item.content?.commentsCount ?? 0;
+  const postProducts = resolvePostProducts(item, products);
   const [peekVisible, setPeekVisible] = useState(false);
 
   // ── Double-Tap Heart Animation ──────────────────────────
@@ -251,7 +257,9 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             item.content?.photoTags ||
             readPostMetadata({ tags: item.tags, collabs: item.collabs }).photoTags
           }
+          bottom={postProducts.length ? 58 : 10}
         />
+        <ProductThumbnailStrip products={postProducts} bottom={8} />
       </TouchableOpacity>
 
       {/* DYNAMIC SHADER OVERLAYS SYNCED FROM THE CAMERA STUDIO */}
@@ -272,37 +280,9 @@ export const FeedCard: React.FC<FeedCardProps> = ({
 
       <View style={styles.gradientOverlay} />
 
-      {/* Floating Shoppable Card */}
-      {(() => {
-        const associatedProduct =
-          item.product || item.artifact || products.find((p: any) => p.id === item.artifactId);
-        if (!associatedProduct) return null;
-        const productTitle = associatedProduct.title || associatedProduct.name || "Product";
-        const productPrice = associatedProduct.price ?? 0;
-        return (
-          <TouchableOpacity
-            style={styles.shoppableCard}
-            activeOpacity={0.9}
-            onPress={() => {
-              triggerHaptic("medium");
-              router.push(`/product/${associatedProduct.id}` as any);
-            }}
-          >
-            <View style={styles.shopIconContainer}>
-              <Lucide name="sparkles" size={15} color="#000" />
-            </View>
-            <View style={styles.shopInfo}>
-              <Text style={styles.shopSub}>Shop The Look</Text>
-              <Text style={styles.shopTitle} numberOfLines={1}>{productTitle}</Text>
-              <Text style={styles.shopPrice}>{formatPrice(productPrice)}</Text>
-            </View>
-            <Lucide name="chevron-forward" size={17} color="#00f5ff" />
-          </TouchableOpacity>
-        );
-      })()}
-
       {/* Creator Metadata Overlay (Bottom Left) */}
       <View style={[styles.metaContainer, { bottom: floatingBottomOffset }]}>
+        <ShopNowBar products={postProducts} />
         <View style={styles.creatorRow}>
           <TouchableOpacity 
             onPress={() => handleMaisonProfilePress(item)} 
@@ -495,47 +475,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     top: "38%",
     zIndex: 50,
-  },
-  shoppableCard: {
-    position: "absolute",
-    top: 20,
-    left: 16,
-    right: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.65)",
-    borderWidth: 1,
-    borderColor: "rgba(0,245,255,0.3)",
-    padding: 10,
-    borderRadius: 16,
-    zIndex: 10,
-  },
-  shopIconContainer: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#00f5ff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  shopInfo: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  shopSub: {
-    color: "#00f5ff",
-    fontSize: 10,
-    fontWeight: "bold",
-    textTransform: "uppercase",
-  },
-  shopTitle: {
-    color: "#fff",
-    fontSize: 13.5,
-    fontWeight: "bold",
-  },
-  shopPrice: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 12.5,
   },
   metaContainer: {
     position: "absolute",

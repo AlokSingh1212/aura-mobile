@@ -1,10 +1,11 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { Image } from "expo-image";
 import { FILTER_PRESETS, type PostEditState, type TextLayer } from "@/lib/postEditState";
 import { buildAdjustmentOverlays } from "@/lib/imageAdjustments";
 import type { PhotoTag } from "@/lib/postComposerTypes";
 import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
+import { ProductThumbnailStrip } from "@/components/post/PostProductOverlay";
 
 interface PostMediaPreviewProps {
   uri: string;
@@ -46,15 +47,7 @@ export function PostMediaPreview({
 
       <MediaPeopleOverlay photoTags={photoTags} bottom={edit.productStickers.length ? 56 : 10} left={10} />
 
-      {edit.productStickers.length > 0 ? (
-        <View style={styles.productStrip}>
-          {edit.productStickers.slice(0, 4).map((p) => (
-            <View key={p.productId} style={styles.productBox}>
-              <Image source={{ uri: p.image }} style={styles.productImg} contentFit="cover" />
-            </View>
-          ))}
-        </View>
-      ) : null}
+      <ProductThumbnailStrip products={edit.productStickers} bottom={6} />
 
       {edit.audioLabel ? (
         <View style={styles.audioPill}>
@@ -96,26 +89,6 @@ const styles = StyleSheet.create({
     flex: 1,
     aspectRatio: undefined,
   },
-  productStrip: {
-    position: "absolute",
-    bottom: 8,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-  },
-  productBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    overflow: "hidden",
-    borderWidth: 2,
-    borderColor: "#fff",
-    backgroundColor: "#111",
-  },
-  productImg: { width: "100%", height: "100%" },
   audioPill: {
     position: "absolute",
     top: 12,

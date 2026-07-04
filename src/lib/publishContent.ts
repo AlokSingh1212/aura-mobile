@@ -25,6 +25,7 @@ export interface PublishOptions {
   longitude?: number;
   aiLabel?: boolean;
   photoTags?: { profileId: string; username: string; name: string; logo?: string | null }[];
+  productStickers?: { productId: string; title: string; image: string; price?: number }[];
   collab?: {
     profileId: string;
     username: string;
@@ -87,6 +88,7 @@ async function postToFeedApi(
       aiLabel: !!opts.aiLabel,
       photoTags: opts.photoTags || [],
       collab: opts.collab || null,
+      productStickers: opts.productStickers || [],
       music: opts.storyOnly ? "STORY_ONLY" : opts.music || undefined,
       mediaUrls: carousel,
     }),

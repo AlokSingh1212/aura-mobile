@@ -25,6 +25,7 @@ export interface ProfilePost {
   aiLabel?: boolean;
   photoTags?: PhotoTag[];
   collab?: CollabPartner | null;
+  productStickers?: { productId: string; title: string; image: string; price?: number }[];
 }
 
 export interface NetworkProfile {
@@ -110,6 +111,7 @@ export async function fetchProfilePosts(opts: {
         aiLabel?: boolean;
         photoTags?: ProfilePost["photoTags"];
         collab?: ProfilePost["collab"];
+        productStickers?: ProfilePost["productStickers"];
       }) => ({
         id: p.id,
         url: p.url,
@@ -127,6 +129,7 @@ export async function fetchProfilePosts(opts: {
         aiLabel: !!p.aiLabel,
         photoTags: p.photoTags || [],
         collab: p.collab ?? null,
+        productStickers: p.productStickers || [],
       })
     );
   }

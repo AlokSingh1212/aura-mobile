@@ -104,6 +104,7 @@ export default function PostComposerScreen() {
         aiLabel: details.aiLabel,
         photoTags: details.photoTags,
         collab: details.collabPartner,
+        productStickers: editState.productStickers,
         music: editState.audioLabel || details.audio || undefined,
         filterId: editState.filterId !== "normal" ? editState.filterId : undefined,
         mediaUrls: uploaded.length > 1 ? uploaded : undefined,
