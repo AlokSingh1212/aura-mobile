@@ -43,6 +43,7 @@ import { formatCompactNumber } from "@/constants/format";
 import { CameraStudio } from "@/components/CameraStudio";
 import { ChatDrawer } from "@/components/ChatDrawer";
 import { FeedCard } from "@/components/FeedCard";
+import { HomeFeedPostCard } from "@/components/HomeFeedPostCard";
 import { ImageEditor, FILTER_PRESETS } from "@/components/ImageEditor";
 import { PostCard } from "@/components/PostCard";
 import { LiveShowroom } from "@/components/LiveShowroom";
@@ -55,7 +56,11 @@ import { InAppBrowserModal } from "@/components/InAppBrowserModal";
 import { ExploreProductsSheet } from "@/components/ExploreProductsSheet";
 import { LeadGenSheet } from "@/components/LeadGenSheet";
 import { PostShareSheet } from "@/components/post/PostShareSheet";
+import { PostReshareSheet } from "@/components/post/PostReshareSheet";
 import { CaptionText } from "@/components/CaptionText";
+import { buildPostShareUrl } from "@/lib/postShare";
+import { resolveFeedPostMeta } from "@/lib/postNavigation";
+import { resolveReshareSourceId } from "@/lib/postRepost";
 
 const MOCK_PRODUCTS = [
   {
@@ -519,7 +524,6 @@ export default function ReelsScreen() {
     fetchSearchResults,
     logEngagement,
     toggleFeedSave,
-    logFeedShare,
     logFeedCartAdd,
     cart,
     formatPrice,
@@ -697,6 +701,8 @@ export default function ReelsScreen() {
   const [likedReels, setLikedReels] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const [shareCounts, setShareCounts] = useState<Record<string, number>>({});
+  const [repostCounts, setRepostCounts] = useState<Record<string, number>>({});
   const [isSeller, setIsSeller] = useState(false);
 
   // 🔔 ACTIVITY DRAWER & NOTIFICATIONS REAL-TIME POLLING
@@ -884,6 +890,8 @@ export default function ReelsScreen() {
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [shareTargetPost, setShareTargetPost] = useState<any>(null);
   const [shareLink, setShareLink] = useState<string | null>(null);
+  const [showReshareSheet, setShowReshareSheet] = useState(false);
+  const [reshareTargetPost, setReshareTargetPost] = useState<any>(null);
   const [showThreeDotsModal, setShowThreeDotsModal] = useState(false);
   const [threeDotsTargetPost, setThreeDotsTargetPost] = useState<any>(null);
   const [showCommentsModal, setShowCommentsModal] = useState(false);
@@ -966,6 +974,7 @@ export default function ReelsScreen() {
       setPostComments((prev) => ({ ...prev, [item.id]: comments }));
       setCommentCounts((prev) => ({ ...prev, [item.id]: stats.commentCount }));
       setLikeCounts((prev) => ({ ...prev, [item.id]: stats.likeCount }));
+      setShareCounts((prev) => ({ ...prev, [item.id]: stats.shareCount }));
       if (currentUser?.id) {
         setLikedReels((prev) => ({ ...prev, [item.id]: stats.liked }));
         setSavedPosts((prev) => ({ ...prev, [item.id]: stats.saved }));
@@ -1334,16 +1343,22 @@ export default function ReelsScreen() {
     const savedPatch: Record<string, boolean> = {};
     const likesPatch: Record<string, number> = {};
     const commentsPatch: Record<string, number> = {};
+    const sharesPatch: Record<string, number> = {};
+    const repostsPatch: Record<string, number> = {};
     feedItems.forEach((item: any) => {
       if (item.content?.liked) likedPatch[item.id] = true;
       if (item.content?.saved) savedPatch[item.id] = true;
-      likesPatch[item.id] = item.content?.likesCount ?? 0;
-      commentsPatch[item.id] = item.content?.commentsCount ?? 0;
+      likesPatch[item.id] = item.content?.likesCount ?? item.likesCount ?? 0;
+      commentsPatch[item.id] = item.content?.commentsCount ?? item.commentsCount ?? 0;
+      sharesPatch[item.id] = item.content?.sharesCount ?? item.sharesCount ?? 0;
+      repostsPatch[item.id] = item.content?.repostsCount ?? item.repostsCount ?? 0;
     });
     setLikedReels((prev) => ({ ...prev, ...likedPatch }));
     setSavedPosts((prev) => ({ ...prev, ...savedPatch }));
     setLikeCounts((prev) => ({ ...prev, ...likesPatch }));
     setCommentCounts((prev) => ({ ...prev, ...commentsPatch }));
+    setShareCounts((prev) => ({ ...prev, ...sharesPatch }));
+    setRepostCounts((prev) => ({ ...prev, ...repostsPatch }));
   }, [feedItems]);
 
   const handleLikePress = (id: string) => {
@@ -1455,13 +1470,33 @@ export default function ReelsScreen() {
     }
   };
 
-  const handleShare = async (item: any) => {
+  const handleShare = (item: any) => {
     triggerHaptic("medium");
     setShareTargetPost(item);
-    setShareLink(null);
+    setShareLink(buildPostShareUrl(item.id));
     setShowShareSheet(true);
-    const url = await logFeedShare(item.id);
-    setShareLink(url || `https://aura.app/post/${item.id}`);
+  };
+
+  const buildReshareTarget = (item: any) => {
+    const meta = resolveFeedPostMeta(item);
+    return {
+      id: item.id,
+      caption: meta.caption,
+      mediaUrl: item.content?.mediaUrl || item.content?.videoUrl || item.mediaUrl,
+      thumbnail: item.content?.thumbnail || item.thumbnail,
+      authorUsername: meta.authorUsername,
+      repostOf: meta.repostOf,
+    };
+  };
+
+  const handleReshare = (item: any) => {
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required", "Sign in to reshare to your profile.");
+      return;
+    }
+    triggerHaptic("medium");
+    setReshareTargetPost(item);
+    setShowReshareSheet(true);
   };
 
   const reelHeight = (isReelsFullScreen && activeFeedTab === "reels") 
@@ -1493,10 +1528,13 @@ export default function ReelsScreen() {
         handleLikePress={handleLikePress}
         handleCommentsPress={handleCommentsPress}
         handleShare={handleShare}
+        handleReshare={handleReshare}
         handleSavePress={handleSavePress}
         handleThreeDotsPress={handleThreeDotsPress}
         commentsCount={commentCounts[item.id] ?? postComments[item.id]?.length ?? item.content?.commentsCount ?? item.commentsCount ?? 0}
         likesCount={likeCounts[item.id] ?? item.likes ?? item.content?.likesCount ?? 0}
+        sharesCount={shareCounts[item.id] ?? item.content?.sharesCount ?? 0}
+        repostsCount={repostCounts[item.id] ?? item.content?.repostsCount ?? item.repostsCount ?? 0}
         onCtaPress={handleAdCtaPress}
       />
     );
@@ -1570,9 +1608,18 @@ export default function ReelsScreen() {
           item.content?.mediaUrl ||
           item.sponsoredMetadata?.creativeMediaUrl ||
           "",
-        caption: item.content?.caption || item.sponsoredMetadata?.ctaText || "",
+        caption: item.content?.caption || item.caption || item.sponsoredMetadata?.ctaText || "",
         creator: item.creator,
-        music: "AURA Original Sound",
+        profile: item.creator
+          ? {
+              name: item.creator.name,
+              username: item.creator.username,
+              logo: item.creator.avatar,
+              id: item.creator.id,
+            }
+          : item.profile,
+        user: item.creator,
+        music: item.music || "AURA Original Sound",
         likesCount: item.content?.likesCount || 0,
         likes: item.content?.likesCount || 0,
         commentsCount: item.content?.commentsCount || 0,
@@ -1581,6 +1628,12 @@ export default function ReelsScreen() {
         product: item.product,
         type: item.type,
         sponsoredMetadata: item.sponsoredMetadata,
+        content: item.content,
+        photoTags: item.photoTags || item.content?.photoTags || [],
+        collab: item.collab || item.content?.collab || null,
+        productStickers: item.productStickers || item.content?.productStickers || [],
+        location: item.location || item.content?.location,
+        aiLabel: item.aiLabel || item.content?.aiLabel,
       }));
 
     const apiStoryReels = stories.filter(
@@ -1767,12 +1820,6 @@ export default function ReelsScreen() {
     });
   };
 
-  const handleFeedItemLike = async (id: string) => {
-    triggerHaptic("heavy");
-    setLikedReels(prev => ({ ...prev, [id]: !prev[id] }));
-    await logEngagement(id, "like");
-  };
-
   const handleFeedItemSave = async (id: string) => {
     triggerHaptic("medium");
     setSavedPosts(prev => ({ ...prev, [id]: !prev[id] }));
@@ -1780,14 +1827,9 @@ export default function ReelsScreen() {
     await logEngagement(id, "save");
   };
 
-  const handleFeedItemShare = async (id: string) => {
-    triggerHaptic("medium");
-    const shareUrl = await logFeedShare(id);
-    if (shareUrl) {
-      Share.share({
-        message: `Check out this amazing design on AURA: ${shareUrl}`,
-      });
-    }
+  const handleFeedItemShare = (id: string) => {
+    const item = displayStories.find((s: any) => s.id === id);
+    if (item) handleShare(item);
   };
 
   const handleAiChatSubmit = () => {
@@ -1879,92 +1921,52 @@ export default function ReelsScreen() {
     const isSaved = savedPosts[item.id] || false;
 
     if (item.type === "CREATOR_POST") {
-      const media = item.content?.mediaUrl || "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=600";
-      const caption = item.content?.caption || "";
       const likesCount = likeCounts[item.id] ?? item.content?.likesCount ?? 0;
       const commentsCount =
         commentCounts[item.id] ??
         postComments[item.id]?.length ??
         item.content?.commentsCount ??
         0;
-
-      let lastTap = 0;
-      const handleDoubleTap = () => {
-        const now = Date.now();
-        if (now - lastTap < 300) {
-          handleFeedItemLike(item.id);
-          triggerHeartBurst(item.id);
-        }
-        lastTap = now;
-      };
+      const sharesCount = shareCounts[item.id] ?? item.content?.sharesCount ?? 0;
+      const repostsCount = repostCounts[item.id] ?? item.content?.repostsCount ?? item.repostsCount ?? 0;
 
       return (
-        <View style={{ backgroundColor: "#FFFFFF", marginBottom: 24, borderBottomWidth: 1, borderBottomColor: "#F5F5F7", paddingBottom: 16 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 }}>
-            <TouchableOpacity 
-              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-              onPress={() => router.push(`/profile/${item.creator?.id || "aria.sterling"}`)}
-            >
-              <Image source={{ uri: creatorAvatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
-              <View>
-                <Text style={{ fontWeight: "700", fontSize: 14, color: "#111111" }}>{creatorName}</Text>
-                <Text style={{ fontSize: 11, color: "#8E8E93" }}>@{creatorUsername} • Creator</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleThreeDotsPress(item)}>
-              <Lucide name="ellipsis-horizontal" size={20} color="#8E8E93" />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity activeOpacity={1} onPress={handleDoubleTap} style={{ position: "relative" }}>
-            <ZoomableImage source={{ uri: media }} style={{ width: "100%", height: 380 }} />
-            
-            {heartAnimItem === item.id && (
-              <Animated.View style={{
-                position: "absolute",
-                alignSelf: "center",
-                top: "40%",
-                zIndex: 10,
-                transform: [{ scale: heartAnimScale }],
-                opacity: heartAnimOpacity
-              }}>
+        <HomeFeedPostCard
+          item={item}
+          products={products}
+          isLiked={isLiked}
+          isSaved={isSaved}
+          likesCount={likesCount}
+          commentsCount={commentsCount}
+          sharesCount={sharesCount}
+          repostsCount={repostsCount}
+          onLike={() => handleLikePress(item.id)}
+          onComment={() => handleCommentsPress(item)}
+          onShare={() => handleShare(item)}
+          onReshare={() => handleReshare(item)}
+          onSave={() => handleFeedItemSave(item.id)}
+          onThreeDots={() => handleThreeDotsPress(item)}
+          onDoubleTapLike={() => {
+            handleLikePress(item.id);
+            triggerHeartBurst(item.id);
+          }}
+          heartBurst={
+            heartAnimItem === item.id ? (
+              <Animated.View
+                style={{
+                  position: "absolute",
+                  alignSelf: "center",
+                  top: "40%",
+                  zIndex: 10,
+                  transform: [{ scale: heartAnimScale }],
+                  opacity: heartAnimOpacity,
+                }}
+              >
                 <Lucide name="heart" size={80} color="#FF3B30" />
               </Animated.View>
-            )}
-          </TouchableOpacity>
-
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12 }}>
-            <View style={{ flexDirection: "row", gap: 16 }}>
-              <TouchableOpacity onPress={() => handleFeedItemLike(item.id)}>
-                <Lucide name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#FF3B30" : "#111111"} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleCommentsPress(item)}>
-                <Lucide name="chatbubble-outline" size={23} color="#111111" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleShare(item)}>
-                <Lucide name="paper-plane-outline" size={23} color="#111111" />
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity onPress={() => handleFeedItemSave(item.id)}>
-              <Lucide name={isSaved ? "bookmark" : "bookmark-outline"} size={23} color={isSaved ? "#111111" : "#111111"} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ paddingHorizontal: 16 }}>
-            <Text style={{ fontWeight: "700", fontSize: 13, color: "#111111", marginBottom: 4 }}>
-              {likesCount.toLocaleString()} likes
-            </Text>
-            <Text style={{ fontSize: 13, color: "#111111", lineHeight: 18 }}>
-              <Text style={{ fontWeight: "700" }}>{creatorUsername} </Text>
-              {caption}
-            </Text>
-            <TouchableOpacity onPress={() => handleCommentsPress(item)}>
-              <Text style={{ fontSize: 12, color: "#8E8E93", marginTop: 6 }}>
-                View all {commentsCount} comments
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+            ) : null
+          }
+        />
       );
     }
 
@@ -3636,6 +3638,29 @@ export default function ReelsScreen() {
             : null
         }
         shareLink={shareLink}
+        onShareComplete={(shareCount) => {
+          if (!shareTargetPost?.id) return;
+          setShareCounts((prev) => ({
+            ...prev,
+            [shareTargetPost.id]: shareCount ?? (prev[shareTargetPost.id] ?? 0) + 1,
+          }));
+        }}
+      />
+
+      <PostReshareSheet
+        visible={showReshareSheet}
+        onClose={() => {
+          setShowReshareSheet(false);
+          setReshareTargetPost(null);
+        }}
+        target={reshareTargetPost ? buildReshareTarget(reshareTargetPost) : null}
+        onComplete={({ repostCount, removed }) => {
+          if (!reshareTargetPost || removed) return;
+          const sourceId = resolveReshareSourceId(buildReshareTarget(reshareTargetPost));
+          if (repostCount != null) {
+            setRepostCounts((prev) => ({ ...prev, [sourceId]: repostCount }));
+          }
+        }}
       />
 
       {/* 🔴 THREE DOTS OPTIONS BOTTOM SHEET MODAL */}

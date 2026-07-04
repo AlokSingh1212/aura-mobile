@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
 import type { EngagementPostItem } from "@/hooks/usePostEngagement";
 import { CaptionText } from "@/components/CaptionText";
+import { openHashtag, openProfile } from "@/lib/postNavigation";
 
 const { height } = Dimensions.get("window");
 
@@ -61,7 +62,12 @@ export function PostCommentsSheet({
                 <Text style={styles.username}>
                   {authorLabel} <Text style={styles.badge}>Author</Text>
                 </Text>
-                <CaptionText caption={post.caption || "—"} style={styles.commentText} />
+                <CaptionText
+                  caption={post.caption || "—"}
+                  style={styles.commentText}
+                  onHashtagPress={openHashtag}
+                  onMentionPress={openProfile}
+                />
               </View>
             </View>
 
@@ -74,7 +80,12 @@ export function PostCommentsSheet({
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.username}>{c.username}</Text>
-                  <CaptionText caption={c.text} style={styles.commentText} />
+                  <CaptionText
+                    caption={c.text}
+                    style={styles.commentText}
+                    onHashtagPress={openHashtag}
+                    onMentionPress={openProfile}
+                  />
                   <Text style={styles.time}>{c.time}</Text>
                 </View>
               </View>

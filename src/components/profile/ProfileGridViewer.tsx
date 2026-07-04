@@ -30,8 +30,13 @@ import {
   resolvePostProducts,
 } from "@/components/post/PostProductOverlay";
 import { PostAuthorLine, PostAuthorAvatars } from "@/components/post/PostAuthorLine";
+import { openHashtag, openProduct, openProfile } from "@/lib/postNavigation";
+import { usePostPeopleSheet } from "@/hooks/usePostPeopleSheet";
 import { PostOptionsSheet } from "@/components/post/PostOptionsSheet";
 import { PostShareSheet } from "@/components/post/PostShareSheet";
+import { PostReshareSheet } from "@/components/post/PostReshareSheet";
+import { RepostAttribution } from "@/components/post/RepostAttribution";
+import { resolveReshareSourceId } from "@/lib/postRepost";
 
 const { width, height } = Dimensions.get("window");
 
@@ -64,6 +69,7 @@ function ProfilePostPage({
   onLike,
   onComment,
   onShare,
+  onReshare,
   onSave,
   onThreeDots,
   storeProducts,
@@ -78,6 +84,7 @@ function ProfilePostPage({
   onLike: () => void;
   onComment: () => void;
   onShare: () => void;
+  onReshare?: () => void;
   onSave: () => void;
   onThreeDots: () => void;
   storeProducts: any[];
@@ -93,25 +100,60 @@ function ProfilePostPage({
     storeProducts
   );
 
+  const {
+    people,
+    useSheet,
+    onPersonPress,
+    onTagPress,
+    openSheet,
+    PeopleSheet,
+  } = usePostPeopleSheet({
+    authorUsername: profile.username,
+    authorName: profile.name,
+    authorLogo: profile.logo,
+    collab: post.collab,
+    photoTags: post.photoTags,
+  });
+  const otherPeopleCount = Math.max(0, people.length - 1);
+
   const mediaUrls =
     post.mediaUrls && post.mediaUrls.length > 0 ? post.mediaUrls : [displayUrl];
 
   return (
     <View style={styles.postPage}>
+      {PeopleSheet}
       <View style={styles.postHeader}>
         <View style={styles.postHeaderLeft}>
-          <PostAuthorAvatars
-            authorLogo={profile.logo}
-            authorInitial={profile.name[0]?.toUpperCase() || "A"}
-            collab={post.collab}
-          />
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => onPersonPress(profile.username)}
+          >
+            <PostAuthorAvatars
+              authorLogo={profile.logo}
+              authorInitial={profile.name[0]?.toUpperCase() || "A"}
+              collab={post.collab}
+              extraCount={useSheet ? Math.max(0, people.length - 2) : 0}
+              onPress={useSheet ? openSheet : undefined}
+            />
+          </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <PostAuthorLine
               authorName={profile.name}
               authorUsername={profile.username}
               collab={post.collab}
               nameStyle={styles.postHeaderName}
+              theme="dark"
+              showPeoplePicker={useSheet}
+              otherPeopleCount={otherPeopleCount}
+              onShowPeoplePicker={openSheet}
+              onAuthorPress={() => onPersonPress(profile.username)}
+              onCollabPress={() =>
+                post.collab ? onPersonPress(post.collab.username) : openSheet()
+              }
             />
+            {post.isRepost && post.repostOf ? (
+              <RepostAttribution repostOf={post.repostOf} theme="dark" />
+            ) : null}
             <PostMetaRotator
               location={post.location}
               audio={post.music}
@@ -140,8 +182,18 @@ function ProfilePostPage({
               <Image source={{ uri: item }} style={styles.postImage} contentFit="cover" />
             )}
           />
-          <MediaPeopleOverlay photoTags={post.photoTags} bottom={postProducts.length ? 58 : 10} left={10} />
-          <ProductThumbnailStrip products={postProducts} bottom={8} />
+          <MediaPeopleOverlay
+            photoTags={post.photoTags}
+            bottom={postProducts.length ? 58 : 10}
+            left={10}
+            onTagPress={onTagPress}
+            onOverflowPress={openSheet}
+          />
+          <ProductThumbnailStrip
+            products={postProducts}
+            bottom={8}
+            onPressProduct={(p) => openProduct(p.productId)}
+          />
           <View style={styles.carouselDots}>
             {mediaUrls.map((_, i) => (
               <View
@@ -154,8 +206,18 @@ function ProfilePostPage({
       ) : (
         <View style={styles.mediaWrap}>
           <Image source={{ uri: mediaUrls[0] }} style={styles.postImage} contentFit="cover" />
-          <MediaPeopleOverlay photoTags={post.photoTags} bottom={postProducts.length ? 58 : 10} left={10} />
-          <ProductThumbnailStrip products={postProducts} bottom={8} />
+          <MediaPeopleOverlay
+            photoTags={post.photoTags}
+            bottom={postProducts.length ? 58 : 10}
+            left={10}
+            onTagPress={onTagPress}
+            onOverflowPress={openSheet}
+          />
+          <ProductThumbnailStrip
+            products={postProducts}
+            bottom={8}
+            onPressProduct={(p) => openProduct(p.productId)}
+          />
         </View>
       )}
 
@@ -170,13 +232,22 @@ function ProfilePostPage({
           <TouchableOpacity onPress={onShare}>
             <Lucide name="paper-plane-outline" size={25} color="#fff" />
           </TouchableOpacity>
+          {onReshare ? (
+            <TouchableOpacity onPress={onReshare}>
+              <Lucide name="repeat-outline" size={25} color="#fff" />
+            </TouchableOpacity>
+          ) : null}
         </View>
         <TouchableOpacity onPress={onSave}>
           <Lucide name={isSaved ? "bookmark" : "bookmark-outline"} size={25} color={isSaved ? "#00f5ff" : "#fff"} />
         </TouchableOpacity>
       </View>
 
-      <ShopNowBar products={postProducts} style={styles.shopNowInPost} />
+      <ShopNowBar
+        products={postProducts}
+        style={styles.shopNowInPost}
+        onPress={() => postProducts[0] && openProduct(postProducts[0].productId)}
+      />
 
       <Text style={styles.postLikes}>{formatCompactNumber(likesCount)} likes</Text>
       {commentsCount > 0 && (
@@ -185,9 +256,18 @@ function ProfilePostPage({
         </TouchableOpacity>
       )}
       {post.caption ? (
-        <Text style={styles.postCaption} numberOfLines={4}>
-          <Text style={styles.postCaptionUser}>{profile.username} </Text>
-          <CaptionText caption={post.caption} />
+        <Text style={styles.postCaption} numberOfLines={6}>
+          <Text
+            style={styles.postCaptionUser}
+            onPress={() => onPersonPress(profile.username)}
+          >
+            {profile.username}{" "}
+          </Text>
+          <CaptionText
+            caption={post.caption}
+            onHashtagPress={openHashtag}
+            onMentionPress={onPersonPress}
+          />
         </Text>
       ) : null}
     </View>
@@ -359,10 +439,13 @@ export function ProfileGridViewer({
             handleLikePress={engagement.handleLike}
             handleCommentsPress={() => engagement.handleComments(reelItem)}
             handleShare={() => engagement.handleShare(reelItem)}
+            handleReshare={() => engagement.handleReshare(reelItem)}
             handleSavePress={engagement.handleSave}
             handleThreeDotsPress={() => engagement.handleThreeDots(reelItem)}
             commentsCount={engagement.commentCounts[item.id] ?? 0}
             likesCount={engagement.likeCounts[item.id] ?? 0}
+            sharesCount={engagement.shareCounts[item.id] ?? 0}
+            repostsCount={engagement.repostCounts[item.id] ?? 0}
           />
         );
       }
@@ -386,6 +469,7 @@ export function ProfileGridViewer({
               onLike={() => engagement.handleLike(postItem.id)}
               onComment={() => engagement.handleComments(engagementItem)}
               onShare={() => engagement.handleShare(engagementItem)}
+              onReshare={() => engagement.handleReshare(engagementItem)}
               onSave={() => engagement.handleSave(postItem.id)}
               onThreeDots={() => engagement.handleThreeDots(engagementItem)}
               storeProducts={storeProducts}
@@ -521,6 +605,30 @@ export function ProfileGridViewer({
         onClose={() => engagement.setShareVisible(false)}
         post={engagement.shareTarget}
         shareLink={engagement.shareLink}
+        onShareComplete={(shareCount) => {
+          if (!engagement.shareTarget?.id) return;
+          engagement.handleShareRecorded(engagement.shareTarget.id, shareCount);
+        }}
+      />
+
+      <PostReshareSheet
+        visible={engagement.reshareVisible}
+        onClose={() => engagement.setReshareVisible(false)}
+        target={
+          engagement.reshareTarget
+            ? {
+                id: engagement.reshareTarget.id,
+                caption: engagement.reshareTarget.caption,
+                mediaUrl: engagement.reshareTarget.url,
+                thumbnail: engagement.reshareTarget.url,
+                authorUsername: engagement.reshareTarget.profile?.username,
+              }
+            : null
+        }
+        onComplete={({ repostCount }) => {
+          if (!engagement.reshareTarget?.id || repostCount == null) return;
+          engagement.handleRepostCountUpdate(engagement.reshareTarget.id, repostCount);
+        }}
       />
     </Modal>
   );

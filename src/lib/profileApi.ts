@@ -26,6 +26,8 @@ export interface ProfilePost {
   photoTags?: PhotoTag[];
   collab?: CollabPartner | null;
   productStickers?: { productId: string; title: string; image: string; price?: number }[];
+  repostOf?: import("@/lib/postRepost").RepostOfRef | null;
+  isRepost?: boolean;
 }
 
 export interface NetworkProfile {
@@ -112,6 +114,8 @@ export async function fetchProfilePosts(opts: {
         photoTags?: ProfilePost["photoTags"];
         collab?: ProfilePost["collab"];
         productStickers?: ProfilePost["productStickers"];
+        repostOf?: ProfilePost["repostOf"];
+        isRepost?: boolean;
       }) => ({
         id: p.id,
         url: p.url,
@@ -130,6 +134,8 @@ export async function fetchProfilePosts(opts: {
         photoTags: p.photoTags || [],
         collab: p.collab ?? null,
         productStickers: p.productStickers || [],
+        repostOf: p.repostOf ?? null,
+        isRepost: !!p.isRepost,
       })
     );
   }
@@ -268,6 +274,7 @@ export async function fetchPostEngagement(
   likeCount: number;
   commentCount: number;
   shareCount: number;
+  repostCount?: number;
   liked: boolean;
   saved: boolean;
 }> {
@@ -280,11 +287,44 @@ export async function fetchPostEngagement(
       likeCount: data.likeCount ?? 0,
       commentCount: data.commentCount ?? 0,
       shareCount: data.shareCount ?? 0,
+      repostCount: data.repostCount ?? 0,
       liked: !!data.liked,
       saved: !!data.saved,
     };
   }
-  return { likeCount: 0, commentCount: 0, shareCount: 0, liked: false, saved: false };
+  return { likeCount: 0, commentCount: 0, shareCount: 0, repostCount: 0, liked: false, saved: false };
+}
+
+export async function resharePost(opts: {
+  userId: string;
+  profileId: string;
+  sourcePostId: string;
+  quoteCaption?: string;
+}): Promise<{
+  success: boolean;
+  repostId?: string;
+  repostCount?: number;
+  alreadyReposted?: boolean;
+  error?: string;
+}> {
+  const res = await fetch(`${API_HOST}/api/mobile/feed/reshare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(opts),
+  });
+  return res.json();
+}
+
+export async function removeReshare(opts: {
+  userId: string;
+  repostId: string;
+}): Promise<{ success: boolean; repostCount?: number; error?: string }> {
+  const res = await fetch(`${API_HOST}/api/mobile/feed/reshare`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(opts),
+  });
+  return res.json();
 }
 
 export async function sharePostToUser(opts: {

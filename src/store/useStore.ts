@@ -273,7 +273,9 @@ interface StoreState {
     type: "view" | "like" | "save" | "share" | "cart_add" | "purchase"
   ) => Promise<{ likeCount?: number; liked?: boolean } | null>;
   toggleFeedSave: (feedItemId: string) => Promise<void>;
-  logFeedShare: (feedItemId: string) => Promise<string | null>;
+  logFeedShare: (
+    feedItemId: string
+  ) => Promise<{ shareUrl: string | null; shareCount?: number } | null>;
   logFeedCartAdd: (feedItemId: string, productId: string) => Promise<void>;
   flushPendingActions: () => Promise<void>;
   syncDeltaPointer: () => Promise<void>;
@@ -1604,7 +1606,10 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("light");
-        return data.shareUrl;
+        return {
+          shareUrl: data.shareUrl as string,
+          shareCount: typeof data.shareCount === "number" ? data.shareCount : undefined,
+        };
       }
     } catch (e) {
       console.warn("logFeedShare failed", e);

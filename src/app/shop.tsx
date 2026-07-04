@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStore } from "@/store/useStore";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import Lucide from "@expo/vector-icons/Ionicons";
 import MainHeader from "@/components/MainHeader";
 import { ShimmerShopGrid } from "@/components/ui/ShimmerLoader";
@@ -74,6 +74,7 @@ const HERO_SLIDES = [
 
 export default function ShopScreen() {
   const { products, loadingProducts, fetchProducts, addToCart, triggerHaptic, activeMaisonId, activeProfile, loyaltyPoints, formatPrice } = useStore();
+  const { search: searchParam } = useLocalSearchParams<{ search?: string }>();
   const currentMaisonName = activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : (activeMaisonId ? activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "AURA Client"));
   const insets = useSafeAreaInsets();
   
@@ -89,6 +90,12 @@ export default function ShopScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [heroIndex, setHeroIndex] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (searchParam && typeof searchParam === "string") {
+      setSearchQuery(searchParam);
+    }
+  }, [searchParam]);
 
   // Delivery Location states
   const [locationText, setLocationText] = useState("Piparaund, Near Indane - Divya Indane...");

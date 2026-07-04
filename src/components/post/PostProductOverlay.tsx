@@ -8,9 +8,9 @@ import {
   type ViewStyle,
 } from "react-native";
 import { Image } from "expo-image";
-import { router } from "expo-router";
 import Lucide from "@expo/vector-icons/Ionicons";
 import type { ProductSticker } from "@/lib/postEditState";
+import { openProduct } from "@/lib/postNavigation";
 
 export function resolvePostProducts(
   item: any,
@@ -61,7 +61,7 @@ export function ProductThumbnailStrip({
 
   const open = (p: ProductSticker) => {
     if (onPressProduct) onPressProduct(p);
-    else router.push(`/product/${p.productId}` as any);
+    else openProduct(p.productId);
   };
 
   return (
@@ -92,10 +92,11 @@ interface ShopNowBarProps {
   products: ProductSticker[];
   onPress?: () => void;
   style?: ViewStyle;
+  variant?: "dark" | "light";
 }
 
 /** Instagram-style simple shop CTA — no title/price, just "Shop now". */
-export function ShopNowBar({ products, onPress, style }: ShopNowBarProps) {
+export function ShopNowBar({ products, onPress, style, variant = "dark" }: ShopNowBarProps) {
   if (!products.length) return null;
 
   const handlePress = () => {
@@ -103,13 +104,23 @@ export function ShopNowBar({ products, onPress, style }: ShopNowBarProps) {
       onPress();
       return;
     }
-    router.push(`/product/${products[0].productId}` as any);
+    if (products[0]) openProduct(products[0].productId);
   };
 
+  const isLight = variant === "light";
+
   return (
-    <TouchableOpacity style={[styles.shopNowBar, style]} onPress={handlePress} activeOpacity={0.88}>
-      <Text style={styles.shopNowText}>Shop now</Text>
-      <Lucide name="chevron-forward" size={18} color="#fff" />
+    <TouchableOpacity
+      style={[
+        styles.shopNowBar,
+        isLight && styles.shopNowBarLight,
+        style,
+      ]}
+      onPress={handlePress}
+      activeOpacity={0.88}
+    >
+      <Text style={[styles.shopNowText, isLight && styles.shopNowTextLight]}>Shop now</Text>
+      <Lucide name="chevron-forward" size={18} color={isLight ? "#111111" : "#fff"} />
     </TouchableOpacity>
   );
 }
@@ -154,5 +165,12 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "700",
+  },
+  shopNowBarLight: {
+    borderColor: "#EAEAEA",
+    backgroundColor: "#F5F5F7",
+  },
+  shopNowTextLight: {
+    color: "#111111",
   },
 });

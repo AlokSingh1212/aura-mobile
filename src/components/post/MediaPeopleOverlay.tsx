@@ -1,11 +1,12 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Image } from "expo-image";
 import type { PhotoTag } from "@/lib/postComposerTypes";
 
 interface MediaPeopleOverlayProps {
   photoTags?: PhotoTag[];
-  onPress?: () => void;
+  onTagPress?: (tag: PhotoTag) => void;
+  onOverflowPress?: () => void;
   bottom?: number;
   left?: number;
 }
@@ -13,6 +14,8 @@ interface MediaPeopleOverlayProps {
 /** Photo tags only — shown on media. Not collab, not @mentions. */
 export function MediaPeopleOverlay({
   photoTags = [],
+  onTagPress,
+  onOverflowPress,
   bottom = 14,
   left = 14,
 }: MediaPeopleOverlayProps) {
@@ -22,10 +25,13 @@ export function MediaPeopleOverlay({
   const extra = photoTags.length - visible.length;
 
   return (
-    <View style={[styles.wrap, { bottom, left }]} pointerEvents="none">
+    <View style={[styles.wrap, { bottom, left }]} pointerEvents="box-none">
       {visible.map((person, i) => (
-        <View
+        <TouchableOpacity
           key={person.profileId}
+          activeOpacity={0.85}
+          onPress={() => onTagPress?.(person)}
+          disabled={!onTagPress}
           style={[styles.bubble, i > 0 && { marginLeft: -11 }, { zIndex: 10 - i }]}
         >
           {person.logo ? (
@@ -33,12 +39,17 @@ export function MediaPeopleOverlay({
           ) : (
             <Text style={styles.initial}>{person.name[0]?.toUpperCase() || "?"}</Text>
           )}
-        </View>
+        </TouchableOpacity>
       ))}
       {extra > 0 ? (
-        <View style={[styles.bubble, styles.bubbleMore, { marginLeft: -11, zIndex: 0 }]}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onOverflowPress}
+          disabled={!onOverflowPress}
+          style={[styles.bubble, styles.bubbleMore, { marginLeft: -11, zIndex: 0 }]}
+        >
           <Text style={styles.moreText}>+{extra}</Text>
-        </View>
+        </TouchableOpacity>
       ) : null}
     </View>
   );

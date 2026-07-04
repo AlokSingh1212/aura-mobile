@@ -2027,6 +2027,11 @@ export default function AccountScreen() {
                       }}
                     >
                       <Image source={{ uri: post.thumbnail || post.url }} style={styles.gridPostImage} />
+                      {post.isRepost ? (
+                        <View style={styles.gridRepostBadge}>
+                          <Lucide name="repeat" size={11} color="#fff" />
+                        </View>
+                      ) : null}
                     </TouchableOpacity>
                   ))
                 ) : (
@@ -2049,6 +2054,11 @@ export default function AccountScreen() {
                       <View style={styles.gridVideoBadge}>
                         <Lucide name="play" size={11} color="#ffffff" />
                       </View>
+                      {post.isRepost ? (
+                        <View style={[styles.gridRepostBadge, { top: 28 }]}>
+                          <Lucide name="repeat" size={11} color="#fff" />
+                        </View>
+                      ) : null}
                     </TouchableOpacity>
                   ))
                 ) : (
@@ -4111,6 +4121,14 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   gridVideoBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    padding: 4,
+    borderRadius: 4,
+  },
+  gridRepostBadge: {
     position: "absolute",
     top: 6,
     right: 6,

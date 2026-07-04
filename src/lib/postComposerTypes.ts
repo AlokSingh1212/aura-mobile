@@ -71,9 +71,10 @@ export function insertMentionInCaption(caption: string, username: string): strin
 export function readPostMetadata(meta: unknown): {
   photoTags: PhotoTag[];
   collab: CollabPartner | null;
+  collabs: CollabPartner[];
 } {
   if (!meta || typeof meta !== "object") {
-    return { photoTags: [], collab: null };
+    return { photoTags: [], collab: null, collabs: [] };
   }
   const m = meta as {
     photoTags?: PhotoTag[];
@@ -86,9 +87,16 @@ export function readPostMetadata(meta: unknown): {
     : Array.isArray(m.tags)
       ? m.tags.map((t) => ({ ...t, kind: undefined }))
       : [];
-  let collab: CollabPartner | null = m.collab ?? null;
-  if (!collab && Array.isArray(m.collabs) && m.collabs[0]) {
-    collab = m.collabs[0];
+
+  const collabs: CollabPartner[] = [];
+  const pushCollab = (c: CollabPartner | null | undefined) => {
+    if (!c || c.status === "declined") return;
+    if (!collabs.some((x) => x.profileId === c.profileId)) collabs.push(c);
+  };
+  pushCollab(m.collab ?? null);
+  if (Array.isArray(m.collabs)) {
+    for (const c of m.collabs) pushCollab(c);
   }
-  return { photoTags, collab };
+
+  return { photoTags, collab: collabs[0] ?? null, collabs };
 }

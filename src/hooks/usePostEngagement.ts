@@ -9,6 +9,7 @@ import {
   fetchPostEngagement,
   type PostComment,
 } from "@/lib/profileApi";
+import { buildPostShareUrl } from "@/lib/postShare";
 
 export interface EngagementPostItem {
   id: string;
@@ -35,13 +36,15 @@ export function usePostEngagement(opts?: {
   isOwnPost?: boolean;
   onDeleted?: (postId: string) => void;
 }) {
-  const { triggerHaptic, logEngagement, toggleFeedSave, logFeedShare, currentUser, activeProfile } =
+  const { triggerHaptic, logEngagement, toggleFeedSave, currentUser, activeProfile } =
     useStore();
 
   const [likedPosts, setLikedPosts] = useState<Record<string, boolean>>({});
   const [savedPosts, setSavedPosts] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const [shareCounts, setShareCounts] = useState<Record<string, number>>({});
+  const [repostCounts, setRepostCounts] = useState<Record<string, number>>({});
   const [postComments, setPostComments] = useState<Record<string, PostComment[]>>({});
   const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({});
 
@@ -55,6 +58,9 @@ export function usePostEngagement(opts?: {
   const [shareTarget, setShareTarget] = useState<EngagementPostItem | null>(null);
   const [shareLink, setShareLink] = useState<string | null>(null);
 
+  const [reshareVisible, setReshareVisible] = useState(false);
+  const [reshareTarget, setReshareTarget] = useState<EngagementPostItem | null>(null);
+
   const hydratePostEngagement = useCallback(
     async (postId: string) => {
       if (!postId) return;
@@ -62,6 +68,8 @@ export function usePostEngagement(opts?: {
         const stats = await fetchPostEngagement(postId, currentUser?.id);
         setLikeCounts((prev) => ({ ...prev, [postId]: stats.likeCount }));
         setCommentCounts((prev) => ({ ...prev, [postId]: stats.commentCount }));
+        setShareCounts((prev) => ({ ...prev, [postId]: stats.shareCount }));
+        setRepostCounts((prev) => ({ ...prev, [postId]: stats.repostCount ?? 0 }));
         if (currentUser?.id) {
           setLikedPosts((prev) => ({ ...prev, [postId]: stats.liked }));
           setSavedPosts((prev) => ({ ...prev, [postId]: stats.saved }));
@@ -118,16 +126,39 @@ export function usePostEngagement(opts?: {
   );
 
   const handleShare = useCallback(
-    async (item: EngagementPostItem) => {
+    (item: EngagementPostItem) => {
       triggerHaptic("medium");
       setShareTarget(item);
-      setShareLink(null);
+      setShareLink(buildPostShareUrl(item.id));
       setShareVisible(true);
-      const shareUrl = await logFeedShare(item.id);
-      setShareLink(shareUrl || `https://aura.app/post/${item.id}`);
     },
-    [logFeedShare, triggerHaptic]
+    [triggerHaptic]
   );
+
+  const handleShareRecorded = useCallback((postId: string, shareCount?: number) => {
+    setShareCounts((prev) => ({
+      ...prev,
+      [postId]: shareCount ?? (prev[postId] ?? 0) + 1,
+    }));
+  }, []);
+
+  const handleReshare = useCallback(
+    (item: EngagementPostItem) => {
+      if (!currentUser?.id) {
+        Alert.alert("Sign in required", "Sign in to reshare to your profile.");
+        return;
+      }
+      triggerHaptic("medium");
+      setReshareTarget(item);
+      setReshareVisible(true);
+    },
+    [currentUser?.id, triggerHaptic]
+  );
+
+  const handleRepostCountUpdate = useCallback((sourcePostId: string, repostCount?: number) => {
+    if (repostCount == null) return;
+    setRepostCounts((prev) => ({ ...prev, [sourcePostId]: repostCount }));
+  }, []);
 
   const hydratePostsEngagement = useCallback(
     async (postIds: string[]) => {
@@ -151,6 +182,8 @@ export function usePostEngagement(opts?: {
         ]);
         setPostComments((prev) => ({ ...prev, [item.id]: comments }));
         setCommentCounts((prev) => ({ ...prev, [item.id]: stats.commentCount }));
+        setShareCounts((prev) => ({ ...prev, [item.id]: stats.shareCount }));
+        setRepostCounts((prev) => ({ ...prev, [item.id]: stats.repostCount ?? 0 }));
         setLikeCounts((prev) => ({ ...prev, [item.id]: stats.likeCount }));
         if (currentUser?.id) {
           setLikedPosts((prev) => ({ ...prev, [item.id]: stats.liked }));
@@ -270,6 +303,8 @@ export function usePostEngagement(opts?: {
     savedPosts,
     likeCounts,
     commentCounts,
+    shareCounts,
+    repostCounts,
     postComments,
     loadingComments,
     commentsVisible,
@@ -282,9 +317,15 @@ export function usePostEngagement(opts?: {
     shareTarget,
     setShareVisible,
     shareLink,
+    reshareVisible,
+    reshareTarget,
+    setReshareVisible,
     handleLike,
     handleSave,
     handleShare,
+    handleShareRecorded,
+    handleReshare,
+    handleRepostCountUpdate,
     handleComments,
     handleThreeDots,
     confirmDeletePost,

@@ -19,7 +19,13 @@ import { CaptionText } from "@/components/CaptionText";
 import { PostMetaRotator } from "@/components/post/PostMetaRotator";
 import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
 import { PostAuthorLine } from "@/components/post/PostAuthorLine";
-import { readPostMetadata } from "@/lib/postComposerTypes";
+import { RepostAttribution } from "@/components/post/RepostAttribution";
+import {
+  openHashtag,
+  openProduct,
+  resolveFeedPostMeta,
+} from "@/lib/postNavigation";
+import { usePostPeopleSheet } from "@/hooks/usePostPeopleSheet";
 import {
   ProductThumbnailStrip,
   ShopNowBar,
@@ -43,10 +49,13 @@ export interface FeedCardProps {
   handleLikePress: (id: string) => void;
   handleCommentsPress: (item: any) => void;
   handleShare: (item: any) => void;
+  handleReshare?: (item: any) => void;
   handleSavePress: (id: string) => void;
   handleThreeDotsPress: (item: any) => void;
   commentsCount?: number;
   likesCount?: number;
+  sharesCount?: number;
+  repostsCount?: number;
   onCtaPress?: (ctaType: string, metadata: any) => void;
 }
 
@@ -65,10 +74,13 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   handleLikePress,
   handleCommentsPress,
   handleShare,
+  handleReshare,
   handleSavePress,
   handleThreeDotsPress,
   commentsCount,
   likesCount: likesCountProp,
+  sharesCount: sharesCountProp,
+  repostsCount: repostsCountProp,
   onCtaPress,
 }) => {
   const { triggerHaptic, formatPrice, activeProfile, currentUser } = useStore();
@@ -78,7 +90,28 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   const displayLikes = Math.max(0, baseLikes);
   const displayComments =
     commentsCount ?? item.commentsCount ?? item.content?.commentsCount ?? 0;
+  const displayShares =
+    sharesCountProp ?? item.content?.sharesCount ?? item.sharesCount ?? 0;
+  const displayReposts =
+    repostsCountProp ?? item.content?.repostsCount ?? item.repostsCount ?? 0;
   const postProducts = resolvePostProducts(item, products);
+  const postMeta = resolveFeedPostMeta(item);
+  const {
+    people,
+    useSheet,
+    onPersonPress,
+    onTagPress,
+    openSheet,
+    PeopleSheet,
+  } = usePostPeopleSheet({
+    authorUsername: postMeta.authorUsername,
+    authorName: postMeta.authorName,
+    authorLogo: postMeta.authorAvatar,
+    collab: postMeta.collab,
+    collabs: postMeta.collabs,
+    photoTags: postMeta.photoTags,
+  });
+  const otherPeopleCount = Math.max(0, people.length - 1);
   const [peekVisible, setPeekVisible] = useState(false);
 
   // ── Double-Tap Heart Animation ──────────────────────────
@@ -210,6 +243,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
 
   return (
     <View style={[styles.reelContainer, { height: reelHeight }]}>
+      {PeopleSheet}
       {/* Fullscreen Video with Pinch-to-Zoom + Double-Tap-to-Like */}
       <TouchableOpacity
         activeOpacity={1}
@@ -252,14 +286,16 @@ export const FeedCard: React.FC<FeedCardProps> = ({
         )}
 
         <MediaPeopleOverlay
-          photoTags={
-            item.photoTags ||
-            item.content?.photoTags ||
-            readPostMetadata({ tags: item.tags, collabs: item.collabs }).photoTags
-          }
+          photoTags={postMeta.photoTags}
           bottom={postProducts.length ? 58 : 10}
+          onTagPress={onTagPress}
+          onOverflowPress={openSheet}
         />
-        <ProductThumbnailStrip products={postProducts} bottom={8} />
+        <ProductThumbnailStrip
+          products={postProducts}
+          bottom={8}
+          onPressProduct={(p) => openProduct(p.productId)}
+        />
       </TouchableOpacity>
 
       {/* DYNAMIC SHADER OVERLAYS SYNCED FROM THE CAMERA STUDIO */}
@@ -282,10 +318,13 @@ export const FeedCard: React.FC<FeedCardProps> = ({
 
       {/* Creator Metadata Overlay (Bottom Left) */}
       <View style={[styles.metaContainer, { bottom: floatingBottomOffset }]}>
-        <ShopNowBar products={postProducts} />
+        <ShopNowBar
+          products={postProducts}
+          onPress={() => postProducts[0] && openProduct(postProducts[0].productId)}
+        />
         <View style={styles.creatorRow}>
           <TouchableOpacity 
-            onPress={() => handleMaisonProfilePress(item)} 
+            onPress={() => onPersonPress(postMeta.authorUsername)} 
             onLongPress={() => {
               triggerHaptic("heavy");
               setPeekVisible(true);
@@ -326,33 +365,34 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           </TouchableOpacity>
           <View style={styles.creatorDetails}>
             <View style={styles.nameFollowRow}>
-              <TouchableOpacity
-                style={{ flexDirection: "row", alignItems: "center" }}
-                onPress={() => handleMaisonProfilePress(item)}
-                activeOpacity={0.85}
-              >
+              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, flexWrap: "wrap" }}>
                 <PostAuthorLine
-                  authorName={item.profile?.name || item.user?.name || "aura_curator"}
-                  authorUsername={(
-                    item.profile?.username ||
-                    item.user?.name ||
-                    "aura_curator"
-                  )
-                    .toLowerCase()
-                    .replace(/\s+/g, "")}
-                  collab={item.collab || item.content?.collab}
-                  nameStyle={styles.creatorName}
+                  authorName={postMeta.authorName}
+                  authorUsername={postMeta.authorUsername}
+                  collab={postMeta.collab}
+                  collabs={postMeta.collabs}
+                  nameStyle={useSheet ? styles.creatorNamePicker : styles.creatorName}
+                  collabStyle={useSheet ? styles.creatorNamePicker : styles.creatorName}
+                  theme="dark"
+                  showPeoplePicker={useSheet}
+                  otherPeopleCount={otherPeopleCount}
+                  onShowPeoplePicker={openSheet}
+                  onAuthorPress={() => onPersonPress(postMeta.authorUsername)}
+                  onCollabPress={() =>
+                    postMeta.collab ? onPersonPress(postMeta.collab.username) : openSheet()
+                  }
                 />
                 {item.type === "SPONSORED_AD" || item.sponsoredMetadata ? (
                   <Text style={styles.adTag}>Ad</Text>
-                ) : (
-                  <Text style={styles.saptashiText}>and saptashi...</Text>
-                )}
-              </TouchableOpacity>
+                ) : null}
+              </View>
               <TouchableOpacity style={styles.followBtn} onPress={() => triggerHaptic("medium")}>
                 <Text style={styles.followBtnText}>Follow</Text>
               </TouchableOpacity>
             </View>
+            {postMeta.isRepost && postMeta.repostOf ? (
+              <RepostAttribution repostOf={postMeta.repostOf} theme="dark" />
+            ) : null}
             <PostMetaRotator
               location={item.content?.location || item.location}
               audio={item.audioTrack ? `${item.audioTrack.title} · ${item.audioTrack.artist}` : item.music}
@@ -360,44 +400,60 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             />
           </View>
         </View>
-        <CaptionText caption={item.caption || item.content?.caption || ""} style={styles.caption} numberOfLines={2} />
+        <CaptionText
+          caption={
+            postMeta.isRepost && postMeta.repostOf?.originalCaption
+              ? postMeta.caption
+                ? `${postMeta.caption}\n\n${postMeta.repostOf.originalCaption}`
+                : postMeta.repostOf.originalCaption
+              : postMeta.caption
+          }
+          style={styles.caption}
+          numberOfLines={3}
+          onHashtagPress={openHashtag}
+          onMentionPress={onPersonPress}
+        />
       </View>
 
       {/* Right Interaction Column (Likes, Comments, Share) */}
       <View style={[styles.interactionColumn, { bottom: floatingBottomOffset }]}>
-        <TouchableOpacity style={styles.iconButton} onPress={() => handleLikePress(item.id)}>
+        <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleLikePress(item.id)}>
           <View style={styles.iconCircle}>
-            <Lucide name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#ff3b30" : "#fff"} />
+            <Lucide name={isLiked ? "heart" : "heart-outline"} size={22} color={isLiked ? "#ff3b30" : "#fff"} />
           </View>
-          <Text style={styles.iconLabel}>
-            {formatCompactNumber(displayLikes)}
-          </Text>
+          <Text style={styles.iconLabel}>{formatCompactNumber(displayLikes)}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.iconButton} onPress={() => handleCommentsPress(item)}>
+        <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleCommentsPress(item)}>
           <View style={styles.iconCircle}>
-            <Lucide name="chatbubble-outline" size={24} color="#fff" />
+            <Lucide name="chatbubble-outline" size={22} color="#fff" />
           </View>
-          <Text style={styles.iconLabel}>
-            {formatCompactNumber(displayComments)}
-          </Text>
+          <Text style={styles.iconLabel}>{formatCompactNumber(displayComments)}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.iconButton} onPress={() => handleShare(item)}>
+        <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleShare(item)}>
           <View style={styles.iconCircle}>
-            <Lucide name="paper-plane-outline" size={24} color="#fff" />
+            <Lucide name="paper-plane-outline" size={22} color="#fff" />
           </View>
-          <Text style={styles.iconLabel}>Share</Text>
+          <Text style={styles.iconLabel}>{formatCompactNumber(displayShares)}</Text>
         </TouchableOpacity>
+
+        {handleReshare ? (
+          <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleReshare(item)}>
+            <View style={styles.iconCircle}>
+              <Lucide name="repeat-outline" size={22} color="#fff" />
+            </View>
+            <Text style={styles.iconLabel}>{formatCompactNumber(displayReposts)}</Text>
+          </TouchableOpacity>
+        ) : null}
 
         {(() => {
           const isSaved = savedPosts[item.id] || false;
           return (
-            <TouchableOpacity style={styles.iconButton} onPress={() => handleSavePress(item.id)}>
+            <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleSavePress(item.id)}>
               <View style={styles.iconCircle}>
-                <Lucide name={isSaved ? "bookmark" : "bookmark-outline"} size={24} color={isSaved ? "#00f5ff" : "#fff"} />
+                <Lucide name={isSaved ? "bookmark" : "bookmark-outline"} size={22} color={isSaved ? "#00f5ff" : "#fff"} />
               </View>
-              <Text style={styles.iconLabel}>Save</Text>
             </TouchableOpacity>
           );
         })()}
@@ -515,6 +571,12 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     maxWidth: width * 0.28,
   },
+  creatorNamePicker: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14.5,
+    flexShrink: 1,
+  },
   saptashiText: {
     color: "rgba(255,255,255,0.85)",
     fontSize: 14,
@@ -565,6 +627,11 @@ const styles = StyleSheet.create({
     gap: 16,
     zIndex: 10,
   },
+  iconButtonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   iconButton: {
     alignItems: "center",
   },
@@ -580,7 +647,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 12,
     fontWeight: "bold",
-    marginTop: 4,
+    minWidth: 16,
   },
   adTag: {
     color: "rgba(255,255,255,0.7)",

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -15,20 +15,29 @@ import {
 } from "react-native";
 import Lucide from "@expo/vector-icons/Ionicons";
 import * as Clipboard from "expo-clipboard";
-import { API_HOST } from "@/constants/api";
 import { useStore } from "@/store/useStore";
 import type { EngagementPostItem } from "@/hooks/usePostEngagement";
 import { fetchProfileNetwork, sharePostToUser, type NetworkProfile } from "@/lib/profileApi";
+import { buildPostShareUrl } from "@/lib/postShare";
 
 interface PostShareSheetProps {
   visible: boolean;
   onClose: () => void;
   post: EngagementPostItem | null;
   shareLink?: string | null;
+  /** Called after a share action completes (DM sent, link copied, native share, etc.) */
+  onShareComplete?: (shareCount?: number) => void;
 }
 
-export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareSheetProps) {
-  const { triggerHaptic, addInstaStorySlide, currentUser, activeProfile } = useStore();
+export function PostShareSheet({
+  visible,
+  onClose,
+  post,
+  shareLink,
+  onShareComplete,
+}: PostShareSheetProps) {
+  const { triggerHaptic, addInstaStorySlide, currentUser, activeProfile, logFeedShare } =
+    useStore();
   const [shareSearch, setShareSearch] = useState("");
   const [contacts, setContacts] = useState<NetworkProfile[]>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
@@ -53,13 +62,23 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
     };
   }, [visible, activeProfile?.id, currentUser?.id]);
 
-  const postUrl = shareLink || `https://aura.app/post/${post?.id || ""}`;
+  const postUrl = shareLink || (post?.id ? buildPostShareUrl(post.id) : "");
   const caption = post?.caption || "Check out this post on AURA";
 
   const handleClose = () => {
     setShareSearch("");
     onClose();
   };
+
+  const recordShare = useCallback(async () => {
+    if (!post?.id) return;
+    const result = await logFeedShare(post.id);
+    if (result?.shareCount != null) {
+      onShareComplete?.(result.shareCount);
+    } else {
+      onShareComplete?.();
+    }
+  }, [logFeedShare, onShareComplete, post?.id]);
 
   const sendToContact = async (contact: NetworkProfile) => {
     if (!currentUser?.id || !contact.userId || !post?.id) {
@@ -77,6 +96,7 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
       });
       if (result.success) {
         triggerHaptic("success");
+        await recordShare();
         handleClose();
         Alert.alert("Sent", `Shared with ${contact.name}`);
       } else {
@@ -171,11 +191,13 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
               style={styles.actionBtn}
               onPress={async () => {
                 triggerHaptic("success");
-                handleClose();
                 try {
                   await Clipboard.setStringAsync(postUrl);
+                  await recordShare();
+                  handleClose();
                   Alert.alert("Link Copied", "The luxury curation link has been copied to your clipboard.");
                 } catch {
+                  handleClose();
                   Alert.alert("Link Copied", `Coordinate: ${postUrl}`);
                 }
               }}
@@ -188,9 +210,8 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
 
             <TouchableOpacity
               style={styles.actionBtn}
-              onPress={() => {
+              onPress={async () => {
                 triggerHaptic("success");
-                handleClose();
                 if (!post) return;
                 addInstaStorySlide({
                   id: `ys_${Date.now()}`,
@@ -199,6 +220,8 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
                   isVideo: false,
                   artifact: null,
                 });
+                await recordShare();
+                handleClose();
                 Alert.alert("Story Shared", "Shared successfully to your Stories feed!");
               }}
             >
@@ -210,13 +233,18 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
 
             <TouchableOpacity
               style={styles.actionBtn}
-              onPress={() => {
+              onPress={async () => {
                 triggerHaptic("success");
-                handleClose();
                 const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"\n\nLink: ${postUrl}`;
-                Linking.openURL(`whatsapp://send?text=${encodeURIComponent(text)}`).catch(() => {
-                  Linking.openURL(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`);
-                });
+                try {
+                  await Linking.openURL(`whatsapp://send?text=${encodeURIComponent(text)}`);
+                } catch {
+                  await Linking.openURL(
+                    `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`
+                  );
+                }
+                await recordShare();
+                handleClose();
               }}
             >
               <View style={[styles.actionCircle, { backgroundColor: "#25d366" }]}>
@@ -227,12 +255,15 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
 
             <TouchableOpacity
               style={styles.actionBtn}
-              onPress={() => {
+              onPress={async () => {
                 triggerHaptic("success");
+                try {
+                  await Linking.openURL("instagram://camera");
+                } catch {
+                  await Linking.openURL("https://instagram.com");
+                }
+                await recordShare();
                 handleClose();
-                Linking.openURL("instagram://camera").catch(() => {
-                  Linking.openURL("https://instagram.com");
-                });
               }}
             >
               <View style={[styles.actionCircle, { backgroundColor: "#e1306c" }]}>
@@ -243,15 +274,18 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
 
             <TouchableOpacity
               style={styles.actionBtn}
-              onPress={() => {
+              onPress={async () => {
                 triggerHaptic("success");
-                handleClose();
                 const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"\n\nLink: ${postUrl}`;
-                Linking.openURL(`tg://msg?text=${encodeURIComponent(text)}`).catch(() => {
-                  Linking.openURL(
+                try {
+                  await Linking.openURL(`tg://msg?text=${encodeURIComponent(text)}`);
+                } catch {
+                  await Linking.openURL(
                     `https://t.me/share/url?url=${encodeURIComponent(postUrl)}&text=${encodeURIComponent(text)}`
                   );
-                });
+                }
+                await recordShare();
+                handleClose();
               }}
             >
               <View style={[styles.actionCircle, { backgroundColor: "#0088cc" }]}>
@@ -262,15 +296,22 @@ export function PostShareSheet({ visible, onClose, post, shareLink }: PostShareS
 
             <TouchableOpacity
               style={styles.actionBtn}
-              onPress={() => {
+              onPress={async () => {
                 triggerHaptic("success");
-                handleClose();
                 const text = `Check out this gorgeous quiet-luxury curation on AURA: "${caption}"`;
-                Share.share({
-                  message: `${text}\n\nLink: ${postUrl}`,
-                  url: postUrl,
-                  title: "AURA Luxury Curation",
-                }).catch(() => {});
+                try {
+                  const result = await Share.share({
+                    message: `${text}\n\nLink: ${postUrl}`,
+                    url: postUrl,
+                    title: "AURA Luxury Curation",
+                  });
+                  if (result.action === Share.sharedAction) {
+                    await recordShare();
+                  }
+                } catch {
+                  /* user dismissed */
+                }
+                handleClose();
               }}
             >
               <View style={styles.actionCircle}>
