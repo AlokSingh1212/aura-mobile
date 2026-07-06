@@ -115,15 +115,19 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const callEngineRef = useRef<any>(null);
   const isSendingMessageRef = useRef(false);
   const chatTranslateX = useRef(new Animated.Value(0)).current;
+  const [chatScrollEnabled, setChatScrollEnabled] = useState(true);
 
-  // Swipe to close active chat responder
+  // Swipe to close active chat responder (interactive edge swipe)
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (evt, gestureState) => {
-        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 3 && gestureState.dx > 10;
+        return gestureState.x0 < 60 && Math.abs(gestureState.dx) > 5;
       },
       onMoveShouldSetPanResponder: (evt, gestureState) => {
-        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 3 && gestureState.dx > 10;
+        return gestureState.x0 < 60 && Math.abs(gestureState.dx) > 5;
+      },
+      onPanResponderGrant: (evt, gestureState) => {
+        setChatScrollEnabled(false);
       },
       onPanResponderMove: (evt, gestureState) => {
         if (gestureState.dx > 0) {
@@ -131,12 +135,13 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         }
       },
       onPanResponderRelease: (evt, gestureState) => {
+        setChatScrollEnabled(true);
         const screenWidth = Dimensions.get("window").width;
-        if (gestureState.dx > screenWidth * 0.35 || gestureState.vx > 0.5) {
+        if (gestureState.dx > screenWidth * 0.3 || gestureState.vx > 0.4) {
           triggerHaptic("light");
           Animated.timing(chatTranslateX, {
             toValue: screenWidth,
-            duration: 180,
+            duration: 150,
             useNativeDriver: true,
           }).start(() => {
             setActiveChat(null);
@@ -145,17 +150,28 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         } else {
           Animated.spring(chatTranslateX, {
             toValue: 0,
-            friction: 7,
+            friction: 8,
+            tension: 40,
             useNativeDriver: true,
           }).start();
         }
       },
+      onPanResponderTerminate: () => {
+        setChatScrollEnabled(true);
+        Animated.spring(chatTranslateX, {
+          toValue: 0,
+          friction: 8,
+          tension: 40,
+          useNativeDriver: true,
+        }).start();
+      }
     })
   ).current;
 
   useEffect(() => {
     if (activeChat) {
       chatTranslateX.setValue(0);
+      setChatScrollEnabled(true);
     }
   }, [activeChat]);
 
@@ -2151,6 +2167,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
             <ScrollView 
               ref={scrollViewRef}
               style={styles.chatFeedScroll}
+              scrollEnabled={chatScrollEnabled}
               contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 12 }}
               onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
             >
