@@ -1917,31 +1917,47 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
             >
               {/* Profile Social Context Information Block at top of chat scroll */}
-              {(!activeChat?.messages || activeChat.messages.length === 0) && (
-                <View style={styles.socialContextContainer}>
-                  {renderAvatarWithStory(
-                    activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100",
-                    activeChat?.name || "",
-                    activeChat?.username,
-                    72
-                  )}
-                  <TouchableOpacity onPress={() => handleViewTargetProfile(activeChat?.name || "", activeChat?.username)}>
-                    <Text style={styles.socialContextTitle}>{activeChat?.name}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleViewTargetProfile(activeChat?.name || "", activeChat?.username)}>
-                    <Text style={styles.socialContextUsername}>@{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}</Text>
-                  </TouchableOpacity>
+              <View style={styles.socialContextContainer}>
+                {renderAvatarWithStory(
+                  activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100",
+                  activeChat?.name || "",
+                  activeChat?.username,
+                  72
+                )}
+                <TouchableOpacity onPress={() => handleViewTargetProfile(activeChat?.name || "", activeChat?.username)}>
+                  <Text style={styles.socialContextTitle}>{activeChat?.name}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleViewTargetProfile(activeChat?.name || "", activeChat?.username)}>
+                  <Text style={styles.socialContextUsername}>@{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}</Text>
+                </TouchableOpacity>
+                
+                {/* Dynamic details like Category and Followers count */}
+                {activeChat?.followersCount !== undefined && (
                   <Text style={styles.socialContextSubtext}>
-                    {activeChat?.socialContextText || "You don't follow each other on Aura"}
+                    {activeChat.followersCount} followers • {activeChat.category || "Fashion Node"}
                   </Text>
+                )}
+                {/* If seller, the name of the store managed by them */}
+                {activeChat?.managedStoreName ? (
+                  <Text style={styles.socialContextSubtext}>
+                    Store managed: {activeChat.managedStoreName}
+                  </Text>
+                ) : null}
+
+                <Text style={styles.socialContextSubtext}>
+                  {activeChat?.socialContextText || "You don't follow each other on Aura"}
+                </Text>
+                
+                {/* Dynamically hidden View Profile Button (disappears once chat begins or text is typed) */}
+                {(!activeChat?.messages || activeChat.messages.length === 0) && chatReplyText.trim().length === 0 && (
                   <TouchableOpacity 
                     style={styles.socialContextBtn}
                     onPress={() => handleViewTargetProfile(activeChat?.name || "", activeChat?.username)}
                   >
                     <Text style={styles.socialContextBtnText}>View profile</Text>
                   </TouchableOpacity>
-                </View>
-              )}
+                )}
+              </View>
               
               {(activeChat?.messages || []).map((msg: any) => {
                 const isMine = msg.senderId === (isSeller ? activeMaisonId : currentUserId);
