@@ -114,7 +114,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [callAgoraAppId, setCallAgoraAppId] = useState("");
   const callEngineRef = useRef<any>(null);
   const isSendingMessageRef = useRef(false);
-  const chatTranslateX = useRef(new Animated.Value(0)).current;
+  const chatTranslateX = useRef(new Animated.Value(Dimensions.get("window").width)).current;
   const [chatScrollEnabled, setChatScrollEnabled] = useState(true);
 
   // Swipe to close active chat responder (interactive edge swipe)
@@ -145,7 +145,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
             useNativeDriver: true,
           }).start(() => {
             setActiveChat(null);
-            chatTranslateX.setValue(0);
+            chatTranslateX.setValue(screenWidth);
           });
         } else {
           Animated.spring(chatTranslateX, {
@@ -177,7 +177,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       useNativeDriver: true,
     }).start(() => {
       setActiveChat(null);
-      chatTranslateX.setValue(0);
+      chatTranslateX.setValue(screenWidth);
       if (callback) callback();
     });
   };
@@ -2099,13 +2099,9 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         </SafeAreaView>
       </View>
 
-      <Modal
-        visible={activeChat !== null}
-        animationType="none"
-        onRequestClose={() => closeActiveChat()}
-      >
+      {activeChat !== null && (
         <Animated.View 
-          style={[styles.dmSlidePanel, { top: 0, bottom: 0, left: 0, right: 0, transform: [{ translateX: chatTranslateX }] }]}
+          style={[styles.dmSlidePanel, { top: 0, bottom: 0, left: 0, right: 0, zIndex: 3000, transform: [{ translateX: chatTranslateX }] }]}
           {...panResponder.panHandlers}
         >
           <KeyboardAvoidingView 
@@ -2799,7 +2795,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
             </View>
           )}
         </Animated.View>
-      </Modal>
+      )}
 
       {/* 👤 NEW CHAT CREATOR/USER SELECTOR MODAL */}
       <Modal visible={showNewChatModal} animationType="slide" transparent>
