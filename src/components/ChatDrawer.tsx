@@ -115,6 +115,9 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [sharingProductsList, setSharingProductsList] = useState(false);
 
+  // Scroll Ref
+  const scrollViewRef = useRef<ScrollView>(null);
+
   const startCall = async (type: "AUDIO" | "VIDEO") => {
     if (!activeChat) return;
     triggerHaptic("heavy");
@@ -1687,10 +1690,12 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </View>
             </View>
 
-            {/* Messages feed list */}
+            {/* Messages feed list with auto-scroll integration */}
             <ScrollView 
+              ref={scrollViewRef}
               style={styles.chatFeedScroll}
               contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 12 }}
+              onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
             >
               {/* Profile Social Context Information Block at top of chat scroll */}
               <View style={styles.socialContextContainer}>
