@@ -10,6 +10,8 @@ import {
   Dimensions,
   Alert,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -1630,10 +1632,14 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         </SafeAreaView>
       </View>
 
-      {/* 💬 INDIVIDUAL ACTIVE CONVERSATION MESSENGER PANEL (SLIDES ON TOP) */}
       {activeChat && (
         <View style={[styles.dmSlidePanel, { bottom: bottomBarHeight }]}>
-          <SafeAreaView style={styles.dmSafeArea}>
+          <KeyboardAvoidingView 
+            style={{ flex: 1 }} 
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
+          >
+            <SafeAreaView style={styles.dmSafeArea}>
             {/* Chat header */}
               <View style={styles.dmHeaderRow}>
                 <TouchableOpacity onPress={() => setActiveChat(null)}>
@@ -1735,6 +1741,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </TouchableOpacity>
             </View>
           </SafeAreaView>
+         </KeyboardAvoidingView>
         </View>
       )}
 
