@@ -316,24 +316,24 @@ export default function ViewProfileScreen() {
     if (isCorrectProfile && viewingProfile?.tags) {
       setTags(viewingProfile.tags);
     } else {
-      setTags([]);
+      setTags((prev) => (prev.length > 0 ? [] : prev));
     }
   }, [viewingProfile, isCorrectProfile]);
 
   useEffect(() => {
-    if (showNetworkModal && profile?.profileId && !profile.profileId.startsWith("mock_")) {
+    if (showNetworkModal && profile?.profileId && !profile.profileId.startsWith("mock_") && profile.profileId !== "temp_id") {
       loadNetworkList(networkTab, profile.profileId);
     }
   }, [showNetworkModal, networkTab, profile?.profileId, loadNetworkList]);
 
   useEffect(() => {
-    if (!activeProfile?.id || profile?.profileId?.startsWith("mock_")) return;
+    if (!isCorrectProfile || !activeProfile?.id || !profile?.profileId || profile.profileId === "temp_id" || profile.profileId.startsWith("mock_")) return;
     fetchSuggestedProfiles(activeProfile.id).then(setSuggestedProfiles);
-  }, [activeProfile?.id, profile?.profileId]);
+  }, [activeProfile?.id, profile?.profileId, isCorrectProfile]);
 
   useEffect(() => {
     if (!isCorrectProfile || !profile?.profileId || profile.profileId === "temp_id" || profile.profileId.startsWith("mock_") || showPrivateOverlay) {
-      setProfilePosts([]);
+      setProfilePosts((prev) => (prev.length > 0 ? [] : prev));
       return;
     }
     setLoadingPosts(true);
