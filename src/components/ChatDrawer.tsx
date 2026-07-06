@@ -1996,23 +1996,28 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                       {activeChat?.verified && (
                         <Lucide name="checkmark-circle" size={15} color="#00f5ff" />
                       )}
-                      {conversationLabels[activeChat.id] && (
-                        <View style={{
-                          backgroundColor: LABELS.find(l => l.id === conversationLabels[activeChat.id])?.color + "33",
-                          paddingHorizontal: 6,
-                          paddingVertical: 1.5,
-                          borderRadius: 4,
-                          marginLeft: 6
-                        }}>
-                          <Text style={{
-                            color: LABELS.find(l => l.id === conversationLabels[activeChat.id])?.color,
-                            fontSize: 10,
-                            fontWeight: "bold"
+                      {activeChat?.id && conversationLabels[activeChat.id] && (() => {
+                        const labelId = conversationLabels[activeChat.id];
+                        const labelObj = LABELS.find(l => l.id === labelId);
+                        if (!labelObj) return null;
+                        return (
+                          <View style={{
+                            backgroundColor: labelObj.color + "33",
+                            paddingHorizontal: 6,
+                            paddingVertical: 1.5,
+                            borderRadius: 4,
+                            marginLeft: 6
                           }}>
-                            {LABELS.find(l => l.id === conversationLabels[activeChat.id])?.name.toUpperCase()}
-                          </Text>
-                        </View>
-                      )}
+                            <Text style={{
+                              color: labelObj.color,
+                              fontSize: 10,
+                              fontWeight: "bold"
+                            }}>
+                              {labelObj.name.toUpperCase()}
+                            </Text>
+                          </View>
+                        );
+                      })()}
                     </View>
                     <Text style={styles.headerUsernameText}>
                       @{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}
@@ -2028,7 +2033,11 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                 <TouchableOpacity onPress={() => startCall("VIDEO")}>
                   <Lucide name="videocam-outline" size={25} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => { triggerHaptic("medium"); setSelectedLabelTemp(conversationLabels[activeChat.id] || null); setShowLabelSheet(true); }}>
+                <TouchableOpacity onPress={() => { 
+                  triggerHaptic("medium"); 
+                  setSelectedLabelTemp(activeChat?.id ? (conversationLabels[activeChat.id] || null) : null); 
+                  setShowLabelSheet(true); 
+                }}>
                   <Lucide name="pricetag-outline" size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -2139,7 +2148,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                     </View>
 
                     {/* Status Text (Seen, Delivered, Sent) underneath the bubble, only show for my latest message */}
-                    {isMine && (activeChat.messages.filter((m: any) => m.senderId === (isSeller ? activeMaisonId : currentUserId)).slice(-1)[0]?.id === msg.id) && (
+                    {isMine && (activeChat?.messages?.filter((m: any) => m.senderId === (isSeller ? activeMaisonId : currentUserId)).slice(-1)[0]?.id === msg.id) && (
                       <Text style={styles.msgStatusText}>
                         {msg.status === "sending" ? "Sending" : msg.status === "error" ? "Failed" : (msg.status === "read" ? "Seen" : (msg.status === "delivered" ? "Delivered" : "Sent"))}
                       </Text>
