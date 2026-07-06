@@ -2764,9 +2764,7 @@ export default function ReelsScreen() {
 
       {/* 💬 Individual conversation is now handled inside ChatDrawer */}
 
-      {!isChatActive && (
-        <AuraBottomNav activeTab={bottomNavTab} homeTabHandlers={homeTabHandlers} />
-      )}
+      <AuraBottomNav activeTab={bottomNavTab} homeTabHandlers={homeTabHandlers} />
 
       {/* 🛍️ PRODUCT PREVIEW SHEET */}
       {/* ──────────────────────────────────────────────────── */}

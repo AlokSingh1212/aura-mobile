@@ -1639,12 +1639,16 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         </SafeAreaView>
       </View>
 
-      {activeChat && (
-        <View style={[styles.dmSlidePanel, { bottom: 0 }]}>
+      <Modal
+        visible={activeChat !== null}
+        animationType="slide"
+        onRequestClose={() => setActiveChat(null)}
+      >
+        <View style={[styles.dmSlidePanel, { top: 0, bottom: 0, left: 0, right: 0 }]}>
           <KeyboardAvoidingView 
             style={{ flex: 1 }} 
             behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
           >
             <SafeAreaView style={styles.dmSafeArea}>
             {/* Chat header */}
@@ -1796,7 +1800,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           </SafeAreaView>
          </KeyboardAvoidingView>
         </View>
-      )}
+      </Modal>
 
       {/* 👤 NEW CHAT CREATOR/USER SELECTOR MODAL */}
       <Modal visible={showNewChatModal} animationType="slide" transparent>
