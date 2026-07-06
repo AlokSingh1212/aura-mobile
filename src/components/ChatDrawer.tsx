@@ -121,6 +121,12 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [showEmojiBar, setShowEmojiBar] = useState(false);
   const EMOJIS = ["❤️", "😂", "🙌", "🔥", "👏", "😢", "😍", "😮", "👍", "🤔"];
 
+  // Long press & reply States
+  const [longPressedMessage, setLongPressedMessage] = useState<any>(null);
+  const [messageReactions, setMessageReactions] = useState<Record<string, string[]>>({});
+  const [replyingToMessage, setReplyingToMessage] = useState<any>(null);
+  const REACTION_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍"];
+
   // Scroll Ref
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -533,6 +539,73 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       image: product.images?.[0] || product.image
     });
     await sendAttachmentMessage("PRODUCT", productPayload);
+  };
+
+
+
+  const handleReactToMessage = (msgId: string, emoji: string) => {
+    triggerHaptic("medium");
+    setLongPressedMessage(null);
+    if (emoji === "MORE") {
+      Alert.alert("Reactions", "Custom emoji reactions sheet.");
+      return;
+    }
+    setMessageReactions((prev: Record<string, string[]>) => {
+      const current = prev[msgId] || [];
+      if (current.includes(emoji)) {
+        return { ...prev, [msgId]: current.filter((e) => e !== emoji) };
+      }
+      return { ...prev, [msgId]: [...current, emoji] };
+    });
+  };
+
+  const handleUnsendMessage = async (msgId: string) => {
+    triggerHaptic("heavy");
+    setLongPressedMessage(null);
+    
+    // Update local state instantly (optimistic update)
+    setActiveChat((prev: any) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        messages: prev.messages.filter((m: any) => m.id !== msgId)
+      };
+    });
+
+    try {
+      await fetch(`${API_HOST}/api/mobile/chat/unsend`, {
+        method: "POST",
+        body: JSON.stringify({ messageId: msgId, type: activeChat.type }),
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (e) {
+      console.warn("Unsend backend sync failed:", e);
+    }
+  };
+
+  const handleMessageAction = (action: "REPLY" | "SAVE" | "STICKER" | "DELETE" | "UNSEND" | "MORE") => {
+    if (!longPressedMessage) return;
+    const msgId = longPressedMessage.id;
+
+    if (action === "REPLY") {
+      setReplyingToMessage(longPressedMessage);
+      setLongPressedMessage(null);
+      triggerHaptic("light");
+    } else if (action === "SAVE") {
+      setLongPressedMessage(null);
+      triggerHaptic("light");
+      Alert.alert("Saved", "Response saved to quick replies!");
+    } else if (action === "STICKER") {
+      setLongPressedMessage(null);
+      triggerHaptic("light");
+      Alert.alert("Stickers", "Launch sticker options.");
+    } else if (action === "DELETE" || action === "UNSEND") {
+      handleUnsendMessage(msgId);
+    } else if (action === "MORE") {
+      setLongPressedMessage(null);
+      triggerHaptic("light");
+      Alert.alert("More Options", "Forward, copy, or report message.");
+    }
   };
 
   const sendAttachmentMessage = async (attachType: "IMAGE" | "LOCATION" | "PRODUCT", content: string) => {
@@ -995,7 +1068,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   useEffect(() => {
     if (!socialGraph) return;
     setConversations((prev) => applySocialFilters(prev));
-    setActiveChat((prev) =>
+    setActiveChat((prev: any) =>
       prev && isConversationBlocked(prev, socialGraph) ? null : prev
     );
   }, [socialGraphVersion, socialGraph]);
@@ -1176,7 +1249,11 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     sendTypingStatus(false);
 
-    const textToSend = chatReplyText;
+    const textToSend = replyingToMessage 
+      ? `[REPLY:${replyingToMessage.id}] ${chatReplyText}` 
+      : chatReplyText;
+
+    setReplyingToMessage(null);
     setChatReplyText("");
 
     const currentSenderName = isSeller 
@@ -1961,16 +2038,44 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               
               {(activeChat?.messages || []).map((msg: any) => {
                 const isMine = msg.senderId === (isSeller ? activeMaisonId : currentUserId);
+                
+                // Parse reply quotes
+                let actualText = msg.content;
+                let parentMsg: any = null;
+                const match = msg.content.match(/^\[REPLY:([^\]]+)\]\s*(.*)$/);
+                if (match) {
+                  const parentMsgId = match[1];
+                  actualText = match[2];
+                  parentMsg = activeChat.messages?.find((m: any) => m.id === parentMsgId);
+                }
+
                 return (
-                  <View key={msg.id} style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}>
+                  <TouchableOpacity 
+                    key={msg.id} 
+                    onLongPress={() => { triggerHaptic("medium"); setLongPressedMessage(msg); }}
+                    delayLongPress={350}
+                    activeOpacity={0.9}
+                    style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}
+                  >
                     {!isMine && (
                       <View style={styles.msgAvatar}>
                         <Text style={styles.msgAvatarText}>{activeChat?.name?.[0]?.toUpperCase()}</Text>
                       </View>
                     )}
-                    <View style={[styles.msgBubble, isMine ? styles.msgBubbleRight : styles.msgBubbleLeft]}>
+                    <View style={[styles.msgBubble, isMine ? styles.msgBubbleRight : styles.msgBubbleLeft, { position: "relative" }]}>
+                      {/* Quote preview rendering */}
+                      {parentMsg && (
+                        <View style={styles.bubbleReplyPreview}>
+                          <Text style={styles.bubbleReplyText} numberOfLines={1}>
+                            {parentMsg.content.startsWith("[REPLY:") 
+                              ? parentMsg.content.replace(/^\[REPLY:[^\]]+\]\s*/, "") 
+                              : parentMsg.content}
+                          </Text>
+                        </View>
+                      )}
+                      
                       <View style={{ flexDirection: "row", alignItems: "flex-end", flexWrap: "wrap" }}>
-                        {renderMessageContent(msg.content, isMine)}
+                        {renderMessageContent(actualText, isMine)}
                         {isMine && (
                           <View style={{ marginLeft: 6, bottom: -1 }}>
                             {msg.status === "sending" ? (
@@ -1983,8 +2088,17 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                           </View>
                         )}
                       </View>
+
+                      {/* Bubble Reactions Row */}
+                      {messageReactions[msg.id] && messageReactions[msg.id].length > 0 && (
+                        <View style={styles.bubbleReactionsRow}>
+                          {messageReactions[msg.id].map((emoji, index) => (
+                            <Text key={index} style={{ fontSize: 13 }}>{emoji}</Text>
+                          ))}
+                        </View>
+                      )}
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </ScrollView>
@@ -1999,6 +2113,22 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                 <Text style={styles.typingText}>
                   {typingUsers[activeChat.id]} is typing...
                 </Text>
+              </View>
+            )}
+
+            {/* Replying To Message Preview Bar */}
+            {replyingToMessage && (
+              <View style={styles.replyPreviewHeader}>
+                <Text style={styles.replyPreviewTitle} numberOfLines={1}>
+                  Replying to {replyingToMessage.senderId === currentUserId ? "yourself" : activeChat?.name}: {
+                    replyingToMessage.content.startsWith("[REPLY:") 
+                      ? replyingToMessage.content.replace(/^\[REPLY:[^\]]+\]\s*/, "") 
+                      : replyingToMessage.content
+                  }
+                </Text>
+                <TouchableOpacity onPress={() => { triggerHaptic("light"); setReplyingToMessage(null); }}>
+                  <Lucide name="close-circle" size={18} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
               </View>
             )}
 
@@ -2242,6 +2372,79 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   </View>
                 </SafeAreaView>
               </View>
+            </View>
+          )}
+
+          {/* 🔘 DYNAMIC LONG-PRESS MESSAGE OPTIONS DRAWER OVERLAY */}
+          {longPressedMessage && (
+            <View style={StyleSheet.absoluteFillObject}>
+              <TouchableOpacity 
+                style={styles.longPressBackdrop} 
+                activeOpacity={1} 
+                onPress={() => setLongPressedMessage(null)}
+              >
+                <View style={styles.longPressContainer}>
+                  {/* 1. Emoji Reaction pill */}
+                  <View style={styles.reactionPillContainer}>
+                    {REACTION_EMOJIS.map((emoji) => (
+                      <TouchableOpacity key={emoji} onPress={() => handleReactToMessage(longPressedMessage.id, emoji)}>
+                        <Text style={styles.reactionEmojiText}>{emoji}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity onPress={() => handleReactToMessage(longPressedMessage.id, "MORE")}>
+                      <Lucide name="add-circle" size={26} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* 2. Options menu card */}
+                  <View style={styles.longPressOptionsCard}>
+                    <Text style={styles.longPressTimestamp}>
+                      {new Date(longPressedMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+
+                    {/* Reply */}
+                    <TouchableOpacity style={styles.longPressOptionItem} onPress={() => handleMessageAction("REPLY")}>
+                      <Lucide name="arrow-undo-outline" size={22} color="#fff" />
+                      <Text style={styles.longPressOptionLabel}>Reply</Text>
+                    </TouchableOpacity>
+
+                    {/* Save reply */}
+                    <TouchableOpacity style={styles.longPressOptionItem} onPress={() => handleMessageAction("SAVE")}>
+                      <Lucide name="chatbubble-outline" size={22} color="#fff" />
+                      <Text style={styles.longPressOptionLabel}>Save reply</Text>
+                    </TouchableOpacity>
+
+                    {/* Add sticker */}
+                    <TouchableOpacity style={styles.longPressOptionItem} onPress={() => handleMessageAction("STICKER")}>
+                      <Lucide name="happy-outline" size={22} color="#fff" />
+                      <Text style={styles.longPressOptionLabel}>Add sticker</Text>
+                    </TouchableOpacity>
+
+                    {/* Delete for you */}
+                    <TouchableOpacity style={styles.longPressOptionItem} onPress={() => handleMessageAction("DELETE")}>
+                      <Lucide name="trash-outline" size={22} color="#fff" />
+                      <Text style={styles.longPressOptionLabel}>Delete for you</Text>
+                    </TouchableOpacity>
+
+                    {/* Unsend (in RED) */}
+                    <TouchableOpacity style={styles.longPressOptionItem} onPress={() => handleMessageAction("UNSEND")}>
+                      <Lucide name="arrow-undo" size={22} color="#ff4a4a" />
+                      <Text style={[styles.longPressOptionLabel, { color: "#ff4a4a" }]}>Unsend</Text>
+                    </TouchableOpacity>
+
+                    {/* More */}
+                    <TouchableOpacity style={styles.longPressOptionItem} onPress={() => handleMessageAction("MORE")}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flex: 1 }}>
+                        <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
+                          <Lucide name="ellipsis-horizontal" size={22} color="#fff" />
+                          <Text style={styles.longPressOptionLabel}>More</Text>
+                        </View>
+                        <Lucide name="chevron-forward" size={16} color="rgba(255,255,255,0.4)" />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -3210,5 +3413,105 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
     fontSize: 12.5,
     marginTop: 2,
+  },
+  bubbleReplyPreview: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderLeftWidth: 3,
+    borderLeftColor: "#00f5ff",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    marginBottom: 6,
+    opacity: 0.85,
+  },
+  bubbleReplyText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12.5,
+    fontStyle: "italic",
+  },
+  bubbleReactionsRow: {
+    flexDirection: "row",
+    gap: 3,
+    backgroundColor: "#1c1c1e",
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#080415",
+    position: "absolute",
+    bottom: -11,
+    right: 8,
+    zIndex: 10,
+  },
+  longPressBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  longPressContainer: {
+    width: "80%",
+    alignItems: "center",
+    gap: 16,
+  },
+  reactionPillContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1c1c1e",
+    borderRadius: 30,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    gap: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  reactionEmojiText: {
+    fontSize: 24,
+  },
+  longPressOptionsCard: {
+    width: "100%",
+    backgroundColor: "#1c1c1e",
+    borderRadius: 24,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    overflow: "hidden",
+  },
+  longPressTimestamp: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 12,
+    textAlign: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  longPressOptionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    gap: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.04)",
+  },
+  longPressOptionLabel: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  replyPreviewHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.04)",
+  },
+  replyPreviewTitle: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 13,
+    flex: 1,
   },
 });
