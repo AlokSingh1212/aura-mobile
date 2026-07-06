@@ -112,6 +112,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [callAgoraToken, setCallAgoraToken] = useState("");
   const [callAgoraAppId, setCallAgoraAppId] = useState("");
   const callEngineRef = useRef<any>(null);
+  const isSendingMessageRef = useRef(false);
   const [callJoined, setCallJoined] = useState(false);
   const [callRemoteUid, setCallRemoteUid] = useState<number | null>(null);
 
@@ -1301,9 +1302,13 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   };
 
   const handleSendChatMessage = async () => {
+    if (isSendingMessageRef.current) return;
     if (!chatReplyText.trim() || !activeChat) return;
+    isSendingMessageRef.current = true;
+    
     if (socialGraph && isConversationBlocked(activeChat, socialGraph)) {
       Alert.alert("Blocked", "Unblock this account to send messages.");
+      isSendingMessageRef.current = false;
       return;
     }
     triggerHaptic("medium");
@@ -1409,6 +1414,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       } catch (err) {
         console.warn("Offline action queue write error:", err);
       }
+    } finally {
+      isSendingMessageRef.current = false;
     }
   };
 
