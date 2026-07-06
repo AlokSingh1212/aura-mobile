@@ -58,7 +58,7 @@ export default function RootLayout() {
         <Stack
         screenOptions={{
           headerShown: false,
-          animation: "fade_from_bottom",
+          animation: "slide_from_right",
           contentStyle: { backgroundColor: "#080415" }
         }}
       >
@@ -74,7 +74,10 @@ export default function RootLayout() {
         <Stack.Screen name="account" options={{ animation: "none" }} />
         <Stack.Screen name="settings" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="create" options={{ animation: "slide_from_bottom", presentation: "modal" }} />
-        <Stack.Screen name="profile/[username]" options={{ animation: "fade_from_bottom" }} />
+        <Stack.Screen name="profile/[username]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="post/[id]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="reel/[id]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="product/[id]" options={{ animation: "slide_from_right" }} />
       </Stack>
       </SettingsEnforcementProvider>
     </GestureHandlerRootView>
