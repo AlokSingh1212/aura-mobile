@@ -207,10 +207,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         <TouchableOpacity 
           onPress={() => {
             triggerHaptic("medium");
-            setActiveChat(null); // Close active chat modal so story displays on screen
-            if (onOpenStoryGroup) {
-              onOpenStoryGroup(storyGroup);
-            }
+            setCoinUser(activeChat);
+            setCoinFlipped(false);
+            coinFlipAnim.setValue(0);
+            setShowCoinPopup(true);
           }}
         >
           <LinearGradient
