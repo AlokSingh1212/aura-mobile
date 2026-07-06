@@ -935,6 +935,14 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           return { ...c, category: "Primary" };
         });
         setConversations(applySocialFilters(mapped));
+
+        // Sync database labels into state
+        const labelMap: Record<string, string> = {};
+        mapped.forEach((c: any) => {
+          if (c.label) labelMap[c.id] = c.label;
+        });
+        setConversationLabels(labelMap);
+
         // 💾 Cache updated conversations and messages in SQLite
         try {
           cacheConversations(mapped);
@@ -950,6 +958,13 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           if (retryData.success && retryData.conversations.length > 0) {
             const mappedRetry = retryData.conversations.map((c: any) => ({ ...c, category: "Primary" }));
             setConversations(applySocialFilters(mappedRetry));
+
+            const labelMap: Record<string, string> = {};
+            mappedRetry.forEach((c: any) => {
+              if (c.label) labelMap[c.id] = c.label;
+            });
+            setConversationLabels(labelMap);
+
             cacheConversations(mappedRetry);
           }
         } catch {
@@ -2553,13 +2568,29 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   {/* Save button */}
                   <TouchableOpacity 
                     style={styles.labelSaveBtn}
-                    onPress={() => {
+                    onPress={async () => {
                       triggerHaptic("medium");
                       if (activeChat) {
+                        const newLabel = selectedLabelTemp || "";
                         setConversationLabels(prev => ({
                           ...prev,
-                          [activeChat.id]: selectedLabelTemp || ""
+                          [activeChat.id]: newLabel
                         }));
+
+                        // Persist to PostgreSQL database permanently
+                        try {
+                          await fetch(`${API_HOST}/api/mobile/chat/label`, {
+                            method: "POST",
+                            body: JSON.stringify({
+                              conversationId: activeChat.id,
+                              type: activeChat.type,
+                              label: newLabel
+                            }),
+                            headers: { "Content-Type": "application/json" }
+                          });
+                        } catch (err) {
+                          console.warn("Failed to persist label update:", err);
+                        }
                       }
                       setShowLabelSheet(false);
                     }}
