@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -22,6 +22,9 @@ import { getLocalConversations, cacheConversations, addPendingAction } from "@/u
 import { useSocialGraph } from "@/hooks/useSocialGraph";
 import { filterConversations, isConversationBlocked } from "@/lib/feedSocialFilter";
 import { canReceiveDm, shouldShowReadReceipts } from "@/lib/settingsEnforcement";
+import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
+import { createRtcEngine, ChannelProfileType, ClientRoleType, RtcSurfaceView } from "./agora";
 
 const { width } = Dimensions.get("window");
 
@@ -93,6 +96,382 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [dmSearch, setDmSearch] = useState("");
   const [activeDmFilter, setActiveDmFilter] = useState("Primary");
   const [activeBusinessTool, setActiveBusinessTool] = useState<string | null>(null);
+
+  // Call States
+  const [activeCall, setActiveCall] = useState<any>(null);
+  const [callState, setCallState] = useState<"none" | "outgoing" | "incoming" | "active">("none");
+  const [callerInfo, setCallerInfo] = useState<any>(null);
+  const [callAgoraToken, setCallAgoraToken] = useState("");
+  const [callAgoraAppId, setCallAgoraAppId] = useState("");
+  const callEngineRef = useRef<any>(null);
+  const [callJoined, setCallJoined] = useState(false);
+  const [callRemoteUid, setCallRemoteUid] = useState<number | null>(null);
+
+  // Attach Menu States
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [sharingProductsList, setSharingProductsList] = useState(false);
+
+  const startCall = async (type: "AUDIO" | "VIDEO") => {
+    if (!activeChat) return;
+    triggerHaptic("heavy");
+    const peerUserId = activeChat.type === "PRIVATE"
+      ? (activeChat.userOneId === currentUserId ? activeChat.userTwoId : activeChat.userOneId)
+      : (activeChat.userId);
+    if (!peerUserId) return;
+
+    setCallState("outgoing");
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/chat/call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "initiate",
+          callerId: currentUserId,
+          receiverId: peerUserId,
+          type
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.call) {
+        setActiveCall(data.call);
+        setCallAgoraToken(data.tokens.callerToken);
+        setCallAgoraAppId(data.tokens.appId);
+        await initCallRtcEngine(data.tokens.appId, data.tokens.callerToken, data.tokens.channelName, type);
+      } else {
+        setCallState("none");
+        Alert.alert("Call Failed", data.error || "Unable to start call.");
+      }
+    } catch (err) {
+      console.warn("Error starting call:", err);
+      setCallState("none");
+    }
+  };
+
+  const acceptCall = async () => {
+    if (!activeCall) return;
+    triggerHaptic("success");
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/chat/call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "accept",
+          callId: activeCall.id
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCallState("active");
+        await initCallRtcEngine(callAgoraAppId, callAgoraToken, activeCall.channelName, activeCall.type);
+      }
+    } catch (err) {
+      console.warn("Error accepting call:", err);
+    }
+  };
+
+  const declineCall = async () => {
+    if (!activeCall) return;
+    triggerHaptic("medium");
+    setCallState("none");
+    try {
+      await fetch(`${API_HOST}/api/mobile/chat/call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "decline",
+          callId: activeCall.id
+        })
+      });
+    } catch {}
+    destroyCallRtcEngine();
+    setActiveCall(null);
+  };
+
+  const endCall = async () => {
+    if (!activeCall) return;
+    triggerHaptic("medium");
+    setCallState("none");
+    try {
+      await fetch(`${API_HOST}/api/mobile/chat/call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "end",
+          callId: activeCall.id
+        })
+      });
+    } catch {}
+    destroyCallRtcEngine();
+    setActiveCall(null);
+  };
+
+  const initCallRtcEngine = async (appId: string, token: string, channelName: string, callType: string) => {
+    if (!createRtcEngine) {
+      setCallJoined(true);
+      return;
+    }
+    try {
+      const engine = createRtcEngine();
+      callEngineRef.current = engine;
+      await engine.initialize({
+        appId: appId || "demo-app-id-placeholder",
+        channelProfile: ChannelProfileType.CHANNEL_PROFILE_LIVE_BROADCASTING,
+      });
+      engine.registerEventHandler({
+        onJoinChannelSuccess: () => {
+          setCallJoined(true);
+        },
+        onUserJoined: (connection: any, uid: number) => {
+          setCallRemoteUid(uid);
+          setCallState("active");
+        },
+        onUserOffline: () => {
+          endCall();
+        },
+        onError: (err: number, msg: string) => {
+          console.error("[Agora Call Error]:", err, msg);
+        }
+      });
+      await engine.enableVideo();
+      if (callType === "AUDIO") {
+        await engine.muteLocalVideoStream(true);
+      } else {
+        await engine.startPreview();
+      }
+      await engine.setClientRole(ClientRoleType.CLIENT_ROLE_BROADCASTER);
+      await engine.joinChannel(token, channelName, 0, {});
+    } catch (e) {
+      console.warn("Agora call engine init failed, falling back to simulator:", e);
+      setCallJoined(true);
+    }
+  };
+
+  const destroyCallRtcEngine = async () => {
+    if (callEngineRef.current) {
+      try {
+        await callEngineRef.current.leaveChannel();
+        await callEngineRef.current.release();
+      } catch {}
+      callEngineRef.current = null;
+    }
+    setCallJoined(false);
+    setCallRemoteUid(null);
+  };
+
+  const handleShareImage = async () => {
+    setShowAttachMenu(false);
+    triggerHaptic("light");
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission Denied", "We need photo permissions to share images.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedUri = result.assets[0].uri;
+        await sendAttachmentMessage("IMAGE", selectedUri);
+      }
+    } catch (e) {
+      console.warn("Failed to pick image:", e);
+    }
+  };
+
+  const handleShareLocation = async () => {
+    setShowAttachMenu(false);
+    triggerHaptic("light");
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission Denied", "We need location permissions to share your coordinates.");
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({});
+      const lat = loc.coords.latitude;
+      const lng = loc.coords.longitude;
+      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+      await sendAttachmentMessage("LOCATION", mapsUrl);
+    } catch (e) {
+      console.warn("Failed to get location:", e);
+      Alert.alert("Location Error", "Unable to retrieve current coordinates.");
+    }
+  };
+
+  const handleShareProduct = async (product: any) => {
+    setSharingProductsList(false);
+    setShowAttachMenu(false);
+    triggerHaptic("medium");
+    const productPayload = JSON.stringify({
+      id: product.id,
+      name: product.name || product.title,
+      price: product.price,
+      image: product.images?.[0] || product.image
+    });
+    await sendAttachmentMessage("PRODUCT", productPayload);
+  };
+
+  const sendAttachmentMessage = async (attachType: "IMAGE" | "LOCATION" | "PRODUCT", content: string) => {
+    if (!activeChat) return;
+    const currentSenderName = isSeller 
+      ? (activeMaisonId === "rare_raven" ? "Rare Raven" : (activeMaisonId === "aloksingh" ? "Alok Singh" : activeMaisonId.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase()))) 
+      : (currentUser?.name || "Alok Singh");
+    const formattedContent = `[ATTACHMENT:${attachType}]${content}`;
+    const tempMessage = {
+      id: `m_${Date.now()}`,
+      content: formattedContent,
+      senderId: isSeller ? activeMaisonId : currentUserId,
+      senderName: currentSenderName,
+      createdAt: new Date().toISOString(),
+      isAdmin: isSeller,
+      status: "sending" as const
+    };
+    setActiveChat((prev: any) => ({
+      ...prev,
+      messages: [...(prev.messages || []), tempMessage],
+      lastMessage: attachType === "IMAGE" ? "📷 Sent an image" : (attachType === "LOCATION" ? "📍 Sent a location" : "🛍️ Sent a product card")
+    }));
+    setConversations(prev => prev.map(c => c.id === activeChat.id ? {
+      ...c,
+      messages: [...(c.messages || []), tempMessage],
+      lastMessage: attachType === "IMAGE" ? "📷 Sent an image" : (attachType === "LOCATION" ? "📍 Sent a location" : "🛍️ Sent a product card")
+    } : c));
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeChat.id,
+          senderId: isSeller ? activeMaisonId : currentUserId,
+          senderName: currentSenderName,
+          content: formattedContent,
+          type: activeChat.type || "MAISON",
+          isAdmin: isSeller
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const realMsg = { ...data.message, status: "sent" };
+        setActiveChat((prev: any) => ({
+          ...prev,
+          messages: prev.messages.map((m: any) => m.id === tempMessage.id ? realMsg : m)
+        }));
+      }
+    } catch (err) {
+      console.warn("Failed to dispatch attachment message:", err);
+    }
+  };
+
+  const renderMessageContent = (content: string, isMine: boolean) => {
+    if (content.startsWith("[ATTACHMENT:IMAGE]")) {
+      const uri = content.replace("[ATTACHMENT:IMAGE]", "");
+      return (
+        <View style={styles.msgImageContainer}>
+          <Image source={{ uri }} style={styles.msgImage} />
+        </View>
+      );
+    }
+    if (content.startsWith("[ATTACHMENT:LOCATION]")) {
+      const url = content.replace("[ATTACHMENT:LOCATION]", "");
+      return (
+        <TouchableOpacity 
+          style={styles.msgLocationContainer}
+          onPress={async () => {
+            triggerHaptic("light");
+            const WebBrowser = require("expo-web-browser");
+            await WebBrowser.openBrowserAsync(url);
+          }}
+        >
+          <Lucide name="map-outline" size={20} color="#00f5ff" />
+          <Text style={styles.msgLocationText}>View Shared Location Pin</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (content.startsWith("[ATTACHMENT:PRODUCT]")) {
+      try {
+        const product = JSON.parse(content.replace("[ATTACHMENT:PRODUCT]", ""));
+        return (
+          <View style={styles.msgProductCard}>
+            <Image source={{ uri: product.image }} style={styles.msgProductImage} />
+            <View style={{ flex: 1, paddingLeft: 10 }}>
+              <Text style={styles.msgProductName} numberOfLines={1}>{product.name}</Text>
+              <Text style={styles.msgProductPrice}>₹{parseFloat(product.price).toLocaleString()}</Text>
+              <TouchableOpacity 
+                style={styles.msgProductBuyBtn}
+                onPress={() => {
+                  triggerHaptic("success");
+                  Alert.alert("Direct Order", `Instant checkout initiated for ${product.name}!`);
+                }}
+              >
+                <Text style={styles.msgProductBuyText}>Order Now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      } catch {
+        return <Text style={[styles.msgText, isMine ? styles.msgTextRight : styles.msgTextLeft]}>[Broken Product Card]</Text>;
+      }
+    }
+    return <Text style={[styles.msgText, isMine ? styles.msgTextRight : styles.msgTextLeft]}>{content}</Text>;
+  };
+
+  // Poll for incoming calls
+  useEffect(() => {
+    if (!visible || callState !== "none" || !currentUserId) return;
+    const pollIncomingCall = async () => {
+      try {
+        const res = await fetch(`${API_HOST}/api/mobile/chat/call`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "poll",
+            receiverId: currentUserId
+          })
+        });
+        const data = await res.json();
+        if (data.success && data.call) {
+          triggerHaptic("heavy");
+          setActiveCall(data.call);
+          setCallerInfo(data.caller);
+          setCallAgoraToken(data.token);
+          setCallAgoraAppId(data.appId);
+          setCallState("incoming");
+        }
+      } catch {}
+    };
+    pollIncomingCall();
+    const interval = setInterval(pollIncomingCall, 3500);
+    return () => clearInterval(interval);
+  }, [visible, callState, currentUserId]);
+
+  // If in active call, poll call status to check if peer hung up
+  useEffect(() => {
+    if (callState === "none" || !activeCall) return;
+    const checkCallActiveStatus = async () => {
+      try {
+        const res = await fetch(`${API_HOST}/api/mobile/chat/call`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "checkStatus",
+            callId: activeCall.id
+          })
+        });
+        const data = await res.json();
+        if (data.success && (data.status === "ENDED" || data.status === "REJECTED")) {
+          destroyCallRtcEngine();
+          setCallState("none");
+          setActiveCall(null);
+          Alert.alert("Call Ended", "The calling connection was terminated by peer.");
+        }
+      } catch {}
+    };
+    const interval = setInterval(checkCallActiveStatus, 3000);
+    return () => clearInterval(interval);
+  }, [callState, activeCall]);
 
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [searchNewChat, setSearchNewChat] = useState("");
@@ -1256,22 +1635,30 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         <View style={[styles.dmSlidePanel, { bottom: bottomBarHeight }]}>
           <SafeAreaView style={styles.dmSafeArea}>
             {/* Chat header */}
-            <View style={styles.dmHeaderRow}>
-              <TouchableOpacity onPress={() => setActiveChat(null)}>
-                <Lucide name="chevron-back" size={28} color="#fff" />
-              </TouchableOpacity>
-              
-              <View style={styles.dmTitleRow}>
-                <Text style={styles.dmTitleText}>{activeChat.name}</Text>
-                {activeChat.verified && (
-                  <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
-                )}
-              </View>
+              <View style={styles.dmHeaderRow}>
+                <TouchableOpacity onPress={() => setActiveChat(null)}>
+                  <Lucide name="chevron-back" size={28} color="#fff" />
+                </TouchableOpacity>
+                
+                <View style={styles.dmTitleRow}>
+                  <Text style={styles.dmTitleText}>{activeChat.name}</Text>
+                  {activeChat.verified && (
+                    <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
+                  )}
+                </View>
 
-              <TouchableOpacity onPress={() => triggerHaptic("medium")}>
-                <Lucide name="information-circle-outline" size={26} color="#fff" />
-              </TouchableOpacity>
-            </View>
+                <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
+                  <TouchableOpacity onPress={() => startCall("AUDIO")}>
+                    <Lucide name="call-outline" size={23} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => startCall("VIDEO")}>
+                    <Lucide name="videocam-outline" size={25} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => triggerHaptic("medium")}>
+                    <Lucide name="information-circle-outline" size={26} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
 
             {/* Messages feed list */}
             <ScrollView 
@@ -1294,7 +1681,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                     )}
                     <View style={[styles.msgBubble, isMine ? styles.msgBubbleRight : styles.msgBubbleLeft]}>
                       <View style={{ flexDirection: "row", alignItems: "flex-end", flexWrap: "wrap" }}>
-                        <Text style={[styles.msgText, isMine ? styles.msgTextRight : styles.msgTextLeft]}>{msg.content}</Text>
+                        {renderMessageContent(msg.content, isMine)}
                         {isMine && (
                           <View style={{ marginLeft: 6, bottom: -1 }}>
                             {msg.status === "sending" ? (
@@ -1328,8 +1715,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
 
             {/* Input keyboard bar */}
             <View style={styles.chatInputBar}>
-              <TouchableOpacity style={styles.paperclipBtn}>
-                <Lucide name="image-outline" size={24} color="rgba(255,255,255,0.6)" />
+              <TouchableOpacity style={styles.paperclipBtn} onPress={() => { triggerHaptic("light"); setShowAttachMenu(true); }}>
+                <Lucide name="add-circle-outline" size={26} color="#00f5ff" />
               </TouchableOpacity>
               <TextInput
                 style={styles.chatInput}
@@ -1418,6 +1805,158 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           </SafeAreaView>
         </View>
       </Modal>
+
+      {/* 📞 CALLING / OVERLAY MODAL */}
+      {(callState as any) !== "none" && activeCall && (
+        <Modal visible={(callState as any) !== "none"} transparent animationType="fade">
+          <View style={styles.callOverlayContainer}>
+            <LinearGradient
+              colors={["#120d2c", "#080415"]}
+              style={StyleSheet.absoluteFillObject}
+            />
+
+            {/* Video preview for caller/receiver in Video Calls */}
+            {activeCall.type === "VIDEO" && callState === "active" && (
+              <View style={StyleSheet.absoluteFillObject}>
+                {RtcSurfaceView ? (
+                  <RtcSurfaceView
+                    style={StyleSheet.absoluteFillObject}
+                    canvas={{ uid: callRemoteUid || 0 }}
+                  />
+                ) : (
+                  <Image
+                    source={{ uri: callerInfo?.avatar || activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400" }}
+                    style={StyleSheet.absoluteFillObject}
+                    blurRadius={3}
+                  />
+                )}
+                {/* Floating local preview box */}
+                <View style={styles.localVideoBox}>
+                  {RtcSurfaceView ? (
+                    <RtcSurfaceView
+                      style={StyleSheet.absoluteFillObject}
+                      canvas={{ uid: 0 }}
+                    />
+                  ) : (
+                    <View style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center" }}>
+                      <Lucide name="camera" size={24} color="#00f5ff" />
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
+            <SafeAreaView style={styles.callSafeArea}>
+              {/* Profile Card */}
+              <View style={styles.callProfileCard}>
+                <Image
+                  source={{ uri: callerInfo?.avatar || activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }}
+                  style={styles.callAvatar}
+                />
+                <Text style={styles.callName}>
+                  {callState === "incoming" ? callerInfo?.name : activeChat?.name}
+                </Text>
+                <Text style={styles.callStatusText}>
+                  {callState === "outgoing" && "Ringing..."}
+                  {callState === "incoming" && `Incoming ${activeCall.type.toLowerCase()} call...`}
+                  {callState === "active" && "Call Connected"}
+                </Text>
+              </View>
+
+              {/* Call Controls buttons row */}
+              <View style={styles.callControlsRow}>
+                {callState === "incoming" ? (
+                  <>
+                    <TouchableOpacity style={[styles.callBtn, styles.declineBtn]} onPress={declineCall}>
+                      <Lucide name="close" size={28} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.callBtn, styles.acceptBtn]} onPress={acceptCall}>
+                      <Lucide name="checkmark" size={28} color="#fff" />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity style={[styles.callBtn, styles.endCallBtn]} onPress={endCall}>
+                    <Lucide name="call" size={28} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </SafeAreaView>
+          </View>
+        </Modal>
+      )}
+
+      {/* ➕ ATTACHMENT / SHARING DRAWER BOTTOM SHEET */}
+      {showAttachMenu && (
+        <Modal visible={showAttachMenu} transparent animationType="slide">
+          <TouchableOpacity 
+            style={styles.attachMenuBackdrop} 
+            activeOpacity={1} 
+            onPress={() => setShowAttachMenu(false)}
+          >
+            <View style={styles.attachMenuContent}>
+              <View style={styles.attachMenuHeader}>
+                <View style={styles.attachMenuHandle} />
+              </View>
+              
+              <Text style={styles.attachMenuTitle}>Share Attachment</Text>
+
+              {sharingProductsList ? (
+                <View style={{ height: 200, marginTop: 10 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10, paddingHorizontal: 16 }}>
+                    <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: "bold" }}>SELECT PRODUCT</Text>
+                    <TouchableOpacity onPress={() => setSharingProductsList(false)}>
+                      <Text style={{ color: "#00f5ff", fontSize: 13 }}>Back</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
+                    {products.map((p) => (
+                      <TouchableOpacity 
+                        key={p.id} 
+                        style={styles.shareProductItem}
+                        onPress={() => handleShareProduct(p)}
+                      >
+                        <Image source={{ uri: p.images?.[0] }} style={styles.shareProductImg} />
+                        <Text style={styles.shareProductTitle} numberOfLines={1}>{p.name || p.title}</Text>
+                        <Text style={styles.shareProductPrice}>₹{parseFloat(p.price).toLocaleString()}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : (
+                <View style={styles.attachOptionsGrid}>
+                  <TouchableOpacity style={styles.attachOptionBtn} onPress={handleShareImage}>
+                    <View style={[styles.attachIconBg, { backgroundColor: "#3b82f622" }]}>
+                      <Lucide name="image" size={24} color="#3b82f6" />
+                    </View>
+                    <Text style={styles.attachOptionLabel}>Photos</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.attachOptionBtn} onPress={() => setSharingProductsList(true)}>
+                    <View style={[styles.attachIconBg, { backgroundColor: "#ec489922" }]}>
+                      <Lucide name="pricetag" size={24} color="#ec4899" />
+                    </View>
+                    <Text style={styles.attachOptionLabel}>Product</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.attachOptionBtn} onPress={handleShareLocation}>
+                    <View style={[styles.attachIconBg, { backgroundColor: "#10b98122" }]}>
+                      <Lucide name="location" size={24} color="#10b981" />
+                    </View>
+                    <Text style={styles.attachOptionLabel}>Location</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.attachOptionBtn} onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); Alert.alert("Voice Notes", "Recording simulated. Voice note shared!"); }}>
+                    <View style={[styles.attachIconBg, { backgroundColor: "#f59e0b22" }]}>
+                      <Lucide name="mic" size={24} color="#f59e0b" />
+                    </View>
+                    <Text style={styles.attachOptionLabel}>Audio</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </>
   );
 };
@@ -1964,5 +2503,209 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
     fontSize: 13.5,
     marginTop: 1,
+  },
+  callOverlayContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  callSafeArea: {
+    flex: 1,
+    width: "100%",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 50,
+    zIndex: 10,
+  },
+  callProfileCard: {
+    alignItems: "center",
+    marginTop: 40,
+    gap: 16,
+  },
+  callAvatar: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    borderWidth: 3,
+    borderColor: "#00f5ff",
+  },
+  callName: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "bold",
+  },
+  callStatusText: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 15,
+  },
+  callControlsRow: {
+    flexDirection: "row",
+    gap: 40,
+    marginBottom: 20,
+  },
+  callBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  acceptBtn: {
+    backgroundColor: "#10b981",
+  },
+  declineBtn: {
+    backgroundColor: "#ef4444",
+  },
+  endCallBtn: {
+    backgroundColor: "#ef4444",
+  },
+  localVideoBox: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    width: 100,
+    height: 150,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1.5,
+    borderColor: "#00f5ff",
+    backgroundColor: "#000",
+    zIndex: 100,
+  },
+  attachMenuBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  attachMenuContent: {
+    backgroundColor: "#0c0822",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 40,
+    paddingTop: 12,
+  },
+  attachMenuHeader: {
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  attachMenuHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.25)",
+  },
+  attachMenuTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  attachOptionsGrid: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingHorizontal: 20,
+  },
+  attachOptionBtn: {
+    alignItems: "center",
+    gap: 8,
+  },
+  attachIconBg: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attachOptionLabel: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  shareProductItem: {
+    backgroundColor: "#120d2c",
+    width: 110,
+    borderRadius: 12,
+    padding: 8,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  shareProductImg: {
+    width: 90,
+    height: 90,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  shareProductTitle: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+    width: "100%",
+    textAlign: "center",
+  },
+  shareProductPrice: {
+    color: "#00f5ff",
+    fontSize: 11.5,
+    fontWeight: "bold",
+    marginTop: 2,
+  },
+  msgImageContainer: {
+    borderRadius: 14,
+    overflow: "hidden",
+    maxWidth: 220,
+    height: 150,
+  },
+  msgImage: {
+    width: "100%",
+    height: "100%",
+  },
+  msgLocationContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 6,
+  },
+  msgLocationText: {
+    color: "#00f5ff",
+    fontSize: 14,
+    textDecorationLine: "underline",
+  },
+  msgProductCard: {
+    flexDirection: "row",
+    backgroundColor: "#120d2c",
+    borderRadius: 12,
+    padding: 10,
+    width: 220,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  msgProductImage: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+  },
+  msgProductName: {
+    color: "#fff",
+    fontSize: 13.5,
+    fontWeight: "bold",
+  },
+  msgProductPrice: {
+    color: "#00f5ff",
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  msgProductBuyBtn: {
+    backgroundColor: "#00f5ff",
+    borderRadius: 6,
+    paddingVertical: 5,
+    alignItems: "center",
+  },
+  msgProductBuyText: {
+    color: "#000",
+    fontSize: 11,
+    fontWeight: "bold",
   },
 });
