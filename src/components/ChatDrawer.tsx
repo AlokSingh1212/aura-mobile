@@ -815,7 +815,16 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       try {
         const product = JSON.parse(content.replace("[ATTACHMENT:PRODUCT]", ""));
         return (
-          <View style={styles.msgProductCard}>
+          <TouchableOpacity 
+            style={styles.msgProductCard}
+            onPress={() => {
+              triggerHaptic("light");
+              closeActiveChat(() => {
+                onClose();
+                router.push(`/product/${product.id}` as any);
+              });
+            }}
+          >
             <Image source={{ uri: product.image }} style={styles.msgProductImage} />
             <View style={{ flex: 1, paddingLeft: 10 }}>
               <Text style={styles.msgProductName} numberOfLines={1}>{product.name}</Text>
@@ -830,12 +839,93 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                 <Text style={styles.msgProductBuyText}>Order Now</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </TouchableOpacity>
         );
       } catch {
         return <Text style={[styles.msgText, isMine ? styles.msgTextRight : styles.msgTextLeft]}>[Broken Product Card]</Text>;
       }
     }
+
+    // Check for inline URL links inside normal text messages
+    const postMatch = content.match(/(?:https:\/\/aura\.app)?\/post\/([a-zA-Z0-9_\-]+)/i);
+    const reelMatch = content.match(/(?:https:\/\/aura\.app)?\/reel\/([a-zA-Z0-9_\-]+)/i);
+    const productMatch = content.match(/(?:https:\/\/aura\.app)?\/product\/([a-zA-Z0-9_\-]+)/i);
+    const profileMatch = content.match(/(?:https:\/\/aura\.app)?\/profile\/([a-zA-Z0-9_\-]+)/i);
+    const maisonMatch = content.match(/(?:https:\/\/aura\.app)?\/maison\/([a-zA-Z0-9_\-]+)/i);
+
+    if (postMatch || reelMatch || productMatch || profileMatch || maisonMatch) {
+      let icon = "document-text-outline";
+      let title = "Shared Post";
+      let routePath = "";
+      
+      if (postMatch) {
+        icon = "image-outline";
+        title = "Shared Post";
+        routePath = `/post/${postMatch[1]}`;
+      } else if (reelMatch) {
+        icon = "film-outline";
+        title = "Shared Reel";
+        routePath = `/reel/${reelMatch[1]}`;
+      } else if (productMatch) {
+        icon = "gift-outline";
+        title = "Shared Product";
+        routePath = `/product/${productMatch[1]}`;
+      } else if (profileMatch) {
+        icon = "person-outline";
+        title = "Shared Profile";
+        routePath = `/profile/${profileMatch[1]}`;
+      } else if (maisonMatch) {
+        icon = "storefront-outline";
+        title = "Shared Maison Store";
+        routePath = `/maison/${maisonMatch[1]}`;
+      }
+
+      return (
+        <TouchableOpacity 
+          style={{
+            backgroundColor: "rgba(255,255,255,0.06)",
+            borderWidth: 1,
+            borderColor: "rgba(255,255,255,0.12)",
+            borderRadius: 12,
+            padding: 12,
+            minWidth: 200,
+            maxWidth: 280,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            marginVertical: 4,
+          }}
+          onPress={() => {
+            triggerHaptic("medium");
+            closeActiveChat(() => {
+              onClose();
+              router.push(routePath as any);
+            });
+          }}
+        >
+          <View style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: "rgba(0, 245, 255, 0.1)",
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1,
+            borderColor: "rgba(0, 245, 255, 0.2)",
+          }}>
+            <Lucide name={icon as any} size={20} color="#00f5ff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>{title}</Text>
+            <Text style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }} numberOfLines={1}>
+              {content.split("\n")[0]}
+            </Text>
+          </View>
+          <Lucide name="chevron-forward" size={16} color="rgba(255,255,255,0.4)" />
+        </TouchableOpacity>
+      );
+    }
+
     return <Text style={[styles.msgText, isMine ? styles.msgTextRight : styles.msgTextLeft]}>{content}</Text>;
   };
 
@@ -2732,7 +2822,27 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                         <View style={styles.coinFrontOverlay}>
                           <Text style={styles.coinFrontName}>{coinUser.name}</Text>
                           <Text style={styles.coinFrontUsername}>@{coinUser.username || "user"}</Text>
-                          <Text style={styles.coinFlipHint}>Tap to flip 🔄</Text>
+                          <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                            <TouchableOpacity
+                              style={{
+                                backgroundColor: "rgba(0,245,255,0.2)",
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 12,
+                                borderWidth: 1,
+                                borderColor: "#00f5ff",
+                              }}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                triggerHaptic("medium");
+                                setShowCoinPopup(false);
+                                handleViewTargetProfile(coinUser.name, coinUser.username);
+                              }}
+                            >
+                              <Text style={{ color: "#00f5ff", fontSize: 11, fontWeight: "bold" }}>View Profile</Text>
+                            </TouchableOpacity>
+                          </View>
+                          <Text style={[styles.coinFlipHint, { marginTop: 8 }]}>Tap to flip 🔄</Text>
                         </View>
                       </Animated.View>
 
@@ -2747,29 +2857,42 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                         </View>
                         
                         {coinUser.managedStoreId ? (
-                          <TouchableOpacity 
-                            style={styles.coinStoreRow}
-                            onPress={() => {
-                              triggerHaptic("medium");
-                              setShowCoinPopup(false);
-                              closeActiveChat(() => {
-                                onClose();
-                                router.push(`/maison/${coinUser.managedStoreId}` as any);
-                              });
-                            }}
-                          >
-                            <Image 
-                              source={{ uri: coinUser.managedStoreLogo || coinUser.avatar || "https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=150" }} 
-                              style={styles.coinStoreLogo} 
-                            />
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.coinStoreName} numberOfLines={1}>
-                                {coinUser.managedStoreName}
-                              </Text>
-                              <Text style={styles.coinStoreSubtext}>View Store</Text>
-                            </View>
-                            <Lucide name="chevron-forward" size={18} color="#00f5ff" />
-                          </TouchableOpacity>
+                          <View style={{ flex: 1, justifyContent: "space-between", paddingBottom: 10 }}>
+                            <TouchableOpacity 
+                              style={styles.coinStoreRow}
+                              onPress={() => {
+                                triggerHaptic("medium");
+                                setShowCoinPopup(false);
+                                closeActiveChat(() => {
+                                  onClose();
+                                  router.push(`/maison/${coinUser.managedStoreId}` as any);
+                                });
+                              }}
+                            >
+                              <Image 
+                                source={{ uri: coinUser.managedStoreLogo || coinUser.avatar || "https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=150" }} 
+                                style={styles.coinStoreLogo} 
+                              />
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.coinStoreName} numberOfLines={1}>
+                                  {coinUser.managedStoreName}
+                                </Text>
+                                <Text style={styles.coinStoreSubtext}>View Store</Text>
+                              </View>
+                              <Lucide name="chevron-forward" size={18} color="#00f5ff" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                              style={[styles.coinViewProfileBtn, { alignSelf: "center", marginTop: 10 }]}
+                              onPress={() => {
+                                triggerHaptic("medium");
+                                setShowCoinPopup(false);
+                                handleViewTargetProfile(coinUser.name, coinUser.username);
+                              }}
+                            >
+                              <Text style={styles.coinViewProfileBtnText}>View Profile</Text>
+                            </TouchableOpacity>
+                          </View>
                         ) : (
                           <View style={styles.coinNoStoresContainer}>
                             <Lucide name="pricetags-outline" size={32} color="rgba(255,255,255,0.3)" />
