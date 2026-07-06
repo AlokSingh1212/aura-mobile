@@ -127,6 +127,20 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [replyingToMessage, setReplyingToMessage] = useState<any>(null);
   const REACTION_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍"];
 
+  // Label / Tag States
+  const [showLabelSheet, setShowLabelSheet] = useState(false);
+  const [conversationLabels, setConversationLabels] = useState<Record<string, string>>({});
+  const [selectedLabelTemp, setSelectedLabelTemp] = useState<string | null>(null);
+  
+  const LABELS = [
+    { id: "flag", name: "Flag", icon: "flag-outline", color: "#ef4444" },
+    { id: "booked", name: "Booked", icon: "calendar-outline", color: "#3b82f6" },
+    { id: "lead", name: "Lead", icon: "pricetag-outline", color: "#10b981" },
+    { id: "ordered", name: "Ordered", icon: "cart-outline", color: "#fbbf24" },
+    { id: "paid", name: "Paid", icon: "cash-outline", color: "#8b5cf6" },
+    { id: "shipped", name: "Shipped", icon: "bus-outline", color: "#ec4899" },
+  ];
+
   // Scroll Ref
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -1514,6 +1528,23 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                             {thread.verified && (
                               <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
                             )}
+                            {conversationLabels[thread.id] && (
+                              <View style={{
+                                backgroundColor: LABELS.find(l => l.id === conversationLabels[thread.id])?.color + "33",
+                                paddingHorizontal: 6,
+                                paddingVertical: 1.5,
+                                borderRadius: 4,
+                                marginLeft: 6
+                              }}>
+                                <Text style={{
+                                  color: LABELS.find(l => l.id === conversationLabels[thread.id])?.color,
+                                  fontSize: 10,
+                                  fontWeight: "bold"
+                                }}>
+                                  {LABELS.find(l => l.id === conversationLabels[thread.id])?.name}
+                                </Text>
+                              </View>
+                            )}
                           </View>
                           <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
                             {thread.lastMessage || "Secure direct message sync handshake established."}
@@ -1965,6 +1996,23 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                       {activeChat?.verified && (
                         <Lucide name="checkmark-circle" size={15} color="#00f5ff" />
                       )}
+                      {conversationLabels[activeChat.id] && (
+                        <View style={{
+                          backgroundColor: LABELS.find(l => l.id === conversationLabels[activeChat.id])?.color + "33",
+                          paddingHorizontal: 6,
+                          paddingVertical: 1.5,
+                          borderRadius: 4,
+                          marginLeft: 6
+                        }}>
+                          <Text style={{
+                            color: LABELS.find(l => l.id === conversationLabels[activeChat.id])?.color,
+                            fontSize: 10,
+                            fontWeight: "bold"
+                          }}>
+                            {LABELS.find(l => l.id === conversationLabels[activeChat.id])?.name.toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                     <Text style={styles.headerUsernameText}>
                       @{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}
@@ -1980,8 +2028,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                 <TouchableOpacity onPress={() => startCall("VIDEO")}>
                   <Lucide name="videocam-outline" size={25} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => triggerHaptic("medium")}>
-                  <Lucide name="information-circle-outline" size={26} color="#fff" />
+                <TouchableOpacity onPress={() => { triggerHaptic("medium"); setSelectedLabelTemp(conversationLabels[activeChat.id] || null); setShowLabelSheet(true); }}>
+                  <Lucide name="pricetag-outline" size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -2441,6 +2489,74 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                       </View>
                     </TouchableOpacity>
                   </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* 🏷️ DYNAMIC ADD A LABEL BOTTOM SHEET OVERLAY */}
+          {showLabelSheet && (
+            <View style={StyleSheet.absoluteFillObject}>
+              <TouchableOpacity 
+                style={styles.labelSheetBackdrop} 
+                activeOpacity={1} 
+                onPress={() => setShowLabelSheet(false)}
+              >
+                <View style={styles.labelSheetContent}>
+                  {/* Handle indicator */}
+                  <View style={styles.labelSheetHandle} />
+
+                  {/* Header Row */}
+                  <View style={styles.labelSheetHeader}>
+                    <Text style={styles.labelSheetTitle}>Add a label</Text>
+                    <TouchableOpacity onPress={() => { triggerHaptic("light"); setSelectedLabelTemp(null); }}>
+                      <Text style={styles.labelSheetClearText}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Options List */}
+                  <ScrollView style={styles.labelOptionsList} contentContainerStyle={{ gap: 4 }}>
+                    {LABELS.map((item) => {
+                      const isSelected = selectedLabelTemp === item.id;
+                      return (
+                        <TouchableOpacity 
+                          key={item.id} 
+                          style={styles.labelOptionRow}
+                          onPress={() => { triggerHaptic("light"); setSelectedLabelTemp(item.id); }}
+                        >
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+                            <Lucide name={item.icon as any} size={22} color={item.color} />
+                            <Text style={styles.labelOptionLabel}>{item.name}</Text>
+                          </View>
+                          <View style={[styles.labelRadioCircle, isSelected && styles.labelRadioCircleActive]}>
+                            {isSelected && <View style={styles.labelRadioDot} />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {/* Footer message */}
+                  <Text style={styles.labelSheetFooterText}>
+                    Only people who manage your Aura account can view and change labels.
+                  </Text>
+
+                  {/* Save button */}
+                  <TouchableOpacity 
+                    style={styles.labelSaveBtn}
+                    onPress={() => {
+                      triggerHaptic("medium");
+                      if (activeChat) {
+                        setConversationLabels(prev => ({
+                          ...prev,
+                          [activeChat.id]: selectedLabelTemp || ""
+                        }));
+                      }
+                      setShowLabelSheet(false);
+                    }}
+                  >
+                    <Text style={styles.labelSaveBtnText}>Save</Text>
+                  </TouchableOpacity>
                 </View>
               </TouchableOpacity>
             </View>
@@ -3517,5 +3633,103 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2.5,
     marginRight: 6,
+  },
+  labelSheetBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "flex-end",
+  },
+  labelSheetContent: {
+    backgroundColor: "#1c1c1e",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  labelSheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  labelSheetHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  labelSheetTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+    flex: 1,
+    textAlign: "center",
+    marginLeft: 40,
+  },
+  labelSheetClearText: {
+    color: "#3b82f6",
+    fontSize: 16,
+    fontWeight: "bold",
+    width: 40,
+  },
+  labelOptionsList: {
+    maxHeight: 320,
+  },
+  labelOptionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.04)",
+  },
+  labelOptionLabel: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  labelRadioCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  labelRadioCircleActive: {
+    borderColor: "#3b82f6",
+    backgroundColor: "#3b82f6",
+  },
+  labelRadioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#fff",
+  },
+  labelSheetFooterText: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 12.5,
+    textAlign: "center",
+    marginVertical: 16,
+    lineHeight: 18,
+  },
+  labelSaveBtn: {
+    backgroundColor: "#3b82f6",
+    borderRadius: 12,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  labelSaveBtnText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });
