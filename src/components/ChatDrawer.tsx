@@ -1641,40 +1641,66 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           >
             <SafeAreaView style={styles.dmSafeArea}>
             {/* Chat header */}
-              <View style={styles.dmHeaderRow}>
+            <View style={styles.dmHeaderRow}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <TouchableOpacity onPress={() => setActiveChat(null)}>
                   <Lucide name="chevron-back" size={28} color="#fff" />
                 </TouchableOpacity>
-                
-                <View style={styles.dmTitleRow}>
-                  <Text style={styles.dmTitleText}>{activeChat.name}</Text>
-                  {activeChat.verified && (
-                    <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
-                  )}
-                </View>
-
-                <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
-                  <TouchableOpacity onPress={() => startCall("AUDIO")}>
-                    <Lucide name="call-outline" size={23} color="#fff" />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => startCall("VIDEO")}>
-                    <Lucide name="videocam-outline" size={25} color="#fff" />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => triggerHaptic("medium")}>
-                    <Lucide name="information-circle-outline" size={26} color="#fff" />
-                  </TouchableOpacity>
+                <Image 
+                  source={{ uri: activeChat.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }} 
+                  style={styles.headerAvatar} 
+                />
+                <View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Text style={styles.headerNameText}>{activeChat.name}</Text>
+                    {activeChat.verified && (
+                      <Lucide name="checkmark-circle" size={15} color="#00f5ff" />
+                    )}
+                  </View>
+                  <Text style={styles.headerUsernameText}>
+                    @{activeChat.username || activeChat.name.toLowerCase().replace(/\s+/g, "_")}
+                  </Text>
                 </View>
               </View>
+
+              <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
+                <TouchableOpacity onPress={() => startCall("AUDIO")}>
+                  <Lucide name="call-outline" size={23} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => startCall("VIDEO")}>
+                  <Lucide name="videocam-outline" size={25} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => triggerHaptic("medium")}>
+                  <Lucide name="information-circle-outline" size={26} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
 
             {/* Messages feed list */}
             <ScrollView 
               style={styles.chatFeedScroll}
-              contentContainerStyle={styles.chatFeedContent}
-              ref={(ref) => ref?.scrollToEnd({ animated: true })}
+              contentContainerStyle={{ paddingVertical: 16, paddingHorizontal: 12 }}
             >
-              <Text style={styles.chatStartText}>
-                Mesh handshake started — secure sovereign credentials synced
-              </Text>
+              {/* Profile Social Context Information Block at top of chat scroll */}
+              <View style={styles.socialContextContainer}>
+                <Image 
+                  source={{ uri: activeChat.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }} 
+                  style={styles.socialContextAvatar} 
+                />
+                <Text style={styles.socialContextTitle}>{activeChat.name}</Text>
+                <Text style={styles.socialContextUsername}>@{activeChat.username || activeChat.name.toLowerCase().replace(/\s+/g, "_")}</Text>
+                <Text style={styles.socialContextSubtext}>You don't follow each other on Instagram</Text>
+                <Text style={styles.socialContextSubtext}>You both follow kimkardashian and 1 other</Text>
+                <TouchableOpacity 
+                  style={styles.socialContextBtn}
+                  onPress={() => {
+                    triggerHaptic("light");
+                    Alert.alert("Profile", `Redirecting to ${activeChat.name}'s profile...`);
+                  }}
+                >
+                  <Text style={styles.socialContextBtnText}>View profile</Text>
+                </TouchableOpacity>
+              </View>
               
               {(activeChat.messages || []).map((msg: any) => {
                 const isMine = msg.senderId === (isSeller ? activeMaisonId : currentUserId);
@@ -1719,26 +1745,46 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </View>
             )}
 
-            {/* Input keyboard bar */}
+            {/* Input keyboard bar matching Instagram capsule style */}
             <View style={styles.chatInputBar}>
-              <TouchableOpacity style={styles.paperclipBtn} onPress={() => { triggerHaptic("light"); setShowAttachMenu(true); }}>
-                <Lucide name="add-circle-outline" size={26} color="#00f5ff" />
-              </TouchableOpacity>
-              <TextInput
-                style={styles.chatInput}
-                placeholder="Message..."
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                value={chatReplyText}
-                onChangeText={handleTextChange}
-                onSubmitEditing={handleSendChatMessage}
-              />
               <TouchableOpacity 
-                style={[styles.chatSendBtn, !chatReplyText.trim() && styles.chatSendBtnDisabled]}
-                onPress={handleSendChatMessage}
-                disabled={!chatReplyText.trim()}
+                style={styles.cameraCircleBtn} 
+                onPress={() => { triggerHaptic("medium"); Alert.alert("Camera", "Native camera capture initiated."); }}
               >
-                <Text style={styles.chatSendBtnText}>Send</Text>
+                <Lucide name="camera" size={20} color="#fff" />
               </TouchableOpacity>
+              
+              <View style={styles.inputCapsule}>
+                <TextInput
+                  style={styles.capsuleInput}
+                  placeholder="Message..."
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  value={chatReplyText}
+                  onChangeText={handleTextChange}
+                  onSubmitEditing={handleSendChatMessage}
+                />
+                
+                {chatReplyText.trim().length > 0 ? (
+                  <TouchableOpacity onPress={handleSendChatMessage}>
+                    <Text style={styles.chatSendText}>Send</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+                    <TouchableOpacity onPress={() => { triggerHaptic("light"); Alert.alert("Voice Message", "Recording simulated."); }}>
+                      <Lucide name="mic-outline" size={20} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleShareImage}>
+                      <Lucide name="image-outline" size={20} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { triggerHaptic("light"); Alert.alert("Stickers", "Stickers picker overlay."); }}>
+                      <Lucide name="happy-outline" size={20} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { triggerHaptic("light"); setShowAttachMenu(true); }}>
+                      <Lucide name="add-circle-outline" size={21} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             </View>
           </SafeAreaView>
          </KeyboardAvoidingView>
@@ -1987,7 +2033,69 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
-    height: 48,
+    height: 60,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  headerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "#8b5cf6",
+  },
+  headerNameText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+  headerUsernameText: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 11,
+    marginTop: -1,
+  },
+  socialContextContainer: {
+    alignItems: "center",
+    paddingVertical: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.04)",
+    marginBottom: 16,
+  },
+  socialContextAvatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#8b5cf6",
+  },
+  socialContextTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  socialContextUsername: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  socialContextSubtext: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12.5,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  socialContextBtn: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    marginTop: 14,
+  },
+  socialContextBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "bold",
   },
   dmTitleRow: {
     flexDirection: "row",
@@ -2355,11 +2463,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   msgBubbleLeft: {
-    backgroundColor: "#1d173e",
+    backgroundColor: "rgba(255,255,255,0.08)",
     borderBottomLeftRadius: 4,
   },
   msgBubbleRight: {
-    backgroundColor: "#fff",
+    backgroundColor: "#8b5cf6",
     borderBottomRightRadius: 4,
   },
   msgText: {
@@ -2370,43 +2478,11 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   msgTextRight: {
-    color: "#000",
+    color: "#fff",
     fontWeight: "500",
   },
-  chatInputBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#120d2c",
-    borderRadius: 24,
-    marginHorizontal: 16,
-    marginVertical: 12,
-    paddingHorizontal: 12,
-    height: 48,
-  },
-  paperclipBtn: {
-    padding: 6,
-  },
-  chatInput: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 15.5,
-    paddingHorizontal: 10,
-  },
-  chatSendBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: "#00f5ff",
-  },
-  chatSendBtnDisabled: {
-    opacity: 0.5,
-    backgroundColor: "transparent",
-  },
-  chatSendBtnText: {
-    color: "#000",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
+
+
   typingContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -2714,5 +2790,47 @@ const styles = StyleSheet.create({
     color: "#000",
     fontSize: 11,
     fontWeight: "bold",
+  },
+  chatInputBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "#080415",
+  },
+  cameraCircleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#8b5cf6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inputCapsule: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    height: 40,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  capsuleInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 14.5,
+    paddingVertical: 0,
+    height: "100%",
+  },
+  chatSendText: {
+    color: "#00f5ff",
+    fontWeight: "bold",
+    fontSize: 15,
+    paddingHorizontal: 4,
   },
 });
