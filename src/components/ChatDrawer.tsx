@@ -268,13 +268,19 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     if (!activeChat) return;
     const username = activeChat.username || activeChat.name.toLowerCase().replace(/\s+/g, "_");
     triggerHaptic("light");
-    router.push(`/profile/${username}` as any);
+    router.push({
+      pathname: `/profile/${username}`,
+      params: { name: activeChat.name, avatar: activeChat.avatar }
+    } as any);
   };
 
-  const handleViewTargetProfile = (chatName: string, chatUsername?: string) => {
+  const handleViewTargetProfile = (chatName: string, chatUsername?: string, chatAvatar?: string) => {
     const username = chatUsername || chatName.toLowerCase().replace(/\s+/g, "_");
     triggerHaptic("light");
-    router.push(`/profile/${username}` as any);
+    router.push({
+      pathname: `/profile/${username}`,
+      params: { name: chatName, avatar: chatAvatar || activeChat?.avatar }
+    } as any);
   };
 
   const renderAvatarWithStory = (uri: string, chatName: string, chatUsername?: string, size: number = 44) => {
@@ -2828,7 +2834,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                                 e.stopPropagation();
                                 triggerHaptic("medium");
                                 setShowCoinPopup(false);
-                                handleViewTargetProfile(coinUser.name, coinUser.username);
+                                handleViewTargetProfile(coinUser.name, coinUser.username, coinUser.avatar);
                               }}
                             >
                               <Text style={{ color: "#00f5ff", fontSize: 11, fontWeight: "bold" }}>View Profile</Text>
@@ -2876,7 +2882,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                               onPress={() => {
                                 triggerHaptic("medium");
                                 setShowCoinPopup(false);
-                                handleViewTargetProfile(coinUser.name, coinUser.username);
+                                handleViewTargetProfile(coinUser.name, coinUser.username, coinUser.avatar);
                               }}
                             >
                               <Text style={styles.coinViewProfileBtnText}>View Profile</Text>
@@ -2891,7 +2897,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                               onPress={() => {
                                 triggerHaptic("medium");
                                 setShowCoinPopup(false);
-                                handleViewTargetProfile(coinUser.name, coinUser.username);
+                                handleViewTargetProfile(coinUser.name, coinUser.username, coinUser.avatar);
                               }}
                             >
                               <Text style={styles.coinViewProfileBtnText}>View Profile</Text>

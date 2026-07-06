@@ -42,7 +42,7 @@ const { width } = Dimensions.get("window");
 const GRID_ITEM_SIZE = (width - 2) / 3;
 
 export default function ViewProfileScreen() {
-  const { username } = useLocalSearchParams<{ username: string }>();
+  const { username, name, avatar } = useLocalSearchParams<{ username: string; name?: string; avatar?: string }>();
   const insets = useSafeAreaInsets();
   const {
     triggerHaptic,
@@ -262,7 +262,25 @@ export default function ViewProfileScreen() {
     };
   }, [username, activeProfile?.id]);
 
-  const profile = viewingProfile;
+  const profile = viewingProfile || (username ? {
+    id: "temp_id",
+    profileId: "temp_id",
+    username: username,
+    profileName: name || username,
+    logo: avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400",
+    bioText: "Loading Bio...",
+    websiteLink: "",
+    category: "CREATOR",
+    followersCount: 0,
+    followingCount: 0,
+    postsCount: 0,
+    isFollowing: false,
+    profileType: "CREATOR",
+    auraScore: 0,
+    managedStoreId: null,
+    managedStoreName: null,
+    managedStoreLogo: null,
+  } : null);
   const isOwnProfile =
     profile?.username === activeProfile?.username ||
     profile?.profileId === activeProfile?.id;
@@ -398,8 +416,9 @@ export default function ViewProfileScreen() {
     }
   };
 
-  // Loading state
-  if (loadingViewProfile) {
+  // Loading state (only show full screen loading if we don't even have fallback name/avatar parameters)
+  const showLoadingSpinner = loadingViewProfile && !viewingProfile && !name;
+  if (showLoadingSpinner) {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="light-content" backgroundColor="#080415" />
@@ -454,6 +473,9 @@ export default function ViewProfileScreen() {
               <Text style={styles.headerUsername}>{profile.username}</Text>
               {profile.auraScore >= 9.5 && (
                 <Lucide name="checkmark-circle" size={16} color="#00f5ff" style={{ marginLeft: 4 }} />
+              )}
+              {loadingViewProfile && (
+                <ActivityIndicator size="small" color="#00f5ff" style={{ marginLeft: 8 }} />
               )}
             </View>
 
