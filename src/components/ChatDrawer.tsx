@@ -1633,7 +1633,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       </View>
 
       {activeChat && (
-        <View style={[styles.dmSlidePanel, { bottom: bottomBarHeight }]}>
+        <View style={[styles.dmSlidePanel, { bottom: 0 }]}>
           <KeyboardAvoidingView 
             style={{ flex: 1 }} 
             behavior={Platform.OS === "ios" ? "padding" : "height"}
