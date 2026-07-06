@@ -255,6 +255,16 @@ export default function ViewProfileScreen() {
 
   useEffect(() => {
     if (username) {
+      // 🚀 Reset all local visual states instantly to prevent stale component reuse data leaks
+      setProfilePosts([]);
+      setTags([]);
+      setSuggestedProfiles([]);
+      setNetworkUsers([]);
+      setShowSuggested(false);
+      setShowNetworkModal(false);
+      setShowMessageSheet(false);
+      setShowContactSheet(false);
+
       fetchViewProfile(username, activeProfile?.id);
     }
     return () => {
@@ -303,10 +313,12 @@ export default function ViewProfileScreen() {
   const followedByOthersCount = (profile as { followedByOthersCount?: number })?.followedByOthersCount || 0;
 
   useEffect(() => {
-    if (viewingProfile?.tags) {
+    if (isCorrectProfile && viewingProfile?.tags) {
       setTags(viewingProfile.tags);
+    } else {
+      setTags([]);
     }
-  }, [viewingProfile]);
+  }, [viewingProfile, isCorrectProfile]);
 
   useEffect(() => {
     if (showNetworkModal && profile?.profileId && !profile.profileId.startsWith("mock_")) {
