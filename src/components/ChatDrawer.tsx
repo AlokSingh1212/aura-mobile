@@ -14,6 +14,7 @@ import {
   Platform,
   Animated,
   Keyboard,
+  PanResponder,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -113,6 +114,51 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [callAgoraAppId, setCallAgoraAppId] = useState("");
   const callEngineRef = useRef<any>(null);
   const isSendingMessageRef = useRef(false);
+  const chatTranslateX = useRef(new Animated.Value(0)).current;
+
+  // Swipe to close active chat responder
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: (evt, gestureState) => {
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 3 && gestureState.dx > 10;
+      },
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 3 && gestureState.dx > 10;
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        if (gestureState.dx > 0) {
+          chatTranslateX.setValue(gestureState.dx);
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        const screenWidth = Dimensions.get("window").width;
+        if (gestureState.dx > screenWidth * 0.35 || gestureState.vx > 0.5) {
+          triggerHaptic("light");
+          Animated.timing(chatTranslateX, {
+            toValue: screenWidth,
+            duration: 180,
+            useNativeDriver: true,
+          }).start(() => {
+            setActiveChat(null);
+            chatTranslateX.setValue(0);
+          });
+        } else {
+          Animated.spring(chatTranslateX, {
+            toValue: 0,
+            friction: 7,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  useEffect(() => {
+    if (activeChat) {
+      chatTranslateX.setValue(0);
+    }
+  }, [activeChat]);
+
   const [callJoined, setCallJoined] = useState(false);
   const [callRemoteUid, setCallRemoteUid] = useState<number | null>(null);
 
@@ -2025,7 +2071,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         animationType="slide"
         onRequestClose={() => setActiveChat(null)}
       >
-        <View style={[styles.dmSlidePanel, { top: 0, bottom: 0, left: 0, right: 0 }]}>
+        <Animated.View 
+          style={[styles.dmSlidePanel, { top: 0, bottom: 0, left: 0, right: 0, transform: [{ translateX: chatTranslateX }] }]}
+          {...panResponder.panHandlers}
+        >
           <KeyboardAvoidingView 
             style={{ flex: 1 }} 
             behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -2714,7 +2763,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </Animated.View>
       </Modal>
 
       {/* 👤 NEW CHAT CREATOR/USER SELECTOR MODAL */}
