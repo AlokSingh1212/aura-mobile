@@ -263,18 +263,14 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const handleViewProfile = () => {
     if (!activeChat) return;
     const username = activeChat.username || activeChat.name.toLowerCase().replace(/\s+/g, "_");
-    closeActiveChat(() => {
-      onClose(); // Close the chat drawer
-      router.push(`/profile/${username}` as any);
-    });
+    triggerHaptic("light");
+    router.push(`/profile/${username}` as any);
   };
 
   const handleViewTargetProfile = (chatName: string, chatUsername?: string) => {
     const username = chatUsername || chatName.toLowerCase().replace(/\s+/g, "_");
-    closeActiveChat(() => {
-      onClose(); // Close drawer
-      router.push(`/profile/${username}` as any);
-    });
+    triggerHaptic("light");
+    router.push(`/profile/${username}` as any);
   };
 
   const renderAvatarWithStory = (uri: string, chatName: string, chatUsername?: string, size: number = 44) => {
@@ -819,10 +815,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
             style={styles.msgProductCard}
             onPress={() => {
               triggerHaptic("light");
-              closeActiveChat(() => {
-                onClose();
-                router.push(`/product/${product.id}` as any);
-              });
+              router.push(`/product/${product.id}` as any);
             }}
           >
             <Image source={{ uri: product.image }} style={styles.msgProductImage} />
@@ -897,10 +890,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           }}
           onPress={() => {
             triggerHaptic("medium");
-            closeActiveChat(() => {
-              onClose();
-              router.push(routePath as any);
-            });
+            router.push(routePath as any);
           }}
         >
           <View style={{
@@ -2863,10 +2853,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                               onPress={() => {
                                 triggerHaptic("medium");
                                 setShowCoinPopup(false);
-                                closeActiveChat(() => {
-                                  onClose();
-                                  router.push(`/maison/${coinUser.managedStoreId}` as any);
-                                });
+                                router.push(`/maison/${coinUser.managedStoreId}` as any);
                               }}
                             >
                               <Image 
