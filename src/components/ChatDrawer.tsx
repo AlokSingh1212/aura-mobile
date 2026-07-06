@@ -168,10 +168,30 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     })
   ).current;
 
+  const closeActiveChat = (callback?: () => void) => {
+    triggerHaptic("light");
+    const screenWidth = Dimensions.get("window").width;
+    Animated.timing(chatTranslateX, {
+      toValue: screenWidth,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setActiveChat(null);
+      chatTranslateX.setValue(0);
+      if (callback) callback();
+    });
+  };
+
   useEffect(() => {
     if (activeChat) {
-      chatTranslateX.setValue(0);
+      const screenWidth = Dimensions.get("window").width;
+      chatTranslateX.setValue(screenWidth);
       setChatScrollEnabled(true);
+      Animated.timing(chatTranslateX, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
     }
   }, [activeChat]);
 
@@ -242,22 +262,19 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
 
   const handleViewProfile = () => {
     if (!activeChat) return;
-    setActiveChat(null); // Close active chat modal so profile screen displays clearly
-    onClose(); // Close the chat drawer
-    triggerHaptic("light");
-    
-    // Resolve clean username
     const username = activeChat.username || activeChat.name.toLowerCase().replace(/\s+/g, "_");
-    router.push(`/profile/${username}` as any);
+    closeActiveChat(() => {
+      onClose(); // Close the chat drawer
+      router.push(`/profile/${username}` as any);
+    });
   };
 
   const handleViewTargetProfile = (chatName: string, chatUsername?: string) => {
-    setActiveChat(null); // Close modal
-    onClose(); // Close drawer
-    triggerHaptic("light");
-    
     const username = chatUsername || chatName.toLowerCase().replace(/\s+/g, "_");
-    router.push(`/profile/${username}` as any);
+    closeActiveChat(() => {
+      onClose(); // Close drawer
+      router.push(`/profile/${username}` as any);
+    });
   };
 
   const renderAvatarWithStory = (uri: string, chatName: string, chatUsername?: string, size: number = 44) => {
@@ -2084,8 +2101,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
 
       <Modal
         visible={activeChat !== null}
-        animationType="slide"
-        onRequestClose={() => setActiveChat(null)}
+        animationType="none"
+        onRequestClose={() => closeActiveChat()}
       >
         <Animated.View 
           style={[styles.dmSlidePanel, { top: 0, bottom: 0, left: 0, right: 0, transform: [{ translateX: chatTranslateX }] }]}
@@ -2100,7 +2117,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
             {/* Chat header */}
             <View style={styles.dmHeaderRow}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <TouchableOpacity onPress={() => setActiveChat(null)}>
+                <TouchableOpacity onPress={() => closeActiveChat()}>
                   <Lucide name="chevron-back" size={28} color="#fff" />
                 </TouchableOpacity>
                 {renderAvatarWithStory(
@@ -2739,9 +2756,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                             onPress={() => {
                               triggerHaptic("medium");
                               setShowCoinPopup(false);
-                              setActiveChat(null);
-                              onClose();
-                              router.push(`/maison/${coinUser.managedStoreId}` as any);
+                              closeActiveChat(() => {
+                                onClose();
+                                router.push(`/maison/${coinUser.managedStoreId}` as any);
+                              });
                             }}
                           >
                             <Image 
