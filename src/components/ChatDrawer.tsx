@@ -1502,7 +1502,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
 
   return (
     <>
-      <View style={[styles.dmSlidePanel, { bottom: bottomBarHeight }]}>
+      <View style={[styles.dmSlidePanel, { bottom: 0 }]}>
         <SafeAreaView style={styles.dmSafeArea}>
           {/* DM Top Bar */}
           <View style={styles.dmHeaderRow}>
