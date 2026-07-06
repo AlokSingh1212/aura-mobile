@@ -2055,49 +2055,47 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                     onLongPress={() => { triggerHaptic("medium"); setLongPressedMessage(msg); }}
                     delayLongPress={350}
                     activeOpacity={0.9}
-                    style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}
+                    style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft, { flexDirection: "column", alignItems: isMine ? "flex-end" : "flex-start" }]}
                   >
-                    {!isMine && (
-                      <View style={styles.msgAvatar}>
-                        <Text style={styles.msgAvatarText}>{activeChat?.name?.[0]?.toUpperCase()}</Text>
-                      </View>
-                    )}
-                    <View style={[styles.msgBubble, isMine ? styles.msgBubbleRight : styles.msgBubbleLeft, { position: "relative" }]}>
-                      {/* Quote preview rendering */}
-                      {parentMsg && (
-                        <View style={styles.bubbleReplyPreview}>
-                          <Text style={styles.bubbleReplyText} numberOfLines={1}>
-                            {parentMsg.content.startsWith("[REPLY:") 
-                              ? parentMsg.content.replace(/^\[REPLY:[^\]]+\]\s*/, "") 
-                              : parentMsg.content}
-                          </Text>
+                    <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8 }}>
+                      {!isMine && (
+                        <View style={styles.msgAvatar}>
+                          <Text style={styles.msgAvatarText}>{activeChat?.name?.[0]?.toUpperCase()}</Text>
                         </View>
                       )}
-                      
-                      <View style={{ flexDirection: "row", alignItems: "flex-end", flexWrap: "wrap" }}>
-                        {renderMessageContent(actualText, isMine)}
-                        {isMine && (
-                          <View style={{ marginLeft: 6, bottom: -1 }}>
-                            {msg.status === "sending" ? (
-                              <Lucide name="time-outline" size={11} color="rgba(255,255,255,0.4)" />
-                            ) : msg.status === "error" ? (
-                              <Lucide name="alert-circle" size={12} color="#ff4a4a" />
-                            ) : (
-                              <Lucide name="checkmark-done" size={13} color="#00f5ff" />
-                            )}
+                      <View style={[styles.msgBubble, isMine ? styles.msgBubbleRight : styles.msgBubbleLeft, { position: "relative" }]}>
+                        {/* Quote preview rendering */}
+                        {parentMsg && (
+                          <View style={styles.bubbleReplyPreview}>
+                            <Text style={styles.bubbleReplyText} numberOfLines={1}>
+                              {parentMsg.content.startsWith("[REPLY:") 
+                                ? parentMsg.content.replace(/^\[REPLY:[^\]]+\]\s*/, "") 
+                                : parentMsg.content}
+                            </Text>
+                          </View>
+                        )}
+                        
+                        <View style={{ flexDirection: "row", alignItems: "flex-end", flexWrap: "wrap" }}>
+                          {renderMessageContent(actualText, isMine)}
+                        </View>
+
+                        {/* Bubble Reactions Row */}
+                        {messageReactions[msg.id] && messageReactions[msg.id].length > 0 && (
+                          <View style={styles.bubbleReactionsRow}>
+                            {messageReactions[msg.id].map((emoji, index) => (
+                              <Text key={index} style={{ fontSize: 13 }}>{emoji}</Text>
+                            ))}
                           </View>
                         )}
                       </View>
-
-                      {/* Bubble Reactions Row */}
-                      {messageReactions[msg.id] && messageReactions[msg.id].length > 0 && (
-                        <View style={styles.bubbleReactionsRow}>
-                          {messageReactions[msg.id].map((emoji, index) => (
-                            <Text key={index} style={{ fontSize: 13 }}>{emoji}</Text>
-                          ))}
-                        </View>
-                      )}
                     </View>
+
+                    {/* Status Text (Seen, Delivered, Sent) underneath the bubble, only show for my latest message */}
+                    {isMine && (activeChat.messages.filter((m: any) => m.senderId === (isSeller ? activeMaisonId : currentUserId)).slice(-1)[0]?.id === msg.id) && (
+                      <Text style={styles.msgStatusText}>
+                        {msg.status === "sending" ? "Sending" : msg.status === "error" ? "Failed" : (msg.status === "read" ? "Seen" : (msg.status === "delivered" ? "Delivered" : "Sent"))}
+                      </Text>
+                    )}
                   </TouchableOpacity>
                 );
               })}
@@ -3513,5 +3511,11 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.6)",
     fontSize: 13,
     flex: 1,
+  },
+  msgStatusText: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 11,
+    marginTop: 2.5,
+    marginRight: 6,
   },
 });
