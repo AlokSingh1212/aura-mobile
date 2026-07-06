@@ -12,6 +12,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -131,6 +132,21 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [showLabelSheet, setShowLabelSheet] = useState(false);
   const [conversationLabels, setConversationLabels] = useState<Record<string, string>>({});
   const [selectedLabelTemp, setSelectedLabelTemp] = useState<string | null>(null);
+
+  // Coin Flip States
+  const [showCoinPopup, setShowCoinPopup] = useState(false);
+  const [coinUser, setCoinUser] = useState<any>(null);
+  const [coinFlipped, setCoinFlipped] = useState(false);
+  const coinFlipAnim = useRef(new Animated.Value(0)).current;
+
+  const frontInterpolate = coinFlipAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "180deg"]
+  });
+  const backInterpolate = coinFlipAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["180deg", "360deg"]
+  });
   
   const LABELS = [
     { id: "flag", name: "Flag", icon: "flag-outline", color: "#ef4444" },
@@ -228,7 +244,13 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     }
 
     return (
-      <TouchableOpacity onPress={() => handleViewTargetProfile(chatName, chatUsername)}>
+      <TouchableOpacity onPress={() => {
+        triggerHaptic("medium");
+        setCoinUser(activeChat);
+        setCoinFlipped(false);
+        coinFlipAnim.setValue(0);
+        setShowCoinPopup(true);
+      }}>
         <Image 
           source={{ uri }} 
           style={{ width: size, height: size, borderRadius: size / 2 }} 
@@ -620,6 +642,18 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       triggerHaptic("light");
       Alert.alert("More Options", "Forward, copy, or report message.");
     }
+  };
+
+  const handleCoinFlipPress = () => {
+    triggerHaptic("medium");
+    const toValue = coinFlipped ? 0 : 1;
+    Animated.spring(coinFlipAnim, {
+      toValue,
+      friction: 7,
+      tension: 15,
+      useNativeDriver: true,
+    }).start();
+    setCoinFlipped(!coinFlipped);
   };
 
   const sendAttachmentMessage = async (attachType: "IMAGE" | "LOCATION" | "PRODUCT", content: string) => {
@@ -2601,6 +2635,93 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </TouchableOpacity>
             </View>
           )}
+
+          {/* 🪙 COIN FLIP PROFILE & STORE CIRCULAR POPUP */}
+          {showCoinPopup && coinUser && (
+            <View style={StyleSheet.absoluteFillObject}>
+              <TouchableOpacity 
+                style={styles.coinPopupBackdrop} 
+                activeOpacity={1} 
+                onPress={() => setShowCoinPopup(false)}
+              >
+                <View style={styles.coinCardContainer}>
+                  <TouchableOpacity activeOpacity={0.95} onPress={handleCoinFlipPress}>
+                    <View style={styles.coinWrapper}>
+                      
+                      {/* FRONT OF COIN: User Profile Photo */}
+                      <Animated.View style={[
+                        styles.coinFace, 
+                        styles.coinFaceFront, 
+                        { transform: [{ rotateY: frontInterpolate }] }
+                      ]}>
+                        <Image 
+                          source={{ uri: coinUser.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400" }} 
+                          style={styles.coinPhoto} 
+                        />
+                        <View style={styles.coinFrontOverlay}>
+                          <Text style={styles.coinFrontName}>{coinUser.name}</Text>
+                          <Text style={styles.coinFrontUsername}>@{coinUser.username || "user"}</Text>
+                          <Text style={styles.coinFlipHint}>Tap to flip 🔄</Text>
+                        </View>
+                      </Animated.View>
+
+                      {/* BACK OF COIN: Connected Stores */}
+                      <Animated.View style={[
+                        styles.coinFace, 
+                        styles.coinFaceBack, 
+                        { transform: [{ rotateY: backInterpolate }] }
+                      ]}>
+                        <View style={styles.coinBackHeader}>
+                          <Text style={styles.coinBackTitle}>Connected Stores</Text>
+                        </View>
+                        
+                        {coinUser.managedStoreId ? (
+                          <TouchableOpacity 
+                            style={styles.coinStoreRow}
+                            onPress={() => {
+                              triggerHaptic("medium");
+                              setShowCoinPopup(false);
+                              setActiveChat(null);
+                              onClose();
+                              router.push(`/maison/${coinUser.managedStoreId}` as any);
+                            }}
+                          >
+                            <Image 
+                              source={{ uri: coinUser.managedStoreLogo || coinUser.avatar || "https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=150" }} 
+                              style={styles.coinStoreLogo} 
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.coinStoreName} numberOfLines={1}>
+                                {coinUser.managedStoreName}
+                              </Text>
+                              <Text style={styles.coinStoreSubtext}>View Store</Text>
+                            </View>
+                            <Lucide name="chevron-forward" size={18} color="#00f5ff" />
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={styles.coinNoStoresContainer}>
+                            <Lucide name="pricetags-outline" size={32} color="rgba(255,255,255,0.3)" />
+                            <Text style={styles.coinNoStoresText}>No connected stores</Text>
+                            <TouchableOpacity 
+                              style={styles.coinViewProfileBtn}
+                              onPress={() => {
+                                triggerHaptic("medium");
+                                setShowCoinPopup(false);
+                                handleViewTargetProfile(coinUser.name, coinUser.username);
+                              }}
+                            >
+                              <Text style={styles.coinViewProfileBtnText}>View Profile</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </Animated.View>
+
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </Modal>
 
@@ -3770,6 +3891,144 @@ const styles = StyleSheet.create({
   labelSaveBtnText: {
     color: "#fff",
     fontSize: 16,
+    fontWeight: "bold",
+  },
+  coinPopupBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.82)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  coinCardContainer: {
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: "#16161a",
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "rgba(0, 245, 255, 0.45)",
+    shadowColor: "#00f5ff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  coinWrapper: {
+    width: "100%",
+    height: "100%",
+  },
+  coinFace: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 120,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  coinFaceFront: {
+    backgroundColor: "#000",
+  },
+  coinFaceBack: {
+    backgroundColor: "#1c1c24",
+    padding: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  coinPhoto: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  coinFrontOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: "center",
+  },
+  coinFrontName: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+  coinFrontUsername: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: 1,
+  },
+  coinFlipHint: {
+    color: "#00f5ff",
+    fontSize: 9,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginTop: 4,
+  },
+  coinBackHeader: {
+    marginBottom: 12,
+    alignItems: "center",
+  },
+  coinBackTitle: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 11,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+  },
+  coinStoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 60,
+    width: 200,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  coinStoreLogo: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#000",
+  },
+  coinStoreName: {
+    color: "#fff",
+    fontSize: 12.5,
+    fontWeight: "bold",
+  },
+  coinStoreSubtext: {
+    color: "#00f5ff",
+    fontSize: 9.5,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  coinNoStoresContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  coinNoStoresText: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  coinViewProfileBtn: {
+    backgroundColor: "#3b82f6",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 6,
+  },
+  coinViewProfileBtnText: {
+    color: "#fff",
+    fontSize: 11,
     fontWeight: "bold",
   },
 });
