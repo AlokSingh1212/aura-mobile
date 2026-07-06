@@ -5,7 +5,8 @@ import { LogBox } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { initDatabase } from "@/utils/localDb";
 import { useStore } from "@/store/useStore";
-import NetInfo from "@react-native-community/netinfo";
+import { refreshSettingsEnforcement } from "@/lib/ecosystemSettings";
+import { SettingsEnforcementProvider } from "@/context/SettingsEnforcementContext";
 
 // Suppress expo-av deprecation warnings
 LogBox.ignoreLogs([
@@ -17,33 +18,48 @@ LogBox.ignoreLogs([
 export default function RootLayout() {
   useEffect(() => {
     initDatabase();
+    refreshSettingsEnforcement().catch((err) => {
+      console.warn("Failed to load settings enforcement:", err);
+    });
     useStore.getState().restoreAuthSession().catch((err) => {
       console.warn("Failed to restore auth session:", err);
       useStore.setState({ authHydrated: true });
     });
 
-    // Subscribe to network connection state changes
-    const unsubscribe = NetInfo.addEventListener((state) => {
-      if (state.isConnected && state.isInternetReachable !== false) {
-        useStore.getState().flushPendingActions().catch((err) => {
-          console.warn("Failed to flush offline pending actions queue:", err);
+    // Subscribe to network connection state changes (optional — not in all Expo Go builds)
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    void (async () => {
+      try {
+        const NetInfo = (await import("@react-native-community/netinfo")).default;
+        if (cancelled || typeof NetInfo?.addEventListener !== "function") return;
+        unsubscribe = NetInfo.addEventListener((state) => {
+          if (state.isConnected && state.isInternetReachable !== false) {
+            useStore.getState().flushPendingActions().catch((err) => {
+              console.warn("Failed to flush offline pending actions queue:", err);
+            });
+          }
         });
+      } catch (err) {
+        console.warn("NetInfo unavailable; offline sync on reconnect disabled:", err);
       }
-    });
+    })();
 
     return () => {
-      unsubscribe();
+      cancelled = true;
+      unsubscribe?.();
     };
   }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar style="light" />
-      <Stack
+      <SettingsEnforcementProvider>
+        <StatusBar style="light" />
+        <Stack
         screenOptions={{
           headerShown: false,
           animation: "fade_from_bottom",
-          contentStyle: { backgroundColor: "#FFFFFF" }
+          contentStyle: { backgroundColor: "#080415" }
         }}
       >
         <Stack.Screen name="login" options={{ animation: "slide_from_right" }} />
@@ -56,9 +72,11 @@ export default function RootLayout() {
         <Stack.Screen name="cart" options={{ animation: "none" }} />
         <Stack.Screen name="dashboard" />
         <Stack.Screen name="account" options={{ animation: "none" }} />
+        <Stack.Screen name="settings" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="create" options={{ animation: "slide_from_bottom", presentation: "modal" }} />
         <Stack.Screen name="profile/[username]" options={{ animation: "fade_from_bottom" }} />
       </Stack>
+      </SettingsEnforcementProvider>
     </GestureHandlerRootView>
   );
 }

@@ -69,6 +69,13 @@ export function resolveFeedPostMeta(item: any) {
       "aura_curator"
   );
 
+  const authorProfileId =
+    item?.creator?.id ||
+    item?.profile?.id ||
+    item?.profileId ||
+    item?.user?.id ||
+    authorUsername;
+
   return {
     photoTags: legacy.photoTags,
     collab: legacy.collab,
@@ -78,6 +85,7 @@ export function resolveFeedPostMeta(item: any) {
     isRepost: !!item?.isRepost || !!content.isRepost || !!repostOf,
     reshareSourceId: resolveReshareSourceId({ id: item?.id, repostOf, content }),
     authorUsername,
+    authorProfileId,
     authorName:
       item?.profile?.name ||
       item?.creator?.name ||

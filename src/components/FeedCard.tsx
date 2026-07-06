@@ -96,6 +96,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
     repostsCountProp ?? item.content?.repostsCount ?? item.repostsCount ?? 0;
   const postProducts = resolvePostProducts(item, products);
   const postMeta = resolveFeedPostMeta(item);
+  const hasPositions = postMeta.photoTags?.some((t: any) => typeof t.x === "number" && typeof t.y === "number") ?? false;
   const {
     people,
     useSheet,
@@ -285,17 +286,13 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           </Animated.View>
         )}
 
-        <MediaPeopleOverlay
-          photoTags={postMeta.photoTags}
-          bottom={postProducts.length ? 58 : 10}
-          onTagPress={onTagPress}
-          onOverflowPress={openSheet}
-        />
-        <ProductThumbnailStrip
-          products={postProducts}
-          bottom={8}
-          onPressProduct={(p) => openProduct(p.productId)}
-        />
+        {postMeta.photoTags && postMeta.photoTags.length > 0 && hasPositions && (
+          <MediaPeopleOverlay
+            photoTags={postMeta.photoTags}
+            onTagPress={onTagPress}
+            onOverflowPress={openSheet}
+          />
+        )}
       </TouchableOpacity>
 
       {/* DYNAMIC SHADER OVERLAYS SYNCED FROM THE CAMERA STUDIO */}
@@ -318,10 +315,55 @@ export const FeedCard: React.FC<FeedCardProps> = ({
 
       {/* Creator Metadata Overlay (Bottom Left) */}
       <View style={[styles.metaContainer, { bottom: floatingBottomOffset }]}>
-        <ShopNowBar
-          products={postProducts}
-          onPress={() => postProducts[0] && openProduct(postProducts[0].productId)}
-        />
+        {/* Legacy photo tags (avatar bubbles) rendered above ShopNowBar */}
+        {postMeta.photoTags && postMeta.photoTags.length > 0 && !hasPositions && (
+          <View style={{ height: 32, marginBottom: 8, zIndex: 10 }}>
+            <MediaPeopleOverlay
+              photoTags={postMeta.photoTags}
+              bottom={0}
+              left={0}
+              onTagPress={onTagPress}
+              onOverflowPress={openSheet}
+            />
+          </View>
+        )}
+
+        {/* Product preview strip rendered above ShopNowBar */}
+        {postProducts && postProducts.length > 0 && (
+          <ProductThumbnailStrip
+            products={postProducts}
+            bottom={0}
+            style={{ position: "relative", marginBottom: 8, bottom: 0 }}
+            onPressProduct={(p) => openProduct(p.productId)}
+          />
+        )}
+
+        {/* Render EITHER ShopNowBar (for organic) OR ctaBanner (for ads) */}
+        {!(item.type === "SPONSORED_AD" || item.sponsoredMetadata) ? (
+          <ShopNowBar
+            products={postProducts}
+            onPress={() => postProducts[0] && openProduct(postProducts[0].productId)}
+          />
+        ) : (
+          <TouchableOpacity
+            style={[styles.ctaBannerRelative, { marginBottom: 10 }]}
+            activeOpacity={0.9}
+            onPress={() => {
+              triggerHaptic("medium");
+              if (onCtaPress) {
+                onCtaPress(
+                  item.sponsoredMetadata?.ctaType || "LEARN_MORE",
+                  item.sponsoredMetadata || {}
+                );
+              }
+            }}
+          >
+            <Text style={styles.ctaBannerText}>
+              {item.sponsoredMetadata?.ctaText || "Learn more"}
+            </Text>
+            <Lucide name="chevron-forward" size={16} color="#fff" />
+          </TouchableOpacity>
+        )}
         <View style={styles.creatorRow}>
           <TouchableOpacity 
             onPress={() => onPersonPress(postMeta.authorUsername)} 
@@ -465,27 +507,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* ── Sponsored Ad CTA Banner ─── */}
-      {(item.type === "SPONSORED_AD" || item.sponsoredMetadata) && (
-        <TouchableOpacity
-          style={[styles.ctaBanner, { bottom: floatingBottomOffset + 85 }]}
-          activeOpacity={0.9}
-          onPress={() => {
-            triggerHaptic("medium");
-            if (onCtaPress) {
-              onCtaPress(
-                item.sponsoredMetadata?.ctaType || "LEARN_MORE",
-                item.sponsoredMetadata || {}
-              );
-            }
-          }}
-        >
-          <Text style={styles.ctaBannerText}>
-            {item.sponsoredMetadata?.ctaText || "Learn more"}
-          </Text>
-          <Lucide name="chevron-forward" size={16} color="#fff" />
-        </TouchableOpacity>
-      )}
+
 
       <PeekPreviewModal
         visible={peekVisible}
@@ -668,6 +690,17 @@ const styles = StyleSheet.create({
     alignItems: "center" as const,
     justifyContent: "space-between" as const,
     zIndex: 15,
+  },
+  ctaBannerRelative: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
   },
   ctaBannerText: {
     color: "#fff",

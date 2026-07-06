@@ -28,15 +28,34 @@ import {
   syncInstaStoriesWithProfile,
   buildYourStoryNode,
 } from "@/lib/sessionIdentity";
+import { syncCloudUserState, clearCloudUserState } from "@/lib/cloudSync";
+import { refreshSettingsEnforcement } from "@/lib/ecosystemSettings";
+import {
+  shouldDeliverPushNotification,
+  type NotificationCategory,
+} from "@/lib/settingsEnforcement";
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async () => {
+    try {
+      const deliver = shouldDeliverPushNotification();
+      return {
+        shouldShowAlert: deliver,
+        shouldPlaySound: deliver,
+        shouldSetBadge: false,
+        shouldShowBanner: deliver,
+        shouldShowList: deliver,
+      };
+    } catch {
+      return {
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      };
+    }
+  },
 });
 
 const CURRENCY_MAP: Record<string, { code: string; symbol: string; rate: number }> = {
@@ -225,6 +244,13 @@ interface StoreState {
   setCurrentUser: (user: any | null) => void;
   authSignUp: (payload: any) => Promise<{ success: boolean; error?: string; user?: any; token?: string; devOtp?: string }>;
   authLogIn: (payload: any) => Promise<{ success: boolean; error?: string; token?: string }>;
+  authOAuth: (payload: {
+    provider: "google" | "apple";
+    idToken?: string;
+    identityToken?: string;
+    email?: string;
+    fullName?: string;
+  }) => Promise<{ success: boolean; error?: string; token?: string }>;
   updateProfile: (payload: any) => Promise<{ success: boolean; error?: string }>;
   authOnboard: (payload: any) => Promise<{ success: boolean; error?: string; user?: any; profile?: any }>;
   authLogOut: () => void;
@@ -293,7 +319,26 @@ const MOCK_PRODUCTS = [
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 9.9,
     rating: 4.9,
-    type: "Fashion"
+    type: "Fashion",
+    arMetadata: {
+      categoryId: "fashion",
+      categoryLabel: "Fashion",
+      subcategoryId: "tops",
+      subcategoryLabel: "Tops & Tees",
+      colors: ["Noir", "White", "Navy"],
+      sizes: ["S", "M", "L", "XL"],
+      attributes: {
+        material: "Silk blend",
+        fit: "Relaxed",
+        gender: "Unisex",
+        care: "Dry clean only",
+      },
+    },
+    variants: [
+      { title: "Noir / S", price: 185000, stock: 3 },
+      { title: "Noir / M", price: 185000, stock: 5 },
+      { title: "White / M", price: 185000, stock: 2 },
+    ],
   },
   {
     id: "p2",
@@ -304,7 +349,24 @@ const MOCK_PRODUCTS = [
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 9.8,
     rating: 4.8,
-    type: "Fashion"
+    type: "Fashion",
+    arMetadata: {
+      categoryId: "fashion",
+      categoryLabel: "Fashion",
+      subcategoryId: "outerwear",
+      subcategoryLabel: "Jackets & Coats",
+      colors: ["Black", "Camel"],
+      sizes: ["S", "M", "L"],
+      attributes: {
+        material: "Silk trench",
+        closure: "Belt",
+        season: "Winter",
+      },
+    },
+    variants: [
+      { title: "Black / M", price: 245000, stock: 4 },
+      { title: "Camel / L", price: 245000, stock: 2 },
+    ],
   },
   {
     id: "p3",
@@ -315,7 +377,25 @@ const MOCK_PRODUCTS = [
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 9.7,
     rating: 4.7,
-    type: "Jewelry"
+    type: "Jewelry",
+    description: "Hand-finished statement cuff in obsidian ceramic with gold inlay.",
+    arMetadata: {
+      categoryId: "jewelry",
+      categoryLabel: "Jewelry",
+      subcategoryId: "rings",
+      subcategoryLabel: "Rings",
+      colors: ["Gold", "Obsidian"],
+      sizes: ["7", "8", "9"],
+      attributes: {
+        material: "Gold-plated",
+        stone: "Obsidian",
+        occasion: "Statement",
+      },
+    },
+    variants: [
+      { title: "Gold / 7", price: 95000, stock: 6 },
+      { title: "Gold / 8", price: 95000, stock: 3 },
+    ],
   },
   {
     id: "p4",
@@ -326,8 +406,82 @@ const MOCK_PRODUCTS = [
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 9.9,
     rating: 4.9,
-    type: "Bags"
-  }
+    type: "Fashion",
+    arMetadata: {
+      categoryId: "fashion",
+      categoryLabel: "Fashion",
+      subcategoryId: "outerwear",
+      subcategoryLabel: "Jackets & Coats",
+      colors: ["Tan", "Black"],
+      sizes: ["One Size"],
+      attributes: { material: "Calfskin leather", type: "Carryall" },
+    },
+    variants: [{ title: "Tan / One Size", price: 320000, stock: 2 }],
+  },
+  {
+    id: "p5",
+    title: "Monochrome Linen Shirt",
+    price: 12500,
+    vibe: "Quiet Luxury",
+    images: ["https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=400"],
+    maison: { name: "Rare Raven", id: "rare_raven" },
+    auraScore: 4.6,
+    rating: 4.6,
+    type: "Fashion",
+    arMetadata: {
+      categoryId: "fashion",
+      categoryLabel: "Fashion",
+      subcategoryId: "tops",
+      subcategoryLabel: "Tops & Tees",
+      colors: ["White", "Beige"],
+      sizes: ["S", "M", "L", "XL"],
+      attributes: { material: "Linen", fit: "Regular", gender: "Men" },
+    },
+    variants: [
+      { title: "White / M", price: 12500, stock: 8 },
+      { title: "Beige / L", price: 12500, stock: 5 },
+    ],
+  },
+  {
+    id: "p6",
+    title: "Sculpted Wool Blazer",
+    price: 89000,
+    vibe: "Avant-Garde",
+    images: ["https://images.unsplash.com/photo-1507679799987-c73779515223?auto=format&fit=crop&q=80&w=400"],
+    maison: { name: "Rare Raven", id: "rare_raven" },
+    auraScore: 4.8,
+    rating: 4.8,
+    type: "Fashion",
+    arMetadata: {
+      categoryId: "fashion",
+      categoryLabel: "Fashion",
+      subcategoryId: "outerwear",
+      subcategoryLabel: "Jackets & Coats",
+      colors: ["Charcoal", "Navy"],
+      sizes: ["M", "L", "XL"],
+      attributes: { material: "Wool blend", closure: "Button" },
+    },
+    variants: [{ title: "Charcoal / L", price: 89000, stock: 4 }],
+  },
+  {
+    id: "p7",
+    title: "Aura Glow Serum",
+    price: 4500,
+    vibe: "Aesthetic Core",
+    images: ["https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&q=80&w=400"],
+    maison: { name: "Rare Raven", id: "rare_raven" },
+    auraScore: 4.7,
+    rating: 4.7,
+    type: "Beauty",
+    arMetadata: {
+      categoryId: "beauty",
+      categoryLabel: "Beauty",
+      subcategoryId: "skincare",
+      subcategoryLabel: "Skincare",
+      attributes: { volume: "30ml", skinType: "All", concern: "Brightening" },
+    },
+    variants: [{ title: "Standard", price: 4500, stock: 20 }],
+  },
 ];
 
 export const useStore = create<StoreState>((set, get) => ({
@@ -369,11 +523,17 @@ export const useStore = create<StoreState>((set, get) => ({
   syncProfileIdentity: () => {
     const s = get();
     const activeMaisonId = resolveMaisonId(s.activeProfile, s.currentUser, s.activeMaisonId);
-    const instaStories = syncInstaStoriesWithProfile(
+    let instaStories = syncInstaStoriesWithProfile(
       s.instaStories,
       s.activeProfile,
       s.currentUser
     );
+    if (s.currentUser?.id) {
+      const yourStory = instaStories.find((story) => story.isYourStory);
+      instaStories = yourStory
+        ? [yourStory]
+        : [buildYourStoryNode(s.activeProfile, s.currentUser, [])];
+    }
     set({ activeMaisonId, instaStories });
     if (s.currentUser?.id) {
       saveAuthBundle(AsyncStorage, {
@@ -629,13 +789,17 @@ export const useStore = create<StoreState>((set, get) => ({
     }
     try {
       const url = maisonId ? `${API_BASE}/orders?maisonId=${maisonId}` : `${API_BASE}/orders`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: authHeaders() });
+      if (res.status === 401) {
+        set({ orders: [] });
+        return;
+      }
       const data = await res.json();
-      if (JSON.stringify(data) !== JSON.stringify(get().orders)) {
+      if (Array.isArray(data) && JSON.stringify(data) !== JSON.stringify(get().orders)) {
         set({ orders: data });
       }
     } catch (e) {
-      console.warn("Could not query orders ledger from local host. Using simulated logs.", e);
+      console.warn("Could not query orders ledger.", e);
     } finally {
       set({ loadingOrders: false });
     }
@@ -1076,12 +1240,40 @@ export const useStore = create<StoreState>((set, get) => ({
         });
         await get().fetchProfiles(data.user.id);
         get().syncProfileIdentity();
+        await refreshSettingsEnforcement();
         return { success: true, token: data.token };
       }
       return { success: false, error: data.message || data.error };
     } catch (e: any) {
       console.warn("Login fetch failed:", e);
       return { success: false, error: e.message || "Failed to connect to AURA database node." };
+    }
+  },
+
+  authOAuth: async (payload) => {
+    try {
+      const path = payload.provider === "apple" ? "auth/apple" : "auth/google";
+      const res = await fetch(`${API_BASE}/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success) {
+        get().triggerHaptic("success");
+        set({
+          currentUser: data.user,
+          activeMaisonId: data.user.maisonId,
+          authToken: data.token || null,
+        });
+        await get().fetchProfiles(data.user.id);
+        get().syncProfileIdentity();
+        await refreshSettingsEnforcement();
+        return { success: true, token: data.token };
+      }
+      return { success: false, error: data.message || data.error };
+    } catch (e: any) {
+      return { success: false, error: e.message || "OAuth sign-in failed." };
     }
   },
 
@@ -1136,6 +1328,8 @@ export const useStore = create<StoreState>((set, get) => ({
         get().syncProfileIdentity();
         syncDevicePushToken(userId);
         AuraPixel.loadConfig(userId);
+        await syncCloudUserState(userId, activeProfile?.id);
+        await refreshSettingsEnforcement();
       }
     } catch (e) {
       console.warn("Could not fetch sovereign profiles:", e);
@@ -1292,6 +1486,7 @@ export const useStore = create<StoreState>((set, get) => ({
   authLogOut: () => {
     get().triggerHaptic("medium");
     saveAuthBundle(AsyncStorage, null).catch(() => {});
+    clearCloudUserState();
     set({
       currentUser: null,
       activeProfile: null,
@@ -1374,8 +1569,8 @@ export const useStore = create<StoreState>((set, get) => ({
       get().triggerHaptic("medium");
       const res = await fetch(`${API_BASE}/checkout/create-order`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       return data;
@@ -1390,8 +1585,8 @@ export const useStore = create<StoreState>((set, get) => ({
       get().triggerHaptic("success");
       const res = await fetch(`${API_BASE}/checkout/verify-payment`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.success) {
@@ -1402,6 +1597,7 @@ export const useStore = create<StoreState>((set, get) => ({
           val: total,
           currency: "INR",
         });
+        await get().fetchOrders();
       }
       return data;
     } catch (e) {
@@ -1415,8 +1611,8 @@ export const useStore = create<StoreState>((set, get) => ({
       get().triggerHaptic("light");
       const res = await fetch(`${API_BASE}/checkout/apply-coupon`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       return data;

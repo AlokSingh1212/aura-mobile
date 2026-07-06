@@ -492,7 +492,7 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
                 </View>
               )}
 
-              {selectedAudio && (
+              {selectedAudio && !isRecording && (
               <TouchableOpacity style={styles.suggestedAudioBubble} onPress={() => setShowAudioDrawer(true)}>
                 <Image source={{ uri: selectedAudio.cover }} style={styles.suggestedAudioArt} />
                 <View style={styles.suggestedAudioTextWrap}>
@@ -503,22 +503,24 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
               </TouchableOpacity>
               )}
 
-              <View style={styles.cameraLeftToolbar}>
-                {[
-                  { label: "Audio", icon: "musical-notes-outline", active: !!selectedAudio, onPress: () => setShowAudioDrawer(true) },
-                  { label: "Effects", icon: "sparkles-outline", active: activeFilter !== "none", onPress: () => setShowFilterDrawer(true) },
-                  { label: "Prompter", icon: "document-text-outline", active: !!prompter.text, onPress: () => setShowPrompterDrawer(true) },
-                  { label: "Align", icon: "copy-outline", active: align.enabled, onPress: () => setShowAlignDrawer(true) },
-                  { label: "Length", icon: "timer-outline", active: true, onPress: () => setShowLengthDrawer(true) },
-                ].map((tool) => (
-                  <TouchableOpacity key={tool.label} style={styles.cameraToolItem} onPress={() => { triggerHaptic("light"); tool.onPress(); }}>
-                    <View style={[styles.cameraToolIconWrap, tool.active && { backgroundColor: "#00f5ff" }]}>
-                      <Lucide name={tool.icon as any} size={22} color={tool.active ? "#000" : "#fff"} />
-                    </View>
-                    <Text style={styles.cameraToolLabel}>{tool.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {!isRecording && (
+                <View style={styles.cameraLeftToolbar}>
+                  {[
+                    { label: "Audio", icon: "musical-notes-outline", active: !!selectedAudio, onPress: () => setShowAudioDrawer(true) },
+                    { label: "Effects", icon: "sparkles-outline", active: activeFilter !== "none", onPress: () => setShowFilterDrawer(true) },
+                    { label: "Prompter", icon: "document-text-outline", active: !!prompter.text, onPress: () => setShowPrompterDrawer(true) },
+                    { label: "Align", icon: "copy-outline", active: align.enabled, onPress: () => setShowAlignDrawer(true) },
+                    { label: "Length", icon: "timer-outline", active: true, onPress: () => setShowLengthDrawer(true) },
+                  ].map((tool) => (
+                    <TouchableOpacity key={tool.label} style={styles.cameraToolItem} onPress={() => { triggerHaptic("light"); tool.onPress(); }}>
+                      <View style={[styles.cameraToolIconWrap, tool.active && { backgroundColor: "#00f5ff" }]}>
+                        <Lucide name={tool.icon as any} size={22} color={tool.active ? "#000" : "#fff"} />
+                      </View>
+                      <Text style={styles.cameraToolLabel}>{tool.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
 
               <View style={styles.cameraBottomWrapper}>
                 <View style={styles.cameraBottomContainer}>
@@ -781,7 +783,7 @@ const styles = StyleSheet.create({
   clipSegmentActive: { backgroundColor: "#00f5ff" },
   teleprompterBox: { marginHorizontal: 16, backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 14, padding: 12, maxHeight: 100, overflow: "hidden" },
   teleprompterScrollText: { color: "#fff", fontSize: 16, lineHeight: 24, fontWeight: "600", textAlign: "center" },
-  suggestedAudioBubble: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, marginHorizontal: 16, gap: 10 },
+  suggestedAudioBubble: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, marginLeft: 68, marginRight: 16, gap: 10 },
   suggestedAudioArt: { width: 28, height: 28, borderRadius: 6 },
   suggestedAudioTextWrap: { flex: 1 },
   suggestedAudioTitle: { color: "#fff", fontSize: 12, fontWeight: "bold" },

@@ -20,19 +20,7 @@ export function validateProfileUsername(username: string): string | null {
   return null;
 }
 
-export const BRAND_CATEGORIES = [
-  "Fashion",
-  "Beauty",
-  "Luxury",
-  "Jewelry",
-  "Lifestyle",
-  "Food",
-  "Art",
-  "Technology",
-  "Health",
-  "Travel",
-  "Fitness",
-  "Home & Decor",
-] as const;
+export { BRAND_CATEGORIES } from "@/constants/brandCategories";
+export type { BrandCategory } from "@/constants/brandCategories";
 
 export const MAX_PROFILES_PER_ACCOUNT = 5;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { 
   StyleSheet, 
   Text, 
@@ -27,6 +27,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { openExternalUrl, normalizeProfileLinks } from "@/lib/openExternalUrl";
 import { resolveMaisonId } from "@/lib/sessionIdentity";
+import { AuraBottomNav } from "@/components/shop/AuraBottomNav";
 import { uploadMediaFromUri } from "@/lib/uploadMedia";
 import { delayAfterModalClose, pickMediaFromLibrary, type MediaPickMode } from "@/lib/createMediaPicker";
 import * as Clipboard from "expo-clipboard";
@@ -53,6 +54,8 @@ import {
   type NetworkProfile,
   type ProfileCatalogProduct,
 } from "@/lib/profileApi";
+import { useSocialGraph } from "@/hooks/useSocialGraph";
+import { filterProfilePosts } from "@/lib/feedSocialFilter";
 import { useProfileGridViewer } from "@/lib/profileGridNavigation";
 
 const { width } = Dimensions.get("window");
@@ -93,6 +96,11 @@ export default function AccountScreen() {
   const insets = useSafeAreaInsets();
   const [presetPosts, setPresetPosts] = useState(PRESET_POSTS);
   const { viewer: gridViewer, openGridItem, closeViewer: closeGridViewer } = useProfileGridViewer();
+  const { graph: socialGraph, version: socialGraphVersion } = useSocialGraph();
+  const visiblePresetPosts = useMemo(() => {
+    if (!socialGraph) return presetPosts;
+    return filterProfilePosts(presetPosts, socialGraph, true);
+  }, [presetPosts, socialGraph, socialGraphVersion]);
 
   // 👥 Personal Details states
   const [showPersonalDetails, setShowPersonalDetails] = useState(false);
@@ -1642,7 +1650,7 @@ export default function AccountScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#080415" />
-      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+      <SafeAreaView style={[styles.safeArea, { marginBottom: 62 + insets.bottom }]} edges={["top", "left", "right"]}>
         
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           
@@ -1700,7 +1708,7 @@ export default function AccountScreen() {
               >
                 <Lucide name="logo-instagram" size={24} color="#ffffff" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => { triggerHaptic("medium"); setShowAccountsCenter(true); }}>
+              <TouchableOpacity onPress={() => { triggerHaptic("medium"); router.push("/settings" as any); }}>
                 <Lucide name="menu-outline" size={28} color="#ffffff" />
               </TouchableOpacity>
             </View>
@@ -2016,8 +2024,8 @@ export default function AccountScreen() {
             {/* 🔴 GRID OF PRODUCTS / PERSONAL POSTS */}
             <View style={styles.gridWrapper}>
               {activeGridTab === "posts" && (
-                presetPosts.filter((post: any) => !post.isVideo).length > 0 ? (
-                  presetPosts.filter((post: any) => !post.isVideo).map((post: any) => (
+                visiblePresetPosts.filter((post: any) => !post.isVideo).length > 0 ? (
+                  visiblePresetPosts.filter((post: any) => !post.isVideo).map((post: any) => (
                     <TouchableOpacity 
                       key={post.id} 
                       style={styles.gridImageContainer}
@@ -2040,8 +2048,8 @@ export default function AccountScreen() {
               )}
 
               {activeGridTab === "reels" && (
-                presetPosts.filter((post: any) => post.isVideo).length > 0 ? (
-                  presetPosts.filter((post: any) => post.isVideo).map((post: any) => (
+                visiblePresetPosts.filter((post: any) => post.isVideo).length > 0 ? (
+                  visiblePresetPosts.filter((post: any) => post.isVideo).map((post: any) => (
                     <TouchableOpacity 
                       key={post.id} 
                       style={styles.gridImageContainer}
@@ -3398,100 +3406,7 @@ export default function AccountScreen() {
         </Modal>
       )}
 
-      {/* 🏠 AURA BOTTOM NAVIGATION — 5 tabs with elevated Create */}
-      <View style={[styles.auraBottomBar, { paddingBottom: insets.bottom, height: 62 + insets.bottom }]}>
-
-        {/* TAB 1 — Home */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push("/");
-          }}
-        >
-          <Lucide
-            name="home-outline"
-            size={26}
-            color="rgba(255,255,255,0.45)"
-          />
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Home</Text>
-        </TouchableOpacity>
-
-        {/* TAB 2 — Reel */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push({ pathname: "/", params: { activeTab: "reels" } } as any);
-          }}
-        >
-          <Lucide
-            name="film-outline"
-            size={26}
-            color="rgba(255,255,255,0.45)"
-          />
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Reel</Text>
-        </TouchableOpacity>
-
-        {/* TAB 3 — Inbox */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push({ pathname: "/", params: { openDMs: "true" } } as any);
-          }}
-        >
-          <Lucide
-            name="paper-plane-outline"
-            size={26}
-            color="rgba(255,255,255,0.45)"
-          />
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Inbox</Text>
-        </TouchableOpacity>
-
-        {/* TAB 4 — Products */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push("/shop");
-          }}
-        >
-          <Lucide
-            name="bag-handle-outline"
-            size={26}
-            color="rgba(255,255,255,0.45)"
-          />
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Products</Text>
-        </TouchableOpacity>
-
-        {/* TAB 5 — Profile */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push("/account");
-          }}
-        >
-          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "#00f5ff", overflow: "hidden", backgroundColor: "#111" }]}>
-            {displayLogo ? (
-              <Image 
-                source={{ uri: displayLogo }} 
-                key={displayLogo.slice(0, 64)}
-                style={styles.profileTabImg} 
-              />
-            ) : (
-              <View style={[styles.profileTabImg, { backgroundColor: "#00f5ff", alignItems: "center", justifyContent: "center" }]}>
-                <Text style={{ color: "#000000", fontSize: 10, fontWeight: "bold" }}>
-                  {(profileName || username || "R")[0]?.toUpperCase()}
-                </Text>
-              </View>
-            )}
-          </View>
-          <Text style={[styles.auraTabLabel, { color: "#00f5ff" }]}>Profile</Text>
-        </TouchableOpacity>
-
-      </View>
+      <AuraBottomNav activeTab="profile" />
 
       {/* 📖 YOUR STORY VIEWER */}
       <Modal
@@ -3699,8 +3614,9 @@ export default function AccountScreen() {
           username,
           name: profileName,
           logo: displayLogo,
+          profileId: activeProfile?.id,
         }}
-        posts={presetPosts}
+        posts={visiblePresetPosts}
         products={displayProducts}
         isOwnProfile
         onPostDeleted={(postId) => {
@@ -3710,6 +3626,13 @@ export default function AccountScreen() {
             return next;
           });
           loadProfileFromServer();
+        }}
+        onPostArchived={(postId) => {
+          setPresetPosts((prev) => {
+            const next = prev.filter((p) => p.id !== postId);
+            if (next.length === 0) closeGridViewer();
+            return next;
+          });
         }}
       />
 

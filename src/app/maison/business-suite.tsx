@@ -21,6 +21,7 @@ import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
 import { API_BASE } from "@/constants/api";
+import { fetchEarnings, type MaisonEarnings, type CreatorEarnings } from "@/lib/earningsApi";
 
 const { width } = Dimensions.get("window");
 
@@ -64,6 +65,8 @@ export default function BusinessSuiteScreen() {
   const [fundLoading, setFundLoading] = useState(false);
   const [fundAmount, setFundAmount] = useState("500");
   const [fundModalVisible, setFundModalVisible] = useState(false);
+  const [maisonEarnings, setMaisonEarnings] = useState<MaisonEarnings | null>(null);
+  const [creatorEarnings, setCreatorEarnings] = useState<CreatorEarnings | null>(null);
 
   const PLACEMENT_OPTIONS = [
     { id: "FEED", label: "Feed" },
@@ -147,6 +150,23 @@ export default function BusinessSuiteScreen() {
           setAvailableMaisons(linkData.available || []);
         } else {
           setLinkedMaisons(detailsData.portfolio.maisons || []);
+        }
+
+        const primaryMaison =
+          (linkData.success ? linkData.linked?.[0] : null) ||
+          detailsData.portfolio.maisons?.[0];
+        if (primaryMaison?.id) {
+          const earningsRes = await fetchEarnings(primaryMaison.id);
+          if (earningsRes.success) {
+            setMaisonEarnings(earningsRes.maison || null);
+            setCreatorEarnings(earningsRes.creator || null);
+          }
+        } else {
+          const earningsRes = await fetchEarnings();
+          if (earningsRes.success) {
+            setCreatorEarnings(earningsRes.creator || null);
+            setMaisonEarnings(null);
+          }
         }
 
         if (freshAcc?.campaigns) {
@@ -512,6 +532,40 @@ export default function BusinessSuiteScreen() {
                 <Text style={styles.statValue}>{stats.conversions}</Text>
               </View>
             </View>
+
+            {(maisonEarnings || creatorEarnings) && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Shop earnings</Text>
+                {maisonEarnings ? (
+                  <>
+                    <Text style={styles.syncText}>{maisonEarnings.maisonName}</Text>
+                    <View style={styles.statsContainer}>
+                      <View style={styles.statBox}>
+                        <Text style={styles.statLabel}>IN ESCROW</Text>
+                        <Text style={styles.statValue}>
+                          ₹{maisonEarnings.escrowLocked.toLocaleString("en-IN")}
+                        </Text>
+                      </View>
+                      <View style={styles.statBox}>
+                        <Text style={styles.statLabel}>SETTLED</Text>
+                        <Text style={styles.statValue}>
+                          ₹{maisonEarnings.settled.toLocaleString("en-IN")}
+                        </Text>
+                      </View>
+                    </View>
+                  </>
+                ) : null}
+                {creatorEarnings && creatorEarnings.totalEarnings > 0 ? (
+                  <Text style={styles.itemCountText}>
+                    Affiliate earnings: ₹{creatorEarnings.totalEarnings.toLocaleString("en-IN")} (
+                    {creatorEarnings.totalReferrals} referrals)
+                  </Text>
+                ) : null}
+                {!maisonEarnings && (!creatorEarnings || creatorEarnings.totalEarnings <= 0) ? (
+                  <Text style={styles.emptyAssetsText}>No payout activity yet.</Text>
+                ) : null}
+              </View>
+            )}
 
             {/* 💳 Ad Account Card */}
             <View style={styles.card}>

@@ -18,6 +18,10 @@ interface PostOptionsSheetProps {
   onShare: () => void;
   onCopyLink: () => void;
   onDelete: () => void;
+  onArchive?: () => void;
+  onHide?: () => void;
+  onMute?: () => void;
+  onBlock?: () => void;
 }
 
 export function PostOptionsSheet({
@@ -29,6 +33,10 @@ export function PostOptionsSheet({
   onShare,
   onCopyLink,
   onDelete,
+  onArchive,
+  onHide,
+  onMute,
+  onBlock,
 }: PostOptionsSheetProps) {
   if (!post) return null;
 
@@ -48,6 +56,19 @@ export function PostOptionsSheet({
 
           {isOwnPost ? (
             <View style={[styles.group, { marginTop: 10 }]}>
+              {onArchive ? (
+                <>
+                  <OptionRow
+                    icon="archive-outline"
+                    label="Archive"
+                    onPress={() => {
+                      onClose();
+                      onArchive();
+                    }}
+                  />
+                  <Divider />
+                </>
+              ) : null}
               <OptionRow
                 icon="trash-outline"
                 label="Delete post"
@@ -63,8 +84,38 @@ export function PostOptionsSheet({
               <OptionRow
                 icon="eye-off-outline"
                 label="Hide post"
-                onPress={onClose}
+                onPress={() => {
+                  onClose();
+                  onHide?.();
+                }}
               />
+              {onMute ? (
+                <>
+                  <Divider />
+                  <OptionRow
+                    icon="volume-mute-outline"
+                    label="Mute"
+                    onPress={() => {
+                      onClose();
+                      onMute();
+                    }}
+                  />
+                </>
+              ) : null}
+              {onBlock ? (
+                <>
+                  <Divider />
+                  <OptionRow
+                    icon="ban-outline"
+                    label="Block"
+                    destructive
+                    onPress={() => {
+                      onClose();
+                      onBlock();
+                    }}
+                  />
+                </>
+              ) : null}
               <Divider />
               <OptionRow
                 icon="flag-outline"

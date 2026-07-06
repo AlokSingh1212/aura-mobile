@@ -37,6 +37,9 @@ import { PostShareSheet } from "@/components/post/PostShareSheet";
 import { PostReshareSheet } from "@/components/post/PostReshareSheet";
 import { RepostAttribution } from "@/components/post/RepostAttribution";
 import { resolveReshareSourceId } from "@/lib/postRepost";
+import { filterProfilePosts } from "@/lib/feedSocialFilter";
+import { useSocialGraph } from "@/hooks/useSocialGraph";
+import { Alert } from "react-native";
 
 const { width, height } = Dimensions.get("window");
 
@@ -44,6 +47,7 @@ export interface ProfileGridViewerProfile {
   username: string;
   name: string;
   logo?: string | null;
+  profileId?: string;
 }
 
 interface ProfileGridViewerProps {
@@ -56,6 +60,7 @@ interface ProfileGridViewerProps {
   products: any[];
   isOwnProfile?: boolean;
   onPostDeleted?: (postId: string) => void;
+  onPostArchived?: (postId: string) => void;
 }
 
 function ProfilePostPage({
@@ -322,9 +327,12 @@ export function ProfileGridViewer({
   products,
   isOwnProfile = false,
   onPostDeleted,
+  onPostArchived,
 }: ProfileGridViewerProps) {
   const insets = useSafeAreaInsets();
   const { triggerHaptic, products: storeProducts } = useStore();
+  const { graph, version, hideFeedPost, archiveFeedPost, muteAccount, blockAccount } =
+    useSocialGraph();
   const [activeIndex, setActiveIndex] = useState(0);
   const [feedMuted, setFeedMuted] = useState(true);
   const listRef = useRef<FlatList>(null);
@@ -336,8 +344,13 @@ export function ProfileGridViewer({
     },
   });
 
-  const photoPosts = useMemo(() => posts.filter((p) => !p.isVideo), [posts]);
-  const reelPosts = useMemo(() => posts.filter((p) => p.isVideo), [posts]);
+  const visiblePosts = useMemo(() => {
+    if (!graph) return posts;
+    return filterProfilePosts(posts, graph, isOwnProfile);
+  }, [posts, graph, version, isOwnProfile]);
+
+  const photoPosts = useMemo(() => visiblePosts.filter((p) => !p.isVideo), [visiblePosts]);
+  const reelPosts = useMemo(() => visiblePosts.filter((p) => p.isVideo), [visiblePosts]);
 
   const items = useMemo(() => {
     if (tab === "posts") return photoPosts;
@@ -597,6 +610,75 @@ export function ProfileGridViewer({
         }}
         onDelete={() => {
           if (engagement.optionsTarget) engagement.confirmDeletePost(engagement.optionsTarget);
+        }}
+        onArchive={() => {
+          const target = engagement.optionsTarget;
+          if (!target) return;
+          Alert.alert(
+            "Archive post?",
+            "This post will be hidden from your profile. You can restore it from Settings → Archives.",
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Archive",
+                onPress: async () => {
+                  const isReel = reelPosts.some((p) => p.id === target.id);
+                  await archiveFeedPost({
+                    id: target.id,
+                    type: isReel ? "reel" : "post",
+                    title: target.caption?.slice(0, 80) || "Post",
+                    thumbnail: target.url,
+                    authorUsername: profile.username,
+                  });
+                  onPostArchived?.(target.id);
+                  engagement.setOptionsVisible(false);
+                  Alert.alert("Archived", "Post moved to your archive.");
+                },
+              },
+            ]
+          );
+        }}
+        onHide={() => {
+          const target = engagement.optionsTarget;
+          if (!target?.id) return;
+          hideFeedPost(target.id);
+          Alert.alert("Hidden", "This post has been removed from your feed.");
+        }}
+        onMute={() => {
+          const target = engagement.optionsTarget;
+          if (!target) return;
+          muteAccount({
+            profileId: profile.profileId || profile.username,
+            username: profile.username,
+            name: profile.name,
+            avatar: profile.logo,
+          });
+          Alert.alert("Muted", `@${profile.username} has been muted.`);
+        }}
+        onBlock={() => {
+          const target = engagement.optionsTarget;
+          if (!target) return;
+          Alert.alert(
+            "Block account?",
+            `@${profile.username} won't be able to see your profile or message you.`,
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Block",
+                style: "destructive",
+                onPress: async () => {
+                  await blockAccount({
+                    profileId: profile.profileId || profile.username,
+                    username: profile.username,
+                    name: profile.name,
+                    avatar: profile.logo,
+                  });
+                  onClose();
+                  Alert.alert("Blocked", `@${profile.username} has been blocked.`);
+                },
+              },
+            ]
+          );
         }}
       />
 

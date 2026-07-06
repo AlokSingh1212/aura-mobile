@@ -13,6 +13,7 @@ import {
   ActivityIndicator
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 import { useStore } from "@/store/useStore";
 import { AuraPixel } from "@/lib/auraPixel";
 import { API_HOST } from "@/constants/api";
@@ -21,6 +22,9 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { CheckoutSuccess } from "@/components/CheckoutSuccess";
+import { AuraBottomNav } from "@/components/shop/AuraBottomNav";
+import { CheckoutStepper } from "@/components/shop/CheckoutStepper";
+import { SHOP } from "@/theme/shopTheme";
 
 const { width } = Dimensions.get("window");
 
@@ -72,7 +76,7 @@ export default function CartScreen() {
   const insets = useSafeAreaInsets();
 
   // Dynamic Theme states
-  const [themeMode, setThemeMode] = useState<"obsidian" | "cream">("obsidian");
+  const [themeMode, setThemeMode] = useState<"obsidian" | "cream">("cream");
   const [activeStep, setActiveStep] = useState<number>(0); // 0: Cart, 1: Shipping, 2: Payment
   const [deliveryMethod, setDeliveryMethod] = useState<"standard" | "express">("standard");
   const [paymentMethod, setPaymentMethod] = useState<"RAZORPAY" | "COD">("RAZORPAY");
@@ -394,9 +398,12 @@ export default function CartScreen() {
 
   const handleContinueCTA = () => {
     if (activeStep === 0) {
+      if (!cart.length) return;
       triggerHaptic("medium");
-      setActiveStep(1);
-    } else if (activeStep === 1) {
+      router.push("/shop/checkout");
+      return;
+    }
+    if (activeStep === 1) {
       triggerHaptic("medium");
       setActiveStep(2);
     } else {
@@ -440,52 +447,40 @@ export default function CartScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: SHOP.bg }]}>
+      <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
         
-        {/* Custom Cinematic Header Navigation */}
-        <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.bg }]}>
+        {/* Custom Header */}
+        <View style={[styles.header, { borderBottomColor: SHOP.border, backgroundColor: SHOP.bg }]}>
           <TouchableOpacity onPress={() => { triggerHaptic("light"); router.back(); }}>
-            <Lucide name="arrow-back" size={24} color={colors.text} />
+            <Lucide name="arrow-back" size={24} color={SHOP.text} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Shopping Cart</Text>
+          <Text style={[styles.headerTitle, { color: SHOP.text }]}>
+            {activeStep === 0 ? "Shopping Cart" : activeStep === 1 ? "Order Summary" : "Payments"}
+          </Text>
           <View style={styles.headerRight}>
-            <TouchableOpacity 
-              style={[styles.circleBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => {
-                triggerHaptic("light");
-                setThemeMode(themeMode === "obsidian" ? "cream" : "obsidian");
-              }}
-            >
-              <Lucide name={themeMode === "obsidian" ? "sunny-outline" : "moon-outline"} size={20} color={colors.text} />
-            </TouchableOpacity>
+            {activeStep === 2 && (
+              <View style={styles.secureBadge}>
+                <Lucide name="lock-closed" size={12} color={SHOP.green} />
+                <Text style={styles.secureText}>100% Secure</Text>
+              </View>
+            )}
           </View>
         </View>
 
         {cart.length > 0 ? (
           <View style={styles.content}>
             
-            {/* 3-Step Wizard Progress Bar */}
-            <View style={[styles.wizardBar, { borderBottomColor: colors.border }]}>
-              <TouchableOpacity 
-                style={[styles.stepTab, activeStep === 0 && { borderBottomColor: colors.primary }]} 
-                onPress={() => { triggerHaptic("light"); setActiveStep(0); }}
-              >
-                <Text style={[styles.stepText, { color: activeStep === 0 ? colors.text : colors.textMuted }]}>1. CART</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.stepTab, activeStep === 1 && { borderBottomColor: colors.primary }]} 
-                onPress={() => { triggerHaptic("light"); setActiveStep(1); }}
-              >
-                <Text style={[styles.stepText, { color: activeStep === 1 ? colors.text : colors.textMuted }]}>2. DELIVERY ADDRESS</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.stepTab, activeStep === 2 && { borderBottomColor: colors.primary }]} 
-                onPress={() => { triggerHaptic("light"); setActiveStep(2); }}
-              >
-                <Text style={[styles.stepText, { color: activeStep === 2 ? colors.text : colors.textMuted }]}>3. PAYMENT METHOD</Text>
-              </TouchableOpacity>
+            {activeStep > 0 && <CheckoutStepper currentStep={activeStep - 1} />}
+
+            {activeStep === 0 && (
+            <View style={[styles.wizardBar, { borderBottomColor: SHOP.border }]}>
+              <Text style={[styles.stepText, { color: SHOP.textSecondary, padding: 12 }]}>
+                {cart.length} item{cart.length !== 1 ? "s" : ""} in cart
+              </Text>
             </View>
+            )}
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
               
@@ -814,17 +809,17 @@ export default function CartScreen() {
               </View>
 
               <TouchableOpacity 
-                style={[styles.checkoutBtn, { backgroundColor: colors.primary }, isCheckingOut && styles.checkoutBtnDisabled]}
+                style={[styles.checkoutBtn, { backgroundColor: SHOP.accent }, isCheckingOut && styles.checkoutBtnDisabled]}
                 activeOpacity={0.9}
                 onPress={handleContinueCTA}
                 disabled={isCheckingOut}
               >
-                <Text style={[styles.checkoutText, { color: themeMode === "obsidian" ? "#080415" : "#ffffff" }]}>
-                  {isCheckingOut ? "Securing Node..." : 
-                   activeStep === 0 ? "Continue to Shipping" : 
-                   activeStep === 1 ? "Continue to Payment" : "Authenticate Purchase"}
+                <Text style={[styles.checkoutText, { color: SHOP.accentText }]}>
+                  {isCheckingOut ? "Processing…" : 
+                   activeStep === 0 ? "Proceed to Checkout" : 
+                   activeStep === 1 ? "Continue with EMI" : `Pay ${formatPrice(calculateTotal())}`}
                 </Text>
-                <Lucide name={activeStep === 2 ? "shield-checkmark" : "arrow-forward-sharp"} size={17} color={themeMode === "obsidian" ? "#080415" : "#ffffff"} />
+                <Lucide name={activeStep === 2 ? "shield-checkmark" : "arrow-forward-sharp"} size={17} color={SHOP.accentText} />
               </TouchableOpacity>
 
               {/* Confidence Badges */}
@@ -854,104 +849,7 @@ export default function CartScreen() {
 
       </SafeAreaView>
 
-      {/* 🏠 AURA BOTTOM NAVIGATION — 5 tabs with elevated Create */}
-      <View style={[styles.auraBottomBar, { paddingBottom: insets.bottom, height: 62 + insets.bottom }]}>
-
-        {/* TAB 1 — Home */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push("/");
-          }}
-        >
-          <Lucide
-            name="home-outline"
-            size={26}
-            color="rgba(255,255,255,0.45)"
-          />
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Home</Text>
-        </TouchableOpacity>
-
-        {/* TAB 2 — Reel */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push({ pathname: "/", params: { activeTab: "reels" } } as any);
-          }}
-        >
-          <Lucide
-            name="film-outline"
-            size={26}
-            color="rgba(255,255,255,0.45)"
-          />
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Reel</Text>
-        </TouchableOpacity>
-
-        {/* TAB 3 — Inbox */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push({ pathname: "/", params: { openDMs: "true" } } as any);
-          }}
-        >
-          <Lucide
-            name="paper-plane-outline"
-            size={26}
-            color="rgba(255,255,255,0.45)"
-          />
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Inbox</Text>
-        </TouchableOpacity>
-
-        {/* TAB 4 — Products */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push("/shop");
-          }}
-        >
-          <Lucide
-            name="bag-handle-outline"
-            size={26}
-            color="rgba(255,255,255,0.45)"
-          />
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Products</Text>
-        </TouchableOpacity>
-
-        {/* TAB 5 — Profile */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            router.push("/account");
-          }}
-        >
-          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", overflow: "hidden" }]}>
-            {activeProfile?.logo ? (
-              <Image 
-                source={{ uri: activeProfile.logo }} 
-                style={styles.profileTabImg} 
-              />
-            ) : currentUser?.avatar ? (
-              <Image 
-                source={{ uri: currentUser.avatar }} 
-                style={styles.profileTabImg} 
-              />
-            ) : (
-              <View style={[styles.profileTabImg, { backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", width: "100%", height: "100%" }]}>
-                <Text style={{ color: themeMode === "obsidian" ? "#000" : "#fff", fontSize: 10, fontWeight: "bold" }}>
-                  {(activeProfile?.name || currentUser?.name || activeMaisonId || "R")[0]?.toUpperCase()}
-                </Text>
-              </View>
-            )}
-          </View>
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Profile</Text>
-        </TouchableOpacity>
-
-      </View>
+      <AuraBottomNav activeTab="products" />
 
       {/* Interactive Simulated Payment Gateway Modal */}
       <Modal visible={paymentSimVisible} transparent animationType="slide" onRequestClose={() => setPaymentSimVisible(false)}>
@@ -1091,14 +989,29 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: "300",
-    letterSpacing: 2,
-    textTransform: "uppercase",
+    fontWeight: "700",
     textAlign: "center",
+    flex: 1,
   },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
+    minWidth: 80,
+    justifyContent: "flex-end",
+  },
+  secureBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: SHOP.greenLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  secureText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: SHOP.green,
   },
   circleBtn: {
     width: 38,

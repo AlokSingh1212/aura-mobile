@@ -22,6 +22,17 @@ import { useStore } from "@/store/useStore";
 import { API_HOST } from "@/constants/api";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { CheckoutSuccess } from "@/components/CheckoutSuccess";
+import { ShopProductDetail } from "@/components/shop/ShopProductDetail";
+import { buildDefaultShippingAddress } from "@/lib/shopAddress";
+import {
+  getCategoryRelatedProducts,
+  getCategorySectionMeta,
+  getEffectivePdpPrice,
+  getSimilarProducts,
+  type BankOffer,
+} from "@/lib/shopPdp";
+import { fetchProductReviews, submitProductReview, type ProductReviewSummary } from "@/lib/shopReviews";
+import { RateProductSheet } from "@/components/shop/RateProductSheet";
 
 let RazorpayCheckout: any = null;
 try {
@@ -148,24 +159,47 @@ export default function ProductDetailScreen() {
   // 3-step checkout state variables
   const [checkoutVisible, setCheckoutVisible] = useState(false);
   const [activeStep, setActiveStep] = useState(0); // 0: Shipping, 1: Settlement, 2: Review
-  const [shippingAddress, setShippingAddress] = useState<any>({
-    name: "Alok Singh",
-    email: "alok@auragram.vip",
-    phone: "9999999999",
-    countryCode: "+91",
-    address: "Penthouse Suite 8, Aurelia Towers",
-    city: "Mumbai",
-    state: "Maharashtra",
-    postalCode: "400001",
-    country: "India"
-  });
+  const [shippingAddress, setShippingAddress] = useState<any>(() =>
+    buildDefaultShippingAddress(currentUser, activeProfile)
+  );
+  const [appliedBankOffer, setAppliedBankOffer] = useState<BankOffer | null>(null);
   const [isEditingAddress, setIsEditingAddress] = useState(false);
-  const [tempAddress, setTempAddress] = useState<any>({ ...shippingAddress });
+  const [tempAddress, setTempAddress] = useState<any>(() =>
+    buildDefaultShippingAddress(currentUser, activeProfile)
+  );
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<any | null>(null);
   const [couponError, setCouponError] = useState("");
   const [isCheckingCoupon, setIsCheckingCoupon] = useState(false);
+  const [couponSheetVisible, setCouponSheetVisible] = useState(false);
+  const [reviewSummary, setReviewSummary] = useState<ProductReviewSummary | null>(null);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [rateSheetVisible, setRateSheetVisible] = useState(false);
+
+  useEffect(() => {
+    if (currentUser || activeProfile) {
+      setShippingAddress((prev: any) => ({
+        ...buildDefaultShippingAddress(currentUser, activeProfile),
+        ...prev,
+        name: prev.name || currentUser?.name || activeProfile?.name || "",
+        email: prev.email || currentUser?.email || activeProfile?.email || "",
+        phone:
+          prev.phone ||
+          String(currentUser?.phone || activeProfile?.phone || "")
+            .replace(/\D/g, "")
+            .slice(-10),
+      }));
+    }
+  }, [currentUser?.id, activeProfile?.id]);
+
+  useEffect(() => {
+    setAppliedBankOffer(null);
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setCouponError("");
+  }, [id]);
+
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [paymentSimVisible, setPaymentSimVisible] = useState(false);
   const [activeRazorpayOrder, setActiveRazorpayOrder] = useState<any | null>(null);
@@ -205,6 +239,41 @@ export default function ProductDetailScreen() {
 
   useEffect(() => {
     if (!id) return;
+    setReviewsLoading(true);
+    fetchProductReviews(String(id))
+      .then(setReviewSummary)
+      .finally(() => setReviewsLoading(false));
+  }, [id]);
+
+  const refreshReviews = () => {
+    if (!id) return;
+    setReviewsLoading(true);
+    fetchProductReviews(String(id))
+      .then(setReviewSummary)
+      .finally(() => setReviewsLoading(false));
+  };
+
+  const handleSubmitReview = async (rating: number, content: string) => {
+    const userId = currentUser?.id || activeProfile?.userId;
+    if (!userId) {
+      Alert.alert("Sign in required", "Please sign in to submit a review.");
+      throw new Error("Sign in required");
+    }
+    const res = await submitProductReview({
+      userId,
+      artifactId: String(id),
+      rating,
+      content,
+    });
+    if (!res.success) {
+      throw new Error(res.error || "Could not submit review.");
+    }
+    triggerHaptic("success");
+    refreshReviews();
+  };
+
+  useEffect(() => {
+    if (!id) return;
     let cancelled = false;
     (async () => {
       setLoadingProduct(true);
@@ -228,52 +297,60 @@ export default function ProductDetailScreen() {
 
   if (loadingProduct && !product) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF" }}>
+        <ActivityIndicator size="large" color="#2874F0" />
       </View>
     );
   }
 
   if (!product) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 }}>
-        <Text style={{ color: colors.text, fontSize: 18, fontWeight: "600" }}>Product not found</Text>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", padding: 24 }}>
+        <Text style={{ color: "#212121", fontSize: 18, fontWeight: "600" }}>Product not found</Text>
         <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: colors.accent }}>Go back</Text>
+          <Text style={{ color: "#2874F0" }}>Go back</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   const images = product.images && product.images.length > 0 ? product.images : [];
+  const checkoutUnitPrice = getEffectivePdpPrice(product, appliedBankOffer, appliedCoupon);
 
   const calculateDiscount = () => {
-    if (!appliedCoupon) return 0;
+    const base = product.price ?? 0;
+    const offerAdjusted = getEffectivePdpPrice(product, appliedBankOffer, null);
+    if (!appliedCoupon) return base - offerAdjusted;
     if (appliedCoupon.type === "PERCENTAGE") {
-      return product.price * (appliedCoupon.discount / 100);
+      return offerAdjusted * (appliedCoupon.discount / 100);
     }
-    return Math.min(appliedCoupon.discount, product.price);
+    return Math.min(appliedCoupon.discount, offerAdjusted);
   };
 
   const calculateTax = () => {
-    const base = product.price - calculateDiscount();
+    const base = checkoutUnitPrice;
     return base * 0.18;
   };
 
   const calculateTotal = () => {
-    const base = product.price - calculateDiscount();
-    return base + calculateTax() + 1500; // ₹1,500 courier fee
+    return checkoutUnitPrice + calculateTax() + 1500;
   };
 
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) return;
+  const handleApplyCoupon = async (codeOverride?: string) => {
+    const code = (codeOverride || couponCode).trim();
+    if (!code) return;
+    setCouponCode(code);
     setIsCheckingCoupon(true);
     setCouponError("");
     try {
-      const res = await applyCoupon({ code: couponCode.trim(), maisonId: activeMaisonId });
+      const res = await applyCoupon({
+        code,
+        maisonId: product?.maison?.id || activeMaisonId,
+      });
       if (res.success && res.valid) {
         setAppliedCoupon(res);
         setCouponError("");
+        setCouponSheetVisible(false);
         triggerHaptic("success");
       } else {
         setCouponError(res.error || "Invalid coupon code.");
@@ -295,7 +372,7 @@ export default function ProductDetailScreen() {
       const payloadCartItems = [{
         artifactId: product.id,
         quantity: 1,
-        price: product.price
+        price: checkoutUnitPrice,
       }];
 
       const res = await initiateCheckout({
@@ -496,454 +573,92 @@ export default function ProductDetailScreen() {
 
   const maisonName = product.maison?.name || "AURA LUXURY";
   const maisonId = product.maison?.id || "aura_luxury";
+  const similarProducts = getSimilarProducts(product, products, 6);
+  const categorySection = getCategorySectionMeta(product);
+  const similarIds = new Set(similarProducts.map((p) => p.id));
+  const categoryProducts = getCategoryRelatedProducts(product, products, 12).filter(
+    (p) => !similarIds.has(p.id)
+  );
+
+  const openCategoryListing = () => {
+    triggerHaptic("light");
+    const sub = categorySection.subcategoryId
+      ? `?subcategory=${encodeURIComponent(categorySection.subcategoryId)}`
+      : "";
+    router.push(`/shop/category/${categorySection.slug}${sub}` as any);
+  };
+
+  const handleShopAddToCart = (opts?: { color?: string; size?: string }) => {
+    addToCart({
+      ...product,
+      selectedColor: opts?.color,
+      selectedSize: opts?.size,
+    });
+    triggerHaptic("heavy");
+  };
+
+  const handleShopBuyNow = (opts?: { color?: string; size?: string }) => {
+    triggerHaptic("heavy");
+    const q = new URLSearchParams({ productId: String(product.id) });
+    if (opts?.color) q.set("color", opts.color);
+    if (opts?.size) q.set("size", opts.size);
+    router.push(`/shop/checkout?${q.toString()}` as any);
+  };
+
+  const handleClearCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setCouponError("");
+  };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <SafeAreaView style={styles.safeArea}>
-        {/* Cinematic Header Nav */}
-        <View style={[styles.navBar, { borderBottomColor: colors.border, backgroundColor: colors.bg }]}>
-          <TouchableOpacity 
-            style={[styles.circleBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => {
-              triggerHaptic("light");
-              router.back();
-            }}
-          >
-            <Lucide name="arrow-back" size={23} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.navTitle, { color: colors.text }]} numberOfLines={1}>{product.title}</Text>
-          <View style={styles.navRight}>
-            {/* Theme switcher */}
-            <TouchableOpacity 
-              style={[styles.circleBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => {
-                triggerHaptic("light");
-                setThemeMode(themeMode === "obsidian" ? "cream" : "obsidian");
-              }}
-            >
-              <Lucide name={themeMode === "obsidian" ? "sunny-outline" : "moon-outline"} size={21} color={colors.text} />
-            </TouchableOpacity>
+    <>
+      <ShopProductDetail
+        product={product}
+        similarProducts={similarProducts}
+        categoryProducts={categoryProducts}
+        categorySection={categorySection}
+        onViewAllCategory={openCategoryListing}
+        shippingAddress={shippingAddress}
+        onSaveAddress={setShippingAddress}
+        appliedBankOffer={appliedBankOffer}
+        onApplyBankOffer={setAppliedBankOffer}
+        appliedCoupon={appliedCoupon}
+        couponCode={couponCode}
+        onCouponCodeChange={setCouponCode}
+        onApplyCoupon={() => handleApplyCoupon()}
+        onClearCoupon={handleClearCoupon}
+        couponError={couponError}
+        isCheckingCoupon={isCheckingCoupon}
+        reviewSummary={reviewSummary}
+        reviewsLoading={reviewsLoading}
+        onRateReview={() => {
+          triggerHaptic("light");
+          if (!currentUser?.id && !activeProfile?.userId) {
+            Alert.alert("Sign in required", "Sign in to rate this product.");
+            return;
+          }
+          setRateSheetVisible(true);
+        }}
+        onOpenCoupons={() => setCouponSheetVisible(true)}
+        couponSheetVisible={couponSheetVisible}
+        onCloseCoupons={() => setCouponSheetVisible(false)}
+        onApplyCouponCode={handleApplyCoupon}
+        maisonId={maisonId}
+        onAddToCart={handleShopAddToCart}
+        onBuyNow={handleShopBuyNow}
+        onToggleWishlist={handleToggleWishlist}
+        isWishlisted={isFavorited}
+      />
 
-            <TouchableOpacity 
-              style={[styles.circleBtn, isFavorited && styles.favActive, { backgroundColor: colors.surface, borderColor: isFavorited ? "#ff3366" : colors.border }]}
-              onPress={handleToggleWishlist}
-            >
-              <Lucide name="heart" size={21} color={isFavorited ? "#ff3366" : colors.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
+      <RateProductSheet
+        visible={rateSheetVisible}
+        productTitle={product.title}
+        onClose={() => setRateSheetVisible(false)}
+        onSubmit={handleSubmitReview}
+      />
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {/* Visual Gallery Segment (Mirrors web detail layout) */}
-          <View style={[styles.galleryContainer, { backgroundColor: colors.bg }]}>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(e) => {
-                const nextImg = Math.round(e.nativeEvent.contentOffset.x / width);
-                setActiveImg(nextImg);
-              }}
-              style={styles.galleryScrollView}
-            >
-              {images.map((img: string, idx: number) => (
-                <Image key={idx} source={{ uri: img }} style={styles.galleryMainImg} />
-              ))}
-            </ScrollView>
-
-            {/* Gallery tags */}
-            <View style={styles.galleryOverlayTags}>
-              <View style={[styles.galleryTag, { backgroundColor: themeMode === "obsidian" ? "rgba(8, 4, 21, 0.85)" : "rgba(253, 248, 248, 0.85)", borderColor: colors.border }]}>
-                <Lucide name="play-circle-outline" size={15} color={colors.text} />
-                <Text style={[styles.galleryTagText, { color: colors.text }]}>Video</Text>
-              </View>
-              <View style={[styles.galleryTag, { backgroundColor: themeMode === "obsidian" ? "rgba(8, 4, 21, 0.85)" : "rgba(253, 248, 248, 0.85)", borderColor: colors.border }]}>
-                <Lucide name="aperture-outline" size={15} color={colors.text} />
-                <Text style={[styles.galleryTagText, { color: colors.text }]}>360°</Text>
-              </View>
-            </View>
-
-            {/* Pagination dots */}
-            <View style={styles.dotsRow}>
-              {images.map((_: any, idx: number) => (
-                <View
-                  key={idx}
-                  style={[
-                    styles.dot,
-                    { backgroundColor: activeImg === idx ? colors.primary : colors.border }
-                  ]}
-                />
-              ))}
-            </View>
-          </View>
-
-          {/* Narrative & Acquisition Column Panel */}
-          <View style={styles.narrativeContainer}>
-            {/* Breadcrumb row */}
-            <View style={styles.breadcrumbRow}>
-              <Text style={[styles.breadcrumbText, { color: colors.textMuted }]}>{maisonName.toUpperCase()}</Text>
-              <Lucide name="chevron-forward" size={11} color={colors.border} />
-              <Text style={[styles.breadcrumbText, { color: colors.textMuted }]}>{(product.vibe || "CURATED").toUpperCase()}</Text>
-              <Lucide name="chevron-forward" size={11} color={colors.border} />
-              <Text style={[styles.breadcrumbText, styles.breadcrumbActive, { color: colors.primary }]}>{product.title.toUpperCase()}</Text>
-            </View>
-
-            {/* Neural Vibe Tag */}
-            <View style={styles.headerRow}>
-              <View style={[styles.vibeBadge, { backgroundColor: colors.primaryContainer, borderColor: colors.primary }]}>
-                <Lucide name="sparkles" size={14} color={colors.primary} />
-                <Text style={[styles.vibeText, { color: colors.primary }]}>Neural Vibe: {product.vibe}</Text>
-              </View>
-              <Text style={[styles.serialText, { color: colors.textMuted }]}>Serial: {product.id.substring(0, 8).toUpperCase()}-AURAGRAM</Text>
-            </View>
-
-            {/* Store & Title */}
-            <View style={styles.titleBlock}>
-              <TouchableOpacity onPress={() => router.push(`/maison/${maisonId}` as any)} style={styles.maisonRow}>
-                <Lucide name="ribbon" size={17} color={colors.primary} />
-                <Text style={[styles.maisonLabel, { color: colors.primary }]}>Maison: {maisonName}</Text>
-              </TouchableOpacity>
-              <Text style={[styles.luxuryHeading, { color: colors.text }]}>{product.title}</Text>
-
-              {/* Star Rating Display */}
-              <View style={styles.ratingRow}>
-                <View style={styles.starsBox}>
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <Lucide key={s} name="star" size={15} color="#D4AF37" style={styles.starIcon} />
-                  ))}
-                </View>
-                <Text style={[styles.ratingScore, { color: colors.primary }]}>5.0/5</Text>
-                <Text style={[styles.reviewCount, { color: colors.textMuted }]}>(24 reviews)</Text>
-              </View>
-            </View>
-
-            {/* Price & AuraGram score matrices */}
-            <View style={styles.matricesRow}>
-              <View style={styles.matrixCell}>
-                <Text style={[styles.matrixLabel, { color: colors.textMuted }]}>Acquisition Price</Text>
-                <Text style={[styles.matrixVal, { color: colors.text }]}>{formatPrice(product.price)}</Text>
-              </View>
-              <View style={styles.matrixCell}>
-                <Text style={[styles.matrixLabel, { color: colors.textMuted }]}>AuraGram Score</Text>
-                <View style={styles.auragramBox}>
-                  <Lucide name="flash" size={19} color={colors.primary} />
-                  <Text style={[styles.auragramVal, { color: colors.primary }]}>9.8</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Urgency ticker */}
-            <View style={[styles.urgencyBox, { backgroundColor: colors.primaryContainer, borderColor: colors.border }]}>
-              <View style={[styles.urgencyDot, { backgroundColor: colors.primary }]} />
-              <Text style={[styles.urgencyText, { color: colors.primary }]}>12 Discerning Collectors are currently viewing this node</Text>
-            </View>
-
-            {/* Interactive Color selector */}
-            <View style={styles.selectorSection}>
-              <Text style={[styles.selectorLabel, { color: colors.text }]}>
-                COLOR: <Text style={{ color: colors.textMuted, fontWeight: "normal" }}>{selectedColor.toUpperCase()}</Text>
-              </Text>
-              <View style={styles.colorPillsRow}>
-                {[
-                  { name: "Noir", hex: "#000000" },
-                  { name: "Ghost", hex: "#cbd5e1" },
-                  { name: "Cobalt", hex: "#1e3a8a" }
-                ].map((c) => (
-                  <TouchableOpacity
-                    key={c.name}
-                    style={[
-                      styles.colorPillBtn,
-                      {
-                        backgroundColor: c.hex,
-                        borderColor: selectedColor === c.name ? colors.primary : colors.border,
-                        borderWidth: selectedColor === c.name ? 2.5 : 1
-                      }
-                    ]}
-                    onPress={() => {
-                      triggerHaptic("light");
-                      setSelectedColor(c.name);
-                    }}
-                  />
-                ))}
-              </View>
-            </View>
-
-            {/* Interactive Size selector */}
-            <View style={styles.selectorSection}>
-              <View style={styles.selectorHeader}>
-                <Text style={[styles.selectorLabel, { color: colors.text }]}>SIZE</Text>
-                <TouchableOpacity onPress={() => { triggerHaptic("light"); setSizeGuideVisible(true); }}>
-                  <Text style={[styles.sizeGuideLink, { color: colors.textMuted }]}>Size Guide</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.sizePillsRow}>
-                {sizeOptions.map((sz: string) => {
-                  const isXL = sz === "XL" && sizeOptions.length === 5;
-                  const isSelected = selectedSize === sz;
-                  return (
-                    <TouchableOpacity
-                      key={sz}
-                      disabled={isXL}
-                      style={[
-                        styles.sizePillBtn,
-                        isSelected && { backgroundColor: colors.text, borderColor: colors.text },
-                        isXL && { opacity: 0.35 },
-                        { borderColor: colors.border }
-                      ]}
-                      onPress={() => {
-                        triggerHaptic("light");
-                        setSelectedSize(sz);
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.sizePillText,
-                          { color: isSelected ? colors.bg : colors.text }
-                        ]}
-                      >
-                        {sz}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Shipping PIN Estimator */}
-            <View style={[styles.estimatorSection, { borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, paddingVertical: 20 }]}>
-              <Text style={[styles.selectorLabel, { color: colors.text, marginBottom: 8 }]}>DELIVERY & RETURNS</Text>
-              <View style={styles.estimatorRow}>
-                <TextInput
-                  style={[styles.estimatorInput, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                  placeholder="Enter PIN code"
-                  placeholderTextColor={colors.textMuted}
-                  value={pinCode}
-                  onChangeText={(val) => {
-                    setPinCode(val.replace(/[^0-9]/g, ""));
-                    setPinChecked(false);
-                  }}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                />
-                <TouchableOpacity
-                  style={[styles.estimatorBtn, { backgroundColor: colors.text }]}
-                  onPress={() => {
-                    if (pinCode.length < 6) {
-                      Alert.alert("Invalid PIN", "Please enter a valid 6-digit PIN code.");
-                      return;
-                    }
-                    triggerHaptic("medium");
-                    setPinChecked(true);
-                  }}
-                >
-                  <Text style={[styles.estimatorBtnText, { color: colors.bg }]}>CHECK</Text>
-                </TouchableOpacity>
-              </View>
-              {pinChecked ? (
-                <View style={styles.estimatorFeedbackRow}>
-                  <Lucide name="car-outline" size={14} color={colors.primary} />
-                  <Text style={[styles.estimatorFeedbackText, { color: colors.text }]}>
-                    Delivery by Tuesday, Oct 24
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            {/* Product specifications accordion */}
-            <View style={[styles.accordionSection, { borderBottomWidth: 1, borderColor: colors.border }]}>
-              <TouchableOpacity
-                style={styles.accordionHeader}
-                onPress={() => {
-                  triggerHaptic("light");
-                  setDetailsExpanded(!detailsExpanded);
-                }}
-              >
-                <Text style={[styles.accordionTitle, { color: colors.text }]}>Product Details</Text>
-                <Lucide
-                  name={detailsExpanded ? "chevron-up" : "chevron-down"}
-                  size={18}
-                  color={colors.textMuted}
-                />
-              </TouchableOpacity>
-              {detailsExpanded && (
-                <View style={styles.accordionBody}>
-                  <Text style={[styles.accordionDesc, { color: colors.textMuted }]}>
-                    The Kinetic Shell 01 is an atmospheric response garment engineered with 3-layer Gore-Tex and ultrasonic welding. Designed for the urban nomad, it features reactive thermal insulation and 12 modular pocket points.
-                  </Text>
-                  
-                  <View style={styles.specsGrid}>
-                    {specList.map((spec, idx) => (
-                      <View key={idx} style={[styles.specRow, { borderColor: colors.border }]}>
-                        <Text style={[styles.specLabel, { color: colors.textMuted }]}>{spec.label}</Text>
-                        <Text style={[styles.specValue, { color: colors.text }]}>{spec.value}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-            </View>
-
-            {/* Fulfillment Trust Node badges */}
-            <View style={styles.fulfillmentGrid}>
-              <View style={[styles.fulfillBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Lucide name="cube-outline" size={23} color={colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fulfillTitle, { color: colors.text }]}>Verified Seller</Text>
-                  <Text style={[styles.fulfillDesc, { color: colors.textMuted }]}>Direct authentic registry</Text>
-                </View>
-              </View>
-              <View style={[styles.fulfillBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Lucide name="reload" size={21} color={colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fulfillTitle, { color: colors.text }]}>Easy Returns</Text>
-                  <Text style={[styles.fulfillDesc, { color: colors.textMuted }]}>7-Day Secure Escrow Guarantee</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Bento Grid - Style With Aura */}
-            <View style={[styles.styleWithSection, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-              <Text style={styles.bentoMiniLabel}>AI CURATION</Text>
-              <Text style={[styles.bentoTitle, { color: colors.text }]}>Style With Aura</Text>
-              <View style={styles.bentoGrid}>
-                {[
-                  { id: "style_denim", title: "Denim V2 Tapered", price: "₹12,900", img: "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?auto=format&fit=crop&q=80&w=400" },
-                  { id: "style_tee", title: "Core Base Tee", price: "₹4,500", img: "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=400" },
-                  { id: "style_sneakers", title: "Aura Velocity 02", price: "₹18,500", img: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&q=80&w=400" },
-                  { id: "style_satchel", title: "Utility Satchel X", price: "₹14,200", img: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=400" }
-                ].map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[styles.bentoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                    onPress={() => {
-                      triggerHaptic("light");
-                      router.push(`/product/${item.id}`);
-                    }}
-                  >
-                    <Image source={{ uri: item.img }} style={styles.bentoCardImg} />
-                    <View style={styles.bentoAddBtn}>
-                      <Lucide name="add" size={16} color="#fff" />
-                    </View>
-                    <View style={styles.bentoCardInfo}>
-                      <Text style={[styles.bentoCardTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
-                      <Text style={[styles.bentoCardPrice, { color: colors.textMuted }]}>{item.price}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Reels Section - See it in motion */}
-            <View style={styles.reelsSection}>
-              <Text style={[styles.accordionTitle, { color: colors.text, marginBottom: 16 }]}>See it in motion</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.reelsRow}>
-                {[
-                  { handle: "@urban_aura", img: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=400" },
-                  { handle: "@techwear_daily", img: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400" },
-                  { handle: "@minimal_flow", img: "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&q=80&w=400" }
-                ].map((reel, idx) => (
-                  <View key={idx} style={styles.reelCard}>
-                    <Image source={{ uri: reel.img }} style={styles.reelImg} />
-                    <View style={styles.reelOverlay}>
-                      <Text style={styles.reelHandle}>{reel.handle}</Text>
-                    </View>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-
-            {/* Reviews Section */}
-            <View style={[styles.reviewsSection, { borderTopWidth: 1, borderColor: colors.border }]}>
-              <Text style={[styles.accordionTitle, { color: colors.text }]}>Customer Feedback</Text>
-              <View style={styles.reviewsSummaryRow}>
-                <View style={styles.reviewsSummaryLeft}>
-                  <View style={{ flexDirection: "row", gap: 2 }}>
-                    {[1, 2, 3, 4].map(s => <Lucide key={s} name="star" size={14} color="#D4AF37" />)}
-                    <Lucide name="star-half" size={14} color="#D4AF37" />
-                  </View>
-                  <Text style={[styles.reviewsAvgText, { color: colors.text }]}>4.8 <Text style={{ fontSize: 12, fontWeight: "normal", color: colors.textMuted }}>(124 Reviews)</Text></Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.writeReviewBtn, { borderColor: colors.text }]}
-                  onPress={() => {
-                    triggerHaptic("medium");
-                    Alert.alert("Write a Review", "Privilege verification required to submit custom reviews.");
-                  }}
-                >
-                  <Text style={[styles.writeReviewText, { color: colors.text }]}>WRITE A REVIEW</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.reviewsList}>
-                <View style={styles.reviewItem}>
-                  <View style={styles.reviewItemHeader}>
-                    <Text style={[styles.reviewAuthor, { color: colors.text }]}>Sarah L.</Text>
-                    <Text style={[styles.reviewDate, { color: colors.textMuted }]}>2 days ago</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 1, marginVertical: 4 }}>
-                    {[1, 2, 3, 4, 5].map(s => <Lucide key={s} name="star" size={12} color="#D4AF37" />)}
-                  </View>
-                  <Text style={[styles.reviewText, { color: colors.textMuted }]}>
-                    Absolute masterpiece. The waterproofing is next level, survived a Mumbai monsoon downpour without a drop getting through. Worth every rupee.
-                  </Text>
-                </View>
-                <View style={[styles.reviewItem, { borderTopWidth: 1, borderColor: colors.border, marginTop: 12, paddingTop: 12 }]}>
-                  <View style={styles.reviewItemHeader}>
-                    <Text style={[styles.reviewAuthor, { color: colors.text }]}>Arjun M.</Text>
-                    <Text style={[styles.reviewDate, { color: colors.textMuted }]}>1 week ago</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", gap: 1, marginVertical: 4 }}>
-                    {[1, 2, 3, 4].map(s => <Lucide key={s} name="star" size={12} color="#D4AF37" />)}
-                    <Lucide name="star-outline" size={12} color="#D4AF37" />
-                  </View>
-                  <Text style={[styles.reviewText, { color: colors.textMuted }]}>
-                    The fit is slightly technical/slim, so size up if you want to layer. But the aesthetic is unbeatable.
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Try-On Button trigger */}
-            <View style={styles.tryOnContainer}>
-              <TouchableOpacity
-                style={[styles.tryOnBtn, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  triggerHaptic("heavy");
-                  setArModalVisible(true);
-                }}
-              >
-                <Lucide name="scan-outline" size={20} color={themeMode === "obsidian" ? "#080415" : "#ffffff"} />
-                <Text style={[styles.tryOnText, { color: themeMode === "obsidian" ? "#080415" : "#ffffff" }]}>Aura Fit™ Virtual Try-On</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Premium Checkout Pill Actions */}
-            <View style={styles.checkoutActions}>
-              <TouchableOpacity 
-                style={[styles.primaryAcquireBtn, { backgroundColor: colors.text }]}
-                activeOpacity={0.95}
-                onPress={handleAcquire}
-              >
-                <Lucide name="basket" size={21} color={colors.bg} />
-                <Text style={[styles.primaryAcquireText, { color: colors.bg }]}>Acquire Artifact</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.secondaryAcquireBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                activeOpacity={0.9}
-                onPress={handleInstantAcquire}
-              >
-                <Lucide name="finger-print" size={21} color={colors.primary} />
-                <View>
-                  <Text style={[styles.secLabel, { color: colors.textMuted }]}>1-Click</Text>
-                  <Text style={[styles.secVal, { color: colors.text }]}>Instant Acquisition</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-
-        {/* 3-Step Checkout Modal Drawer */}
+      {/* 3-Step Checkout Modal Drawer */}
         <Modal visible={checkoutVisible} transparent animationType="slide" onRequestClose={() => setCheckoutVisible(false)}>
           <View style={styles.simOverlay}>
             <View style={[styles.simContainer, { backgroundColor: colors.bg, borderColor: colors.border }]}>
@@ -1553,8 +1268,7 @@ export default function ProductDetailScreen() {
           amount={successDetails.amount}
           itemCount={successDetails.itemCount}
         />
-      </SafeAreaView>
-    </View>
+    </>
   );
 }
 

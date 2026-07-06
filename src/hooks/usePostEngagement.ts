@@ -10,6 +10,7 @@ import {
   type PostComment,
 } from "@/lib/profileApi";
 import { buildPostShareUrl } from "@/lib/postShare";
+import { appendActivity } from "@/lib/activityLog";
 
 export interface EngagementPostItem {
   id: string;
@@ -95,10 +96,13 @@ export function usePostEngagement(opts?: {
           if (result?.likeCount != null) {
             setLikeCounts((prev) => ({ ...prev, [id]: result.likeCount! }));
           }
-          if (typeof result?.liked === "boolean") {
-            setLikedPosts((prev) => ({ ...prev, [id]: result.liked! }));
-          }
-        })
+        if (typeof result?.liked === "boolean") {
+          setLikedPosts((prev) => ({ ...prev, [id]: result.liked! }));
+        }
+        if (!wasLiked) {
+          appendActivity({ type: "like", title: "Liked a post", targetId: id });
+        }
+      })
         .catch(() => {
           setLikedPosts((prev) => ({ ...prev, [id]: wasLiked }));
           setLikeCounts((prev) => ({
@@ -119,6 +123,7 @@ export function usePostEngagement(opts?: {
         setSavedPosts((prev) => ({ ...prev, [id]: !next }));
       });
       if (next) {
+        appendActivity({ type: "save", title: "Saved a post", targetId: id });
         Alert.alert("Saved", "Post saved to your collection.");
       }
     },

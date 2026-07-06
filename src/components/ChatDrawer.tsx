@@ -18,6 +18,9 @@ import { useStore } from "@/store/useStore";
 import { getProfileDisplayName } from "@/lib/sessionIdentity";
 import { API_HOST } from "@/constants/api";
 import { getLocalConversations, cacheConversations, addPendingAction } from "@/utils/localDb";
+import { useSocialGraph } from "@/hooks/useSocialGraph";
+import { filterConversations, isConversationBlocked } from "@/lib/feedSocialFilter";
+import { canReceiveDm, shouldShowReadReceipts } from "@/lib/settingsEnforcement";
 
 const { width } = Dimensions.get("window");
 
@@ -72,6 +75,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   initialConversationId = null,
 }) => {
   const { triggerHaptic, currentUser, activeProfile } = useStore();
+  const { graph: socialGraph, version: socialGraphVersion } = useSocialGraph();
   const currentUserId = currentUser?.id || "";
   const inboxTitle = isSeller
     ? getProfileDisplayName(activeProfile, currentUser)
@@ -84,7 +88,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [isTypingSent, setIsTypingSent] = useState(false);
   const typingTimeoutRef = React.useRef<any>(null);
-  const [conversations, setConversations] = useState<any[]>(CHAT_THREADS);
+  const [conversations, setConversations] = useState<any[]>([]);
   const [dmSearch, setDmSearch] = useState("");
   const [activeDmFilter, setActiveDmFilter] = useState("Primary");
   const [activeBusinessTool, setActiveBusinessTool] = useState<string | null>(null);
@@ -126,12 +130,25 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     }
   }, [initialConversationId, conversations, visible]);
 
+  const applySocialFilters = (list: any[]) => {
+    let out = list;
+    if (socialGraph) out = filterConversations(out, socialGraph);
+    out = out.filter((c) =>
+      canReceiveDm({
+        profileId: c.profileId || c.peerProfileId || c.peerId,
+        isFollowing: c.isFollowing === true,
+        isFollower: c.isFollower === true,
+      })
+    );
+    return out;
+  };
+
   const fetchChats = async () => {
     // 💾 Hydrate instantly from local SQLite DB
     try {
       const localConvs = getLocalConversations();
       if (localConvs && localConvs.length > 0) {
-        setConversations(localConvs);
+        setConversations(applySocialFilters(localConvs));
       }
     } catch (err) {
       console.warn("Failed to load local SQLite conversations:", err);
@@ -145,7 +162,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         const mapped = data.conversations.map((c: any) => {
           return { ...c, category: "Primary" };
         });
-        setConversations(mapped);
+        setConversations(applySocialFilters(mapped));
         // 💾 Cache updated conversations and messages in SQLite
         try {
           cacheConversations(mapped);
@@ -160,7 +177,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           const retryData = await retryRes.json();
           if (retryData.success && retryData.conversations.length > 0) {
             const mappedRetry = retryData.conversations.map((c: any) => ({ ...c, category: "Primary" }));
-            setConversations(mappedRetry);
+            setConversations(applySocialFilters(mappedRetry));
             cacheConversations(mappedRetry);
           }
         } catch {
@@ -289,6 +306,14 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       return data.success;
     } catch { return false; }
   };
+
+  useEffect(() => {
+    if (!socialGraph) return;
+    setConversations((prev) => applySocialFilters(prev));
+    setActiveChat((prev) =>
+      prev && isConversationBlocked(prev, socialGraph) ? null : prev
+    );
+  }, [socialGraphVersion, socialGraph]);
 
   useEffect(() => {
     let xhr: XMLHttpRequest | null = null;
@@ -452,6 +477,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
 
   const handleSendChatMessage = async () => {
     if (!chatReplyText.trim() || !activeChat) return;
+    if (socialGraph && isConversationBlocked(activeChat, socialGraph)) {
+      Alert.alert("Blocked", "Unblock this account to send messages.");
+      return;
+    }
     triggerHaptic("medium");
     
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);

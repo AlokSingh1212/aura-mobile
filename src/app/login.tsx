@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -19,6 +19,12 @@ import { StatusBar } from "expo-status-bar";
 import { useStore } from "../store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { API_HOST } from "../constants/api";
+import {
+  useGoogleOAuth,
+  signInWithAppleNative,
+  isGoogleOAuthConfigured,
+  isAppleOAuthAvailable,
+} from "@/lib/oauthSignIn";
 
 const { width } = Dimensions.get("window");
 
@@ -41,6 +47,9 @@ export default function LoginScreen() {
   const triggerHaptic = useStore((s) => s.triggerHaptic);
   const authLogIn = useStore((s) => s.authLogIn);
   const authSignUp = useStore((s) => s.authSignUp);
+  const authOAuth = useStore((s) => s.authOAuth);
+  const { request: googleRequest, response: googleResponse, promptAsync: googlePrompt } =
+    useGoogleOAuth();
 
   const [isLogin, setIsLogin] = useState(params.mode !== "signup");
   const [signupStep, setSignupStep] = useState(1);
@@ -57,6 +66,64 @@ export default function LoginScreen() {
   const [loginPassword, setLoginPassword] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (googleResponse?.type !== "success") return;
+    const idToken =
+      googleResponse.params?.id_token || googleResponse.authentication?.idToken;
+    if (!idToken) return;
+    (async () => {
+      setIsLoading(true);
+      const res = await authOAuth({ provider: "google", idToken: String(idToken) });
+      setIsLoading(false);
+      if (res.success) {
+        router.replace("/");
+      } else {
+        Alert.alert("Google sign-in failed", res.error || "Try again.");
+      }
+    })();
+  }, [googleResponse]);
+
+  const handleGoogleSignIn = async () => {
+    if (!isGoogleOAuthConfigured()) {
+      Alert.alert(
+        "Google Sign-In",
+        "Add EXPO_PUBLIC_GOOGLE_* client IDs in EAS env to enable Google login."
+      );
+      return;
+    }
+    triggerHaptic("light");
+    await googlePrompt();
+  };
+
+  const handleAppleSignIn = async () => {
+    if (!isAppleOAuthAvailable()) {
+      Alert.alert("Apple Sign-In", "Available on iOS devices only.");
+      return;
+    }
+    setIsLoading(true);
+    triggerHaptic("light");
+    try {
+      const apple = await signInWithAppleNative();
+      const res = await authOAuth({
+        provider: "apple",
+        identityToken: apple.identityToken,
+        email: apple.email,
+        fullName: apple.fullName,
+      });
+      if (res.success) {
+        router.replace("/");
+      } else {
+        Alert.alert("Apple sign-in failed", res.error || "Try again.");
+      }
+    } catch (e: any) {
+      if (e?.code !== "ERR_REQUEST_CANCELED") {
+        Alert.alert("Apple Sign-In", e.message || "Could not sign in with Apple.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSignup = async () => {
     if (!email || !password) {
@@ -216,6 +283,30 @@ export default function LoginScreen() {
                   <Text style={styles.primaryBtnText}>Log In</Text>
                 )}
               </TouchableOpacity>
+
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <TouchableOpacity
+                style={styles.socialBtn}
+                disabled={isLoading || !googleRequest}
+                onPress={handleGoogleSignIn}
+              >
+                <Lucide name="logo-google" size={20} color={C.text} />
+                <Text style={styles.socialBtnText}>Continue with Google</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.socialBtn}
+                disabled={isLoading}
+                onPress={handleAppleSignIn}
+              >
+                <Lucide name="logo-apple" size={20} color={C.text} />
+                <Text style={styles.socialBtnText}>Continue with Apple</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             /* ───── SIGNUP FORM ───── */
@@ -310,7 +401,8 @@ export default function LoginScreen() {
               {/* Social Buttons */}
               <TouchableOpacity
                 style={styles.socialBtn}
-                onPress={() => Alert.alert("Coming Soon", "Google login will be available soon.")}
+                disabled={isLoading || !googleRequest}
+                onPress={handleGoogleSignIn}
               >
                 <Lucide name="logo-google" size={20} color={C.text} />
                 <Text style={styles.socialBtnText}>Continue with Google</Text>
@@ -318,7 +410,8 @@ export default function LoginScreen() {
 
               <TouchableOpacity
                 style={styles.socialBtn}
-                onPress={() => Alert.alert("Coming Soon", "Apple login will be available soon.")}
+                disabled={isLoading}
+                onPress={handleAppleSignIn}
               >
                 <Lucide name="logo-apple" size={20} color={C.text} />
                 <Text style={styles.socialBtnText}>Continue with Apple</Text>

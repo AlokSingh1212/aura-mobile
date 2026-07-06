@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
 import { useStore } from "@/store/useStore";
 import { API_BASE } from "@/constants/api";
+import { authHeaders } from "@/lib/apiClient";
 import Lucide from "@expo/vector-icons/Ionicons";
 
 const { width } = Dimensions.get("window");
@@ -51,7 +52,9 @@ export default function TrackOrderScreen() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/orders/track?orderId=${id}`);
+      const res = await fetch(`${API_BASE}/orders/track?orderId=${id}`, {
+        headers: authHeaders(),
+      });
       const json = await res.json();
       if (json.success) {
         setData(json);

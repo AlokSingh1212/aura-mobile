@@ -59,8 +59,14 @@ import { PostShareSheet } from "@/components/post/PostShareSheet";
 import { PostReshareSheet } from "@/components/post/PostReshareSheet";
 import { CaptionText } from "@/components/CaptionText";
 import { buildPostShareUrl } from "@/lib/postShare";
-import { resolveFeedPostMeta } from "@/lib/postNavigation";
+import { resolveFeedPostMeta, normalizeUsername } from "@/lib/postNavigation";
 import { resolveReshareSourceId } from "@/lib/postRepost";
+import { filterFeedItems, resolveAuthorFromItem, filterSocialMediaItems } from "@/lib/feedSocialFilter";
+import { filterContentItems } from "@/lib/settingsEnforcement";
+import { isUserBlocked, isUserMuted } from "@/lib/socialGraph";
+import { useSocialGraph } from "@/hooks/useSocialGraph";
+import { appendActivity } from "@/lib/activityLog";
+import { AuraBottomNav, type TabKey } from "@/components/shop/AuraBottomNav";
 
 const MOCK_PRODUCTS = [
   {
@@ -529,11 +535,19 @@ export default function ReelsScreen() {
     formatPrice,
     addToCart
   } = useStore();
+  const {
+    graph: socialGraph,
+    version: socialGraphVersion,
+    hideFeedPost,
+    archiveFeedPost,
+    muteAccount,
+    blockAccount,
+  } = useSocialGraph();
   const currentMaisonName = getProfileDisplayName(activeProfile, currentUser);
   const profileLogo = activeProfile?.logo || null;
   const profileTabInitial = (getProfileDisplayName(activeProfile, currentUser) || "U")[0]?.toUpperCase();
   const loadUserStories = useStore((s) => s.loadUserStories);
-  const params = useLocalSearchParams<{ openDMs?: string; openSearch?: string; activeTab?: string; openCamera?: string; conversationId?: string }>();
+  const params = useLocalSearchParams<{ openDMs?: string; openInbox?: string; openSearch?: string; activeTab?: string; openCamera?: string; conversationId?: string }>();
   const insets = useSafeAreaInsets();
   const { getLayoutHeight } = useLayoutCache();
   const isScreenFocused = useIsFocused();
@@ -553,6 +567,7 @@ export default function ReelsScreen() {
   };
 
   const [chatConversationId, setChatConversationId] = useState<string | null>(null);
+  const [showDMs, setShowDMs] = useState(false);
   const bottomBarHeight = 62 + insets.bottom;
   const [activeStoryIndex, setActiveStoryIndex] = useState(0);
   const [tappedReelItem, setTappedReelItem] = useState<any>(null);
@@ -638,9 +653,14 @@ export default function ReelsScreen() {
     let changed = false;
     const cleanParams: Record<string, string | undefined> = {};
 
-    if (params?.openDMs === "true") {
+    if (
+      params?.openDMs === "true" ||
+      params?.openInbox === "true" ||
+      params?.openInbox === "1"
+    ) {
       setShowDMs(true);
       cleanParams.openDMs = undefined;
+      cleanParams.openInbox = undefined;
       changed = true;
     }
     if (params?.conversationId) {
@@ -672,7 +692,6 @@ export default function ReelsScreen() {
       router.setParams(cleanParams as any);
     }
   }, [params]);
-  const [showDMs, setShowDMs] = useState(false);
   const [showLiveShowroom, setShowLiveShowroom] = useState(false);
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
   const [showroomMode, setShowroomMode] = useState<"lobby" | "viewer">("lobby");
@@ -1383,6 +1402,9 @@ export default function ReelsScreen() {
         if (typeof result?.liked === "boolean") {
           setLikedReels((prev) => ({ ...prev, [id]: result.liked! }));
         }
+        if (!wasLiked) {
+          appendActivity({ type: "like", title: "Liked a post", targetId: id });
+        }
       })
       .catch(() => {
         setLikedReels((prev) => ({ ...prev, [id]: wasLiked }));
@@ -1500,7 +1522,7 @@ export default function ReelsScreen() {
   };
 
   const reelHeight = (isReelsFullScreen && activeFeedTab === "reels") 
-    ? (height - (52 + insets.bottom)) 
+    ? (height - bottomBarHeight) 
     : (height - insets.top - 210);
 
   const floatingBottomOffset = isReelsFullScreen ? 65 : 20;
@@ -1696,8 +1718,10 @@ export default function ReelsScreen() {
       }
     }
 
-    return combined;
-  }, [tappedReelItem, localReels, stories, simulatedStories, feedItems, reelsSponsoredAd, currentUser?.id]);
+    return filterContentItems(
+      filterSocialMediaItems(combined, socialGraph, activeProfile?.id)
+    );
+  }, [tappedReelItem, localReels, stories, simulatedStories, feedItems, reelsSponsoredAd, currentUser?.id, socialGraph, socialGraphVersion, activeProfile?.id]);
 
   const handleOpenFeedReel = (item: any) => {
     triggerHaptic("medium");
@@ -1822,9 +1846,13 @@ export default function ReelsScreen() {
 
   const handleFeedItemSave = async (id: string) => {
     triggerHaptic("medium");
-    setSavedPosts(prev => ({ ...prev, [id]: !prev[id] }));
+    const next = !savedPosts[id];
+    setSavedPosts(prev => ({ ...prev, [id]: next }));
     await toggleFeedSave(id);
     await logEngagement(id, "save");
+    if (next) {
+      appendActivity({ type: "save", title: "Saved a post", targetId: id });
+    }
   };
 
   const handleFeedItemShare = (id: string) => {
@@ -2192,22 +2220,77 @@ export default function ReelsScreen() {
 
   const unreadNotificationsCount = notifications ? notifications.filter((n: any) => !n.read).length : 0;
 
-  const listData = [...feedItems];
-  if (listData.length > 1) {
-    const hasAiBar = listData.some(item => item.id === "ask_aura_ai_bar");
-    if (!hasAiBar) {
-      listData.splice(1, 0, { id: "ask_aura_ai_bar", type: "ASK_AURA_AI" });
+  const filteredFeedItems = React.useMemo(() => {
+    if (!socialGraph) return filterContentItems(feedItems);
+    return filterContentItems(
+      filterFeedItems(feedItems, socialGraph, activeProfile?.id)
+    );
+  }, [feedItems, socialGraph, socialGraphVersion, activeProfile?.id]);
+
+  const listData = React.useMemo(() => {
+    const data = [...filteredFeedItems];
+    if (data.length > 1) {
+      const hasAiBar = data.some((item) => item.id === "ask_aura_ai_bar");
+      if (!hasAiBar) {
+        data.splice(1, 0, { id: "ask_aura_ai_bar", type: "ASK_AURA_AI" });
+      }
+    } else if (data.length === 1) {
+      const hasAiBar = data.some((item) => item.id === "ask_aura_ai_bar");
+      if (!hasAiBar) {
+        data.push({ id: "ask_aura_ai_bar", type: "ASK_AURA_AI" });
+      }
     }
-  } else if (listData.length === 1) {
-    const hasAiBar = listData.some(item => item.id === "ask_aura_ai_bar");
-    if (!hasAiBar) {
-      listData.push({ id: "ask_aura_ai_bar", type: "ASK_AURA_AI" });
-    }
-  }
+    return data;
+  }, [filteredFeedItems]);
+
+  const visibleInstaStories = React.useMemo(() => {
+    if (!socialGraph) return activeInstaStories;
+    return activeInstaStories.filter((story) => {
+      if (story.isYourStory) return true;
+      const profileId = story.profileId || story.id || story.username;
+      const username = normalizeUsername(story.username || "");
+      return (
+        !isUserBlocked(profileId, socialGraph, username) &&
+        !isUserMuted(profileId, socialGraph, username)
+      );
+    });
+  }, [activeInstaStories, socialGraph, socialGraphVersion]);
+
+  const isOwnThreeDotsPost =
+    !!threeDotsTargetPost &&
+    (threeDotsTargetPost.creator?.id === activeProfile?.id ||
+      normalizeUsername(threeDotsTargetPost.creator?.username || "") ===
+        normalizeUsername(activeProfile?.username || ""));
+
+  const bottomNavTab: TabKey = showDMs
+    ? "inbox"
+    : activeFeedTab === "reels" && isReelsFullScreen
+      ? "reels"
+      : "home";
+
+  const homeTabHandlers = {
+    onHome: () => {
+      setShowDMs(false);
+      setShowExploreGrid(false);
+      setIsReelsFullScreen(false);
+      setActiveFeedTab("posts");
+    },
+    onReels: () => {
+      setShowDMs(false);
+      setShowExploreGrid(false);
+      setIsReelsFullScreen(true);
+      setActiveFeedTab("reels");
+    },
+    onInbox: () => {
+      setShowDMs(true);
+      setShowExploreGrid(false);
+      setIsReelsFullScreen(false);
+    },
+  };
 
   return (
     <View style={[styles.container, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }]}>
-      <SafeAreaView style={[styles.safeAreaContainer, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }]} edges={["top"]}>
+      <SafeAreaView style={[styles.safeAreaContainer, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }, { marginBottom: bottomBarHeight }]} edges={["top"]}>
         
         {/* 🏔️ TOP HEADER ROW */}
         {!(isReelsFullScreen && activeFeedTab === "reels") && (
@@ -2493,7 +2576,7 @@ export default function ReelsScreen() {
               })}
 
               {/* Creator Stories */}
-              {activeInstaStories.filter(s => !s.isYourStory).map((story) => (
+              {visibleInstaStories.filter(s => !s.isYourStory).map((story) => (
                 <TouchableOpacity 
                   key={story.id}
                   style={{ alignItems: "center" }}
@@ -2668,7 +2751,7 @@ export default function ReelsScreen() {
         isSeller={isSeller}
         setIsSeller={setIsSeller}
         products={products}
-        activeInstaStories={activeInstaStories}
+        activeInstaStories={visibleInstaStories}
         onOpenStoryGroup={(story) => {
           setSelectedStoriesGroup(story);
           setActiveSlideIndex(0);
@@ -2679,113 +2762,7 @@ export default function ReelsScreen() {
 
       {/* 💬 Individual conversation is now handled inside ChatDrawer */}
 
-      {/* ──────────────────────────────────────────────────── */}
-      {/* 🏠 AURA BOTTOM NAVIGATION — 5 tabs with elevated Create */}
-      {/* ──────────────────────────────────────────────────── */}
-      <View style={[styles.auraBottomBar, { paddingBottom: insets.bottom, height: 62 + insets.bottom }]}>
-
-        {/* TAB 1 — Home */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            setShowDMs(false);
-            setShowExploreGrid(false);
-            setIsReelsFullScreen(false);
-            setActiveFeedTab("posts");
-            router.push("/");
-          }}
-        >
-          <Lucide
-            name="home-outline"
-            size={26}
-            color={(!showDMs && (!isReelsFullScreen || activeFeedTab !== "reels")) ? "#00f5ff" : "rgba(255,255,255,0.45)"}
-          />
-          <Text style={[styles.auraTabLabel, { color: (!showDMs && (!isReelsFullScreen || activeFeedTab !== "reels")) ? "#00f5ff" : "rgba(255,255,255,0.35)" }]}>Home</Text>
-        </TouchableOpacity>
-
-        {/* TAB 2 — Reel */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            setShowDMs(false);
-            setShowExploreGrid(false);
-            setIsReelsFullScreen(true);
-            setActiveFeedTab("reels");
-          }}
-        >
-          <Lucide
-            name="film-outline"
-            size={26}
-            color={(!showDMs && isReelsFullScreen && activeFeedTab === "reels") ? "#00f5ff" : "rgba(255,255,255,0.45)"}
-          />
-          <Text style={[styles.auraTabLabel, { color: (!showDMs && isReelsFullScreen && activeFeedTab === "reels") ? "#00f5ff" : "rgba(255,255,255,0.35)" }]}>Reel</Text>
-        </TouchableOpacity>
-
-        {/* TAB 3 — Inbox */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            setShowDMs(true);
-            setShowExploreGrid(false);
-            setIsReelsFullScreen(false);
-          }}
-        >
-          <Lucide
-            name="paper-plane-outline"
-            size={26}
-            color={showDMs ? "#00f5ff" : "rgba(255,255,255,0.45)"}
-          />
-          <Text style={[styles.auraTabLabel, { color: showDMs ? "#00f5ff" : "rgba(255,255,255,0.35)" }]}>Inbox</Text>
-        </TouchableOpacity>
-
-        {/* TAB 4 — Products */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            setShowDMs(false);
-            setShowExploreGrid(false);
-            router.push("/shop");
-          }}
-        >
-          <Lucide
-            name="bag-handle-outline"
-            size={26}
-            color="rgba(255,255,255,0.45)"
-          />
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Products</Text>
-        </TouchableOpacity>
-
-        {/* TAB 5 — Profile */}
-        <TouchableOpacity
-          style={styles.auraTabBtn}
-          onPress={() => {
-            triggerHaptic("light");
-            setShowDMs(false);
-            setShowExploreGrid(false);
-            router.push("/account");
-          }}
-        >
-          <View style={[styles.profileTabCircle, { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", overflow: "hidden", backgroundColor: "#111" }]}>
-            {profileLogo ? (
-              <Image
-                source={{ uri: profileLogo }}
-                key={profileLogo.slice(0, 64)}
-                style={styles.profileTabImg}
-              />
-            ) : (
-              <View style={[styles.profileTabImg, { alignItems: "center", justifyContent: "center" }]}>
-                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>{profileTabInitial}</Text>
-              </View>
-            )}
-          </View>
-          <Text style={[styles.auraTabLabel, { color: "rgba(255,255,255,0.35)" }]}>Profile</Text>
-        </TouchableOpacity>
-
-      </View>
+      <AuraBottomNav activeTab={bottomNavTab} homeTabHandlers={homeTabHandlers} />
 
       {/* 🛍️ PRODUCT PREVIEW SHEET */}
       {/* ──────────────────────────────────────────────────── */}
@@ -3680,16 +3657,20 @@ export default function ReelsScreen() {
               <View style={styles.bottomSheetDragHandle} />
               
               <View style={styles.optionsGroupContainer}>
-                <TouchableOpacity style={styles.optionRow} onPress={() => {
-                  triggerHaptic("light");
-                  setShowThreeDotsModal(false);
-                  const postUser = threeDotsTargetPost?.user?.name || "Creator";
-                  Alert.alert("About this account", `${postUser} • Verified AURA creator • Joined the AURA platform to share curated luxury content and shoppable stories.`);
-                }}>
-                  <Lucide name="person-circle-outline" size={24} color="#fff" />
-                  <Text style={styles.optionRowText}>About this account</Text>
-                </TouchableOpacity>
-                <View style={styles.optionDivider} />
+                {!isOwnThreeDotsPost ? (
+                  <>
+                    <TouchableOpacity style={styles.optionRow} onPress={() => {
+                      triggerHaptic("light");
+                      setShowThreeDotsModal(false);
+                      const postUser = threeDotsTargetPost?.creator?.name || threeDotsTargetPost?.user?.name || "Creator";
+                      Alert.alert("About this account", `${postUser} • Verified AURA creator • Joined the AURA platform to share curated luxury content and shoppable stories.`);
+                    }}>
+                      <Lucide name="person-circle-outline" size={24} color="#fff" />
+                      <Text style={styles.optionRowText}>About this account</Text>
+                    </TouchableOpacity>
+                    <View style={styles.optionDivider} />
+                  </>
+                ) : null}
                 
                 <TouchableOpacity style={styles.optionRow} onPress={() => {
                   triggerHaptic("light");
@@ -3720,8 +3701,51 @@ export default function ReelsScreen() {
                   <Lucide name="link-outline" size={24} color="#fff" />
                   <Text style={styles.optionRowText}>Copy link</Text>
                 </TouchableOpacity>
+
+                {isOwnThreeDotsPost ? (
+                  <>
+                    <View style={styles.optionDivider} />
+                    <TouchableOpacity style={styles.optionRow} onPress={() => {
+                      triggerHaptic("medium");
+                      setShowThreeDotsModal(false);
+                      const post = threeDotsTargetPost;
+                      if (!post?.id) return;
+                      Alert.alert(
+                        "Archive post?",
+                        "This post will be hidden from your profile. Restore it anytime from Settings → Archives.",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Archive",
+                            onPress: async () => {
+                              const isReel = post.type === "CREATOR_COMMERCE" || !!post.content?.videoUrl;
+                              await archiveFeedPost({
+                                id: post.id,
+                                type: isReel ? "reel" : "post",
+                                title: post.content?.caption?.slice(0, 80) || "Post",
+                                thumbnail: post.content?.mediaUrl || post.content?.thumbnail,
+                                authorUsername: activeProfile?.username,
+                              });
+                              appendActivity({
+                                type: "view",
+                                title: "Archived a post",
+                                targetId: post.id,
+                                thumbnail: post.content?.mediaUrl || post.content?.thumbnail,
+                              });
+                              Alert.alert("Archived", "Post moved to your archive.");
+                            },
+                          },
+                        ]
+                      );
+                    }}>
+                      <Lucide name="archive-outline" size={24} color="#fff" />
+                      <Text style={styles.optionRowText}>Archive</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
               </View>
 
+              {!isOwnThreeDotsPost ? (
               <View style={styles.optionsGroupContainer}>
                 <TouchableOpacity style={styles.optionRow} onPress={() => {
                   triggerHaptic("medium");
@@ -3733,13 +3757,54 @@ export default function ReelsScreen() {
                 </TouchableOpacity>
                 <View style={styles.optionDivider} />
                 
-                <TouchableOpacity style={styles.optionRow} onPress={() => {
+                <TouchableOpacity style={styles.optionRow} onPress={async () => {
                   triggerHaptic("medium");
                   setShowThreeDotsModal(false);
-                  Alert.alert("Content Hidden", "This post has been removed from your feed. You'll see less content like this.");
+                  const postId = threeDotsTargetPost?.id;
+                  if (!postId) return;
+                  await hideFeedPost(postId);
+                  appendActivity({ type: "view", title: "Hidden a post", targetId: postId });
+                  Alert.alert("Content Hidden", "This post has been removed from your feed.");
                 }}>
                   <Lucide name="eye-off-outline" size={24} color="#fff" />
                   <Text style={styles.optionRowText}>Hide post</Text>
+                </TouchableOpacity>
+                <View style={styles.optionDivider} />
+
+                <TouchableOpacity style={styles.optionRow} onPress={async () => {
+                  triggerHaptic("medium");
+                  setShowThreeDotsModal(false);
+                  const author = resolveAuthorFromItem(threeDotsTargetPost || {});
+                  await muteAccount(author);
+                  Alert.alert("Muted", `@${author.username} has been muted. Their posts won't appear in your feed.`);
+                }}>
+                  <Lucide name="volume-mute-outline" size={24} color="#fff" />
+                  <Text style={styles.optionRowText}>Mute</Text>
+                </TouchableOpacity>
+                <View style={styles.optionDivider} />
+                
+                <TouchableOpacity style={styles.optionRow} onPress={() => {
+                  triggerHaptic("heavy");
+                  setShowThreeDotsModal(false);
+                  const author = resolveAuthorFromItem(threeDotsTargetPost || {});
+                  Alert.alert(
+                    "Block account?",
+                    `@${author.username} won't be able to see your profile or message you.`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Block",
+                        style: "destructive",
+                        onPress: async () => {
+                          await blockAccount(author);
+                          Alert.alert("Blocked", `@${author.username} has been blocked.`);
+                        },
+                      },
+                    ]
+                  );
+                }}>
+                  <Lucide name="ban-outline" size={24} color="#fb923c" />
+                  <Text style={[styles.optionRowText, { color: "#fb923c" }]}>Block</Text>
                 </TouchableOpacity>
                 <View style={styles.optionDivider} />
                 
@@ -3758,7 +3823,7 @@ export default function ReelsScreen() {
                   setShowThreeDotsModal(false);
                   Alert.alert(
                     "Unfollow",
-                    `Are you sure you want to unfollow ${threeDotsTargetPost?.user?.name || "this creator"}?`,
+                    `Are you sure you want to unfollow ${threeDotsTargetPost?.creator?.name || threeDotsTargetPost?.user?.name || "this creator"}?`,
                     [
                       { text: "Cancel", style: "cancel" },
                       { text: "Unfollow", style: "destructive", onPress: () => Alert.alert("Unfollowed", "You have unfollowed this creator.") }
@@ -3788,6 +3853,7 @@ export default function ReelsScreen() {
                   <Text style={[styles.optionRowText, { color: "#ff3b30" }]}>Report post</Text>
                 </TouchableOpacity>
               </View>
+              ) : null}
             </View>
           </TouchableOpacity>
         </Modal>

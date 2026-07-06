@@ -35,6 +35,8 @@ import {
 } from "@/lib/profileApi";
 import { useProfileGridViewer } from "@/lib/profileGridNavigation";
 import { ProfileGridViewer } from "@/components/profile/ProfileGridViewer";
+import { useSocialGraph } from "@/hooks/useSocialGraph";
+import { isUserBlocked, unblockUser } from "@/lib/socialGraph";
 
 const { width } = Dimensions.get("window");
 const GRID_ITEM_SIZE = (width - 2) / 3;
@@ -60,6 +62,7 @@ export default function ViewProfileScreen() {
   const [profilePosts, setProfilePosts] = useState<ProfilePost[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const { viewer: gridViewer, openGridItem, closeViewer: closeGridViewer } = useProfileGridViewer();
+  const { graph: socialGraph, version: socialGraphVersion, blockAccount, refresh: refreshSocialGraph } = useSocialGraph();
 
   const [showSuggested, setShowSuggested] = useState(false);
   const [suggestedProfiles, setSuggestedProfiles] = useState<NetworkProfile[]>([]);
@@ -268,7 +271,11 @@ export default function ViewProfileScreen() {
   const isBusinessProfile = profile?.profileType === "BUSINESS";
   const isFollowing = profile?.isFollowing || false;
   const isPrivate = profile?.isPrivate || false;
-  const showPrivateOverlay = isPrivate && !isFollowing && !isOwnProfile;
+  const isBlockedProfile =
+    !!profile?.profileId &&
+    !!socialGraph &&
+    isUserBlocked(profile.profileId, socialGraph, profile.username);
+  const showPrivateOverlay = isPrivate && !isFollowing && !isOwnProfile && !isBlockedProfile;
   const followedBy = (profile as { followedBy?: { username: string; name: string; logo: string | null }[] })?.followedBy || [];
   const followedByOthersCount = (profile as { followedByOthersCount?: number })?.followedByOthersCount || 0;
 
@@ -342,6 +349,10 @@ export default function ViewProfileScreen() {
 
   // Handle message button
   const handleMessage = async () => {
+    if (isBlockedProfile) {
+      Alert.alert("Blocked", "Unblock this account to send a message.");
+      return;
+    }
     triggerHaptic("medium");
     try {
       const userVal = currentUser || activeProfile;
@@ -453,7 +464,34 @@ export default function ViewProfileScreen() {
                 `@${profile.username}`,
                 [
                   { text: "Report", style: "destructive", onPress: () => Alert.alert("Reported", "This profile has been flagged for review.") },
-                  { text: "Block", style: "destructive", onPress: () => Alert.alert("Blocked", `@${profile.username} has been blocked.`) },
+                  {
+                    text: "Block",
+                    style: "destructive",
+                    onPress: () => {
+                      if (!profile?.profileId) return;
+                      Alert.alert(
+                        "Block account?",
+                        `@${profile.username} won't be able to see your profile or message you.`,
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Block",
+                            style: "destructive",
+                            onPress: async () => {
+                              await blockAccount({
+                                profileId: profile.profileId,
+                                username: profile.username,
+                                name: profile.profileName || profile.username,
+                                avatar: profile.logo,
+                              });
+                              router.back();
+                              Alert.alert("Blocked", `@${profile.username} has been blocked.`);
+                            },
+                          },
+                        ]
+                      );
+                    },
+                  },
                   { text: "Copy Profile Link", onPress: () => Alert.alert("Copied", "Profile link copied to clipboard.") },
                   { text: "Cancel", style: "cancel" }
                 ]
@@ -771,7 +809,28 @@ export default function ViewProfileScreen() {
             </View>
           )}
 
-          {showPrivateOverlay ? (
+          {isBlockedProfile ? (
+            <View style={styles.privateContainer}>
+              <View style={styles.privateIconCircle}>
+                <Lucide name="ban-outline" size={38} color="#8e8e8e" />
+              </View>
+              <Text style={styles.privateTitle}>You blocked this account</Text>
+              <Text style={styles.privateSubtitle}>
+                You won't see posts from @{profile.username}. Unblock to view their profile again.
+              </Text>
+              <TouchableOpacity
+                style={styles.unblockBtn}
+                onPress={async () => {
+                  triggerHaptic("medium");
+                  await unblockUser(profile.profileId);
+                  await refreshSocialGraph();
+                  Alert.alert("Unblocked", `@${profile.username} has been unblocked.`);
+                }}
+              >
+                <Text style={styles.unblockBtnText}>Unblock</Text>
+              </TouchableOpacity>
+            </View>
+          ) : showPrivateOverlay ? (
             /* 🔒 PRIVATE ACCOUNT COORDINATES LOCK */
             <View style={styles.privateContainer}>
               <View style={styles.privateIconCircle}>
@@ -1213,6 +1272,7 @@ export default function ViewProfileScreen() {
             username: profile.username,
             name: profile.profileName || profile.username,
             logo: profile.logo,
+            profileId: profile.profileId,
           }}
           posts={profilePosts}
           products={viewingProducts}
@@ -2075,6 +2135,18 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     textAlign: "center",
     lineHeight: 18.5,
+  },
+  unblockBtn: {
+    marginTop: 20,
+    backgroundColor: "#00f5ff",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  unblockBtnText: {
+    color: "#080415",
+    fontWeight: "700",
+    fontSize: 14,
   },
   // Custom prompt modal styles
   promptOverlay: {
