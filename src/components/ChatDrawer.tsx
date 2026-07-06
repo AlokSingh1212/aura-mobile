@@ -115,6 +115,10 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [sharingProductsList, setSharingProductsList] = useState(false);
 
+  // Emoji States
+  const [showEmojiBar, setShowEmojiBar] = useState(false);
+  const EMOJIS = ["❤️", "😂", "🙌", "🔥", "👏", "😢", "😍", "😮", "👍", "🤔"];
+
   // Scroll Ref
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -265,6 +269,40 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     setCallRemoteUid(null);
   };
 
+  const uploadImageFile = async (localUri: string): Promise<string> => {
+    try {
+      const filename = localUri.split("/").pop() || "image.jpg";
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : `image`;
+
+      const formData = new FormData();
+      formData.append("file", {
+        uri: localUri,
+        name: filename,
+        type,
+      } as any);
+
+      const res = await fetch(`${API_HOST}/api/mobile/chat/upload`, {
+        method: "POST",
+        body: formData,
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      const data = await res.json();
+      if (data.success && data.url) {
+        return `${API_HOST}${data.url}`;
+      } else {
+        throw new Error(data.error || "Upload failed");
+      }
+    } catch (e) {
+      console.warn("Image upload failed, falling back to local URI:", e);
+      return localUri;
+    }
+  };
+
   const handleShareImage = async () => {
     setShowAttachMenu(false);
     triggerHaptic("light");
@@ -281,10 +319,33 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const selectedUri = result.assets[0].uri;
-        await sendAttachmentMessage("IMAGE", selectedUri);
+        const remoteUrl = await uploadImageFile(selectedUri);
+        await sendAttachmentMessage("IMAGE", remoteUrl);
       }
     } catch (e) {
       console.warn("Failed to pick image:", e);
+    }
+  };
+
+  const handleCaptureCameraImage = async () => {
+    triggerHaptic("medium");
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission Denied", "We need camera permissions to capture photos.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedUri = result.assets[0].uri;
+        const remoteUrl = await uploadImageFile(selectedUri);
+        await sendAttachmentMessage("IMAGE", remoteUrl);
+      }
+    } catch (e) {
+      console.warn("Failed to launch camera:", e);
     }
   };
 
@@ -1763,11 +1824,24 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </View>
             )}
 
+            {/* EMOJI BAR OVERLAY */}
+            {showEmojiBar && (
+              <View style={styles.emojiBarContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12, gap: 14 }}>
+                  {EMOJIS.map((emoji) => (
+                    <TouchableOpacity key={emoji} onPress={() => { triggerHaptic("light"); setChatReplyText((prev) => prev + emoji); }}>
+                      <Text style={styles.emojiReactionText}>{emoji}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
             {/* Input keyboard bar matching Instagram capsule style */}
             <View style={styles.chatInputBar}>
               <TouchableOpacity 
                 style={styles.cameraCircleBtn} 
-                onPress={() => { triggerHaptic("medium"); Alert.alert("Camera", "Native camera capture initiated."); }}
+                onPress={handleCaptureCameraImage}
               >
                 <Lucide name="camera" size={20} color="#fff" />
               </TouchableOpacity>
@@ -1794,8 +1868,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                     <TouchableOpacity onPress={handleShareImage}>
                       <Lucide name="image-outline" size={20} color="#fff" />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { triggerHaptic("light"); Alert.alert("Stickers", "Stickers picker overlay."); }}>
-                      <Lucide name="happy-outline" size={20} color="#fff" />
+                    <TouchableOpacity onPress={() => { triggerHaptic("light"); setShowEmojiBar(!showEmojiBar); }}>
+                      <Lucide name={showEmojiBar ? "happy" : "happy-outline"} size={20} color="#fff" />
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => { triggerHaptic("light"); setShowAttachMenu(true); }}>
                       <Lucide name="add-circle-outline" size={21} color="#fff" />
@@ -1994,35 +2068,50 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   </ScrollView>
                 </View>
               ) : (
-                <View style={styles.attachOptionsGrid}>
-                  <TouchableOpacity style={styles.attachOptionBtn} onPress={handleShareImage}>
+                <ScrollView contentContainerStyle={styles.attachVerticalList}>
+                  <TouchableOpacity style={styles.attachVerticalItem} onPress={handleShareImage}>
                     <View style={[styles.attachIconBg, { backgroundColor: "#3b82f622" }]}>
                       <Lucide name="image" size={24} color="#3b82f6" />
                     </View>
-                    <Text style={styles.attachOptionLabel}>Photos</Text>
+                    <View style={{ marginLeft: 16, flex: 1 }}>
+                      <Text style={styles.attachVerticalLabel}>Photos</Text>
+                      <Text style={styles.attachVerticalSubtext}>Choose from camera roll</Text>
+                    </View>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={styles.attachOptionBtn} onPress={() => setSharingProductsList(true)}>
+                  <TouchableOpacity style={styles.attachVerticalItem} onPress={() => setSharingProductsList(true)}>
                     <View style={[styles.attachIconBg, { backgroundColor: "#ec489922" }]}>
                       <Lucide name="pricetag" size={24} color="#ec4899" />
                     </View>
-                    <Text style={styles.attachOptionLabel}>Product</Text>
+                    <View style={{ marginLeft: 16, flex: 1 }}>
+                      <Text style={styles.attachVerticalLabel}>Product</Text>
+                      <Text style={styles.attachVerticalSubtext}>Share atelier catalog listing card</Text>
+                    </View>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={styles.attachOptionBtn} onPress={handleShareLocation}>
+                  <TouchableOpacity style={styles.attachVerticalItem} onPress={handleShareLocation}>
                     <View style={[styles.attachIconBg, { backgroundColor: "#10b98122" }]}>
                       <Lucide name="location" size={24} color="#10b981" />
                     </View>
-                    <Text style={styles.attachOptionLabel}>Location</Text>
+                    <View style={{ marginLeft: 16, flex: 1 }}>
+                      <Text style={styles.attachVerticalLabel}>Location</Text>
+                      <Text style={styles.attachVerticalSubtext}>Share current coordinates pin</Text>
+                    </View>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={styles.attachOptionBtn} onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); Alert.alert("Voice Notes", "Recording simulated. Voice note shared!"); }}>
+                  <TouchableOpacity 
+                    style={styles.attachVerticalItem} 
+                    onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); Alert.alert("Voice Notes", "Recording simulated. Voice note shared!"); }}
+                  >
                     <View style={[styles.attachIconBg, { backgroundColor: "#f59e0b22" }]}>
                       <Lucide name="mic" size={24} color="#f59e0b" />
                     </View>
-                    <Text style={styles.attachOptionLabel}>Audio</Text>
+                    <View style={{ marginLeft: 16, flex: 1 }}>
+                      <Text style={styles.attachVerticalLabel}>Audio</Text>
+                      <Text style={styles.attachVerticalSubtext}>Record a voice message</Text>
+                    </View>
                   </TouchableOpacity>
-                </View>
+                </ScrollView>
               )}
             </View>
           </TouchableOpacity>
@@ -2850,5 +2939,38 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 15,
     paddingHorizontal: 4,
+  },
+  emojiBarContainer: {
+    backgroundColor: "#120d2c",
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
+  emojiReactionText: {
+    fontSize: 24,
+  },
+  attachVerticalList: {
+    paddingHorizontal: 16,
+    gap: 16,
+    paddingTop: 10,
+  },
+  attachVerticalItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  attachVerticalLabel: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+  attachVerticalSubtext: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 12.5,
+    marginTop: 2,
   },
 });
