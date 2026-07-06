@@ -66,6 +66,7 @@ export interface ChatDrawerProps {
   activeInstaStories?: any[];
   onOpenStoryGroup?: (story: any) => void;
   initialConversationId?: string | null;
+  onConversationStateChange?: (active: boolean) => void;
 }
 
 export const ChatDrawer: React.FC<ChatDrawerProps> = ({
@@ -79,6 +80,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   activeInstaStories = [],
   onOpenStoryGroup,
   initialConversationId = null,
+  onConversationStateChange,
 }) => {
   const { triggerHaptic, currentUser, activeProfile } = useStore();
   const { graph: socialGraph, version: socialGraphVersion } = useSocialGraph();
@@ -780,6 +782,11 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       prev && isConversationBlocked(prev, socialGraph) ? null : prev
     );
   }, [socialGraphVersion, socialGraph]);
+
+  // Trigger callback when activeChat changes to control bottom app menu visibility in parent view
+  useEffect(() => {
+    onConversationStateChange?.(activeChat !== null);
+  }, [activeChat, onConversationStateChange]);
 
   useEffect(() => {
     let xhr: XMLHttpRequest | null = null;

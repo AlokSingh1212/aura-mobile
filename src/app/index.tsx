@@ -568,6 +568,7 @@ export default function ReelsScreen() {
 
   const [chatConversationId, setChatConversationId] = useState<string | null>(null);
   const [showDMs, setShowDMs] = useState(false);
+  const [isChatActive, setIsChatActive] = useState(false);
   const bottomBarHeight = 62 + insets.bottom;
   const [activeStoryIndex, setActiveStoryIndex] = useState(0);
   const [tappedReelItem, setTappedReelItem] = useState<any>(null);
@@ -2758,11 +2759,14 @@ export default function ReelsScreen() {
           setStoryProgress(0);
         }}
         initialConversationId={chatConversationId}
+        onConversationStateChange={setIsChatActive}
       />
 
       {/* 💬 Individual conversation is now handled inside ChatDrawer */}
 
-      <AuraBottomNav activeTab={bottomNavTab} homeTabHandlers={homeTabHandlers} />
+      {!isChatActive && (
+        <AuraBottomNav activeTab={bottomNavTab} homeTabHandlers={homeTabHandlers} />
+      )}
 
       {/* 🛍️ PRODUCT PREVIEW SHEET */}
       {/* ──────────────────────────────────────────────────── */}
