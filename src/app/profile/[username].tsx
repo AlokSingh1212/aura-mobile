@@ -47,9 +47,9 @@ export default function ViewProfileScreen() {
   const {
     triggerHaptic,
     activeProfile,
-    viewingProfile,
-    viewingProducts,
-    viewingHighlights,
+    viewingProfile: rawViewingProfile,
+    viewingProducts: rawViewingProducts,
+    viewingHighlights: rawViewingHighlights,
     loadingViewProfile,
     fetchViewProfile,
     clearViewProfile,
@@ -262,8 +262,8 @@ export default function ViewProfileScreen() {
     };
   }, [username, activeProfile?.id]);
 
-  const isCorrectProfile = !!(viewingProfile && viewingProfile.username === username);
-  const profile = isCorrectProfile ? viewingProfile : (username ? {
+  const isCorrectProfile = !!(rawViewingProfile && rawViewingProfile.username?.toLowerCase() === username?.toLowerCase());
+  const viewingProfile = isCorrectProfile ? rawViewingProfile : (username ? {
     id: "temp_id",
     profileId: "temp_id",
     username: username,
@@ -282,6 +282,10 @@ export default function ViewProfileScreen() {
     managedStoreName: null,
     managedStoreLogo: null,
   } : null);
+
+  const viewingProducts = isCorrectProfile ? rawViewingProducts : [];
+  const viewingHighlights = isCorrectProfile ? rawViewingHighlights : [];
+  const profile = viewingProfile;
   const isOwnProfile =
     profile?.username === activeProfile?.username ||
     profile?.profileId === activeProfile?.id;
