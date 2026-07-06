@@ -262,7 +262,8 @@ export default function ViewProfileScreen() {
     };
   }, [username, activeProfile?.id]);
 
-  const profile = viewingProfile || (username ? {
+  const isCorrectProfile = !!(viewingProfile && viewingProfile.username === username);
+  const profile = isCorrectProfile ? viewingProfile : (username ? {
     id: "temp_id",
     profileId: "temp_id",
     username: username,
@@ -315,7 +316,7 @@ export default function ViewProfileScreen() {
   }, [activeProfile?.id, profile?.profileId]);
 
   useEffect(() => {
-    if (!profile?.profileId || profile.profileId.startsWith("mock_") || showPrivateOverlay) {
+    if (!isCorrectProfile || !profile?.profileId || profile.profileId === "temp_id" || profile.profileId.startsWith("mock_") || showPrivateOverlay) {
       setProfilePosts([]);
       return;
     }
@@ -326,7 +327,7 @@ export default function ViewProfileScreen() {
     })
       .then(setProfilePosts)
       .finally(() => setLoadingPosts(false));
-  }, [profile?.profileId, profile?.username, showPrivateOverlay]);
+  }, [profile?.profileId, profile?.username, showPrivateOverlay, isCorrectProfile]);
 
   // Handle follow/unfollow toggle
   const handleFollowToggle = async () => {
