@@ -1876,10 +1876,177 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                     </TouchableOpacity>
                   </View>
                 )}
-              </View>
+            </View>
             </View>
           </SafeAreaView>
          </KeyboardAvoidingView>
+
+          {/* ➕ ATTACHMENT / SHARING DRAWER BOTTOM SHEET (Rendered as View overlay inside chat Modal) */}
+          {showAttachMenu && (
+            <View style={StyleSheet.absoluteFillObject}>
+              <TouchableOpacity 
+                style={styles.attachMenuBackdrop} 
+                activeOpacity={1} 
+                onPress={() => setShowAttachMenu(false)}
+              >
+                <View style={styles.attachMenuContent}>
+                  <View style={styles.attachMenuHeader}>
+                    <View style={styles.attachMenuHandle} />
+                  </View>
+                  
+                  <Text style={styles.attachMenuTitle}>Share Attachment</Text>
+
+                  {sharingProductsList ? (
+                    <View style={{ height: 200, marginTop: 10 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10, paddingHorizontal: 16 }}>
+                        <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: "bold" }}>SELECT PRODUCT</Text>
+                        <TouchableOpacity onPress={() => setSharingProductsList(false)}>
+                          <Text style={{ color: "#00f5ff", fontSize: 13 }}>Back</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
+                        {products.map((p) => (
+                          <TouchableOpacity 
+                            key={p.id} 
+                            style={styles.shareProductItem}
+                            onPress={() => handleShareProduct(p)}
+                          >
+                            <Image source={{ uri: p.images?.[0] }} style={styles.shareProductImg} />
+                            <Text style={styles.shareProductTitle} numberOfLines={1}>{p.name || p.title}</Text>
+                            <Text style={styles.shareProductPrice}>₹{parseFloat(p.price).toLocaleString()}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  ) : (
+                    <ScrollView contentContainerStyle={styles.attachVerticalList}>
+                      <TouchableOpacity style={styles.attachVerticalItem} onPress={handleShareImage}>
+                        <View style={[styles.attachIconBg, { backgroundColor: "#3b82f622" }]}>
+                          <Lucide name="image" size={24} color="#3b82f6" />
+                        </View>
+                        <View style={{ marginLeft: 16, flex: 1 }}>
+                          <Text style={styles.attachVerticalLabel}>Photos</Text>
+                          <Text style={styles.attachVerticalSubtext}>Choose from camera roll</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity style={styles.attachVerticalItem} onPress={() => setSharingProductsList(true)}>
+                        <View style={[styles.attachIconBg, { backgroundColor: "#ec489922" }]}>
+                          <Lucide name="pricetag" size={24} color="#ec4899" />
+                        </View>
+                        <View style={{ marginLeft: 16, flex: 1 }}>
+                          <Text style={styles.attachVerticalLabel}>Product</Text>
+                          <Text style={styles.attachVerticalSubtext}>Share atelier catalog listing card</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity style={styles.attachVerticalItem} onPress={handleShareLocation}>
+                        <View style={[styles.attachIconBg, { backgroundColor: "#10b98122" }]}>
+                          <Lucide name="location" size={24} color="#10b981" />
+                        </View>
+                        <View style={{ marginLeft: 16, flex: 1 }}>
+                          <Text style={styles.attachVerticalLabel}>Location</Text>
+                          <Text style={styles.attachVerticalSubtext}>Share current coordinates pin</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity 
+                        style={styles.attachVerticalItem} 
+                        onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); Alert.alert("Voice Notes", "Recording simulated. Voice note shared!"); }}
+                      >
+                        <View style={[styles.attachIconBg, { backgroundColor: "#f59e0b22" }]}>
+                          <Lucide name="mic" size={24} color="#f59e0b" />
+                        </View>
+                        <View style={{ marginLeft: 16, flex: 1 }}>
+                          <Text style={styles.attachVerticalLabel}>Audio</Text>
+                          <Text style={styles.attachVerticalSubtext}>Record a voice message</Text>
+                        </View>
+                      </TouchableOpacity>
+                    </ScrollView>
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* 📞 CALLING / OVERLAY (Rendered as View overlay inside chat Modal) */}
+          {(callState as any) !== "none" && activeCall && (
+            <View style={StyleSheet.absoluteFillObject}>
+              <View style={styles.callOverlayContainer}>
+                <LinearGradient
+                  colors={["#120d2c", "#080415"]}
+                  style={StyleSheet.absoluteFillObject}
+                />
+
+                {/* Video preview for caller/receiver in Video Calls */}
+                {activeCall.type === "VIDEO" && callState === "active" && (
+                  <View style={StyleSheet.absoluteFillObject}>
+                    {RtcSurfaceView ? (
+                      <RtcSurfaceView
+                        style={StyleSheet.absoluteFillObject}
+                        canvas={{ uid: callRemoteUid || 0 }}
+                      />
+                    ) : (
+                      <Image
+                        source={{ uri: callerInfo?.avatar || activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400" }}
+                        style={StyleSheet.absoluteFillObject}
+                        blurRadius={3}
+                      />
+                    )}
+                    {/* Floating local preview box */}
+                    <View style={styles.localVideoBox}>
+                      {RtcSurfaceView ? (
+                        <RtcSurfaceView
+                          style={StyleSheet.absoluteFillObject}
+                          canvas={{ uid: 0 }}
+                        />
+                      ) : (
+                        <View style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center" }}>
+                          <Lucide name="camera" size={24} color="#00f5ff" />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                <SafeAreaView style={styles.callSafeArea}>
+                  {/* Profile Card */}
+                  <View style={styles.callProfileCard}>
+                    <Image
+                      source={{ uri: callerInfo?.avatar || activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }}
+                      style={styles.callAvatar}
+                    />
+                    <Text style={styles.callName}>
+                      {callState === "incoming" ? callerInfo?.name : activeChat?.name}
+                    </Text>
+                    <Text style={styles.callStatusText}>
+                      {callState === "outgoing" && "Ringing..."}
+                      {callState === "incoming" && `Incoming ${activeCall.type.toLowerCase()} call...`}
+                      {callState === "active" && "Call Connected"}
+                    </Text>
+                  </View>
+
+                  {/* Call Controls buttons row */}
+                  <View style={styles.callControlsRow}>
+                    {callState === "incoming" ? (
+                      <>
+                        <TouchableOpacity style={[styles.callBtn, styles.declineBtn]} onPress={declineCall}>
+                          <Lucide name="close" size={28} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.callBtn, styles.acceptBtn]} onPress={acceptCall}>
+                          <Lucide name="checkmark" size={28} color="#fff" />
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <TouchableOpacity style={[styles.callBtn, styles.endCallBtn]} onPress={endCall}>
+                        <Lucide name="call" size={28} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </SafeAreaView>
+              </View>
+            </View>
+          )}
         </View>
       </Modal>
 
@@ -1951,64 +2118,27 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         </View>
       </Modal>
 
-      {/* 📞 CALLING / OVERLAY MODAL */}
-      {(callState as any) !== "none" && activeCall && (
-        <Modal visible={(callState as any) !== "none"} transparent animationType="fade">
+      {/* 📞 ROOT LEVEL CALLING / OVERLAY (For when active chat thread is not open) */}
+      {(callState as any) !== "none" && activeCall && !activeChat && (
+        <View style={[StyleSheet.absoluteFillObject, { zIndex: 9999 }]}>
           <View style={styles.callOverlayContainer}>
             <LinearGradient
               colors={["#120d2c", "#080415"]}
               style={StyleSheet.absoluteFillObject}
             />
 
-            {/* Video preview for caller/receiver in Video Calls */}
-            {activeCall.type === "VIDEO" && callState === "active" && (
-              <View style={StyleSheet.absoluteFillObject}>
-                {RtcSurfaceView ? (
-                  <RtcSurfaceView
-                    style={StyleSheet.absoluteFillObject}
-                    canvas={{ uid: callRemoteUid || 0 }}
-                  />
-                ) : (
-                  <Image
-                    source={{ uri: callerInfo?.avatar || activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400" }}
-                    style={StyleSheet.absoluteFillObject}
-                    blurRadius={3}
-                  />
-                )}
-                {/* Floating local preview box */}
-                <View style={styles.localVideoBox}>
-                  {RtcSurfaceView ? (
-                    <RtcSurfaceView
-                      style={StyleSheet.absoluteFillObject}
-                      canvas={{ uid: 0 }}
-                    />
-                  ) : (
-                    <View style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center" }}>
-                      <Lucide name="camera" size={24} color="#00f5ff" />
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-
             <SafeAreaView style={styles.callSafeArea}>
-              {/* Profile Card */}
               <View style={styles.callProfileCard}>
                 <Image
-                  source={{ uri: callerInfo?.avatar || activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }}
+                  source={{ uri: callerInfo?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }}
                   style={styles.callAvatar}
                 />
-                <Text style={styles.callName}>
-                  {callState === "incoming" ? callerInfo?.name : activeChat?.name}
-                </Text>
+                <Text style={styles.callName}>{callerInfo?.name || "Verified Citizen"}</Text>
                 <Text style={styles.callStatusText}>
-                  {callState === "outgoing" && "Ringing..."}
-                  {callState === "incoming" && `Incoming ${activeCall.type.toLowerCase()} call...`}
-                  {callState === "active" && "Call Connected"}
+                  {callState === "incoming" ? `Incoming ${activeCall.type.toLowerCase()} call...` : "Calling..."}
                 </Text>
               </View>
 
-              {/* Call Controls buttons row */}
               <View style={styles.callControlsRow}>
                 {callState === "incoming" ? (
                   <>
@@ -2027,95 +2157,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </View>
             </SafeAreaView>
           </View>
-        </Modal>
-      )}
-
-      {/* ➕ ATTACHMENT / SHARING DRAWER BOTTOM SHEET */}
-      {showAttachMenu && (
-        <Modal visible={showAttachMenu} transparent animationType="slide">
-          <TouchableOpacity 
-            style={styles.attachMenuBackdrop} 
-            activeOpacity={1} 
-            onPress={() => setShowAttachMenu(false)}
-          >
-            <View style={styles.attachMenuContent}>
-              <View style={styles.attachMenuHeader}>
-                <View style={styles.attachMenuHandle} />
-              </View>
-              
-              <Text style={styles.attachMenuTitle}>Share Attachment</Text>
-
-              {sharingProductsList ? (
-                <View style={{ height: 200, marginTop: 10 }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10, paddingHorizontal: 16 }}>
-                    <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: "bold" }}>SELECT PRODUCT</Text>
-                    <TouchableOpacity onPress={() => setSharingProductsList(false)}>
-                      <Text style={{ color: "#00f5ff", fontSize: 13 }}>Back</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
-                    {products.map((p) => (
-                      <TouchableOpacity 
-                        key={p.id} 
-                        style={styles.shareProductItem}
-                        onPress={() => handleShareProduct(p)}
-                      >
-                        <Image source={{ uri: p.images?.[0] }} style={styles.shareProductImg} />
-                        <Text style={styles.shareProductTitle} numberOfLines={1}>{p.name || p.title}</Text>
-                        <Text style={styles.shareProductPrice}>₹{parseFloat(p.price).toLocaleString()}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              ) : (
-                <ScrollView contentContainerStyle={styles.attachVerticalList}>
-                  <TouchableOpacity style={styles.attachVerticalItem} onPress={handleShareImage}>
-                    <View style={[styles.attachIconBg, { backgroundColor: "#3b82f622" }]}>
-                      <Lucide name="image" size={24} color="#3b82f6" />
-                    </View>
-                    <View style={{ marginLeft: 16, flex: 1 }}>
-                      <Text style={styles.attachVerticalLabel}>Photos</Text>
-                      <Text style={styles.attachVerticalSubtext}>Choose from camera roll</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.attachVerticalItem} onPress={() => setSharingProductsList(true)}>
-                    <View style={[styles.attachIconBg, { backgroundColor: "#ec489922" }]}>
-                      <Lucide name="pricetag" size={24} color="#ec4899" />
-                    </View>
-                    <View style={{ marginLeft: 16, flex: 1 }}>
-                      <Text style={styles.attachVerticalLabel}>Product</Text>
-                      <Text style={styles.attachVerticalSubtext}>Share atelier catalog listing card</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.attachVerticalItem} onPress={handleShareLocation}>
-                    <View style={[styles.attachIconBg, { backgroundColor: "#10b98122" }]}>
-                      <Lucide name="location" size={24} color="#10b981" />
-                    </View>
-                    <View style={{ marginLeft: 16, flex: 1 }}>
-                      <Text style={styles.attachVerticalLabel}>Location</Text>
-                      <Text style={styles.attachVerticalSubtext}>Share current coordinates pin</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={styles.attachVerticalItem} 
-                    onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); Alert.alert("Voice Notes", "Recording simulated. Voice note shared!"); }}
-                  >
-                    <View style={[styles.attachIconBg, { backgroundColor: "#f59e0b22" }]}>
-                      <Lucide name="mic" size={24} color="#f59e0b" />
-                    </View>
-                    <View style={{ marginLeft: 16, flex: 1 }}>
-                      <Text style={styles.attachVerticalLabel}>Audio</Text>
-                      <Text style={styles.attachVerticalSubtext}>Record a voice message</Text>
-                    </View>
-                  </TouchableOpacity>
-                </ScrollView>
-              )}
-            </View>
-          </TouchableOpacity>
-        </Modal>
+        </View>
       )}
     </>
   );
