@@ -27,6 +27,7 @@ import { canReceiveDm, shouldShowReadReceipts } from "@/lib/settingsEnforcement"
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { createRtcEngine, ChannelProfileType, ClientRoleType, RtcSurfaceView } from "./agora";
+import { useRouter } from "expo-router";
 
 const { width } = Dimensions.get("window");
 
@@ -83,6 +84,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   onConversationStateChange,
 }) => {
   const { triggerHaptic, currentUser, activeProfile } = useStore();
+  const router = useRouter();
   const { graph: socialGraph, version: socialGraphVersion } = useSocialGraph();
   const currentUserId = currentUser?.id || "";
   const inboxTitle = isSeller
@@ -121,6 +123,157 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
 
   // Scroll Ref
   const scrollViewRef = useRef<ScrollView>(null);
+
+  const findActiveStory = (chatName: string, chatUsername?: string) => {
+    if (!activeInstaStories) return null;
+    
+    // Normalize targets
+    const nameKey = chatName.toLowerCase().replace(/\s+/g, "");
+    const usernameKey = (chatUsername || "").toLowerCase().replace(/\s+/g, "");
+
+    return activeInstaStories.find((story: any) => {
+      if (story.isYourStory) return false;
+      const storyName = (story.name || "").toLowerCase().replace(/\s+/g, "");
+      const storyUsername = (story.username || "").toLowerCase().replace(/\s+/g, "");
+      return (
+        (storyUsername && (storyUsername === usernameKey || storyUsername === nameKey)) ||
+        (storyName && (storyName === nameKey || storyName === usernameKey))
+      );
+    });
+  };
+
+  const handleViewProfile = () => {
+    if (!activeChat) return;
+    setActiveChat(null); // Close active chat modal so profile screen displays clearly
+    onClose(); // Close the chat drawer
+    triggerHaptic("light");
+    
+    // Resolve clean username
+    const username = activeChat.username || activeChat.name.toLowerCase().replace(/\s+/g, "_");
+    router.push(`/profile/${username}` as any);
+  };
+
+  const handleViewTargetProfile = (chatName: string, chatUsername?: string) => {
+    setActiveChat(null); // Close modal
+    onClose(); // Close drawer
+    triggerHaptic("light");
+    
+    const username = chatUsername || chatName.toLowerCase().replace(/\s+/g, "_");
+    router.push(`/profile/${username}` as any);
+  };
+
+  const renderAvatarWithStory = (uri: string, chatName: string, chatUsername?: string, size: number = 44) => {
+    const storyGroup = findActiveStory(chatName, chatUsername);
+    const hasStory = storyGroup !== null;
+
+    if (hasStory) {
+      return (
+        <TouchableOpacity 
+          onPress={() => {
+            triggerHaptic("medium");
+            setActiveChat(null); // Close active chat modal so story displays on screen
+            if (onOpenStoryGroup) {
+              onOpenStoryGroup(storyGroup);
+            }
+          }}
+        >
+          <LinearGradient
+            colors={["#f09433", "#e6683c", "#dc2743", "#cc2366", "#bc1888"]}
+            start={{ x: 0, y: 1 }}
+            end={{ x: 1, y: 0 }}
+            style={{
+              width: size + 6,
+              height: size + 6,
+              borderRadius: (size + 6) / 2,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <View style={{
+              width: size + 2,
+              height: size + 2,
+              borderRadius: (size + 2) / 2,
+              backgroundColor: "#080415", // Matches theme dark background
+              alignItems: "center",
+              justifyContent: "center",
+            }}>
+              <Image 
+                source={{ uri }} 
+                style={{ width: size, height: size, borderRadius: size / 2 }} 
+              />
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity onPress={() => handleViewTargetProfile(chatName, chatUsername)}>
+        <Image 
+          source={{ uri }} 
+          style={{ width: size, height: size, borderRadius: size / 2 }} 
+        />
+      </TouchableOpacity>
+    );
+  };
+
+  const renderThreadAvatar = (thread: any) => {
+    const storyGroup = findActiveStory(thread.name, thread.username);
+    const hasStory = storyGroup !== null;
+
+    if (hasStory) {
+      return (
+        <TouchableOpacity 
+          onPress={() => {
+            triggerHaptic("medium");
+            if (onOpenStoryGroup) {
+              onOpenStoryGroup(storyGroup);
+            }
+          }}
+          style={{ marginRight: 12 }}
+        >
+          <LinearGradient
+            colors={["#f09433", "#e6683c", "#dc2743", "#cc2366", "#bc1888"]}
+            start={{ x: 0, y: 1 }}
+            end={{ x: 1, y: 0 }}
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <View style={{
+              width: 52,
+              height: 52,
+              borderRadius: 26,
+              backgroundColor: "#080415",
+              alignItems: "center",
+              justifyContent: "center",
+            }}>
+              <Image 
+                source={{ uri: thread.avatar }} 
+                style={{ width: 48, height: 48, borderRadius: 24 }} 
+              />
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity 
+        onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
+        style={{ marginRight: 12 }}
+      >
+        <Image 
+          source={{ uri: thread.avatar }} 
+          style={styles.threadAvatar} 
+        />
+      </TouchableOpacity>
+    );
+  };
 
   const startCall = async (type: "AUDIO" | "VIDEO") => {
     if (!activeChat) return;
@@ -1272,27 +1425,28 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                     .filter(t => t.name.toLowerCase().includes(dmSearch.toLowerCase()))
                     .filter(t => (t.category || "Primary") === activeDmFilter)
                     .map((thread) => (
-                    <TouchableOpacity
-                      key={thread.id}
-                      style={styles.threadItemRow}
-                      onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
-                    >
-                      <Image source={{ uri: thread.avatar }} style={styles.threadAvatar} />
-                      <View style={styles.threadDetails}>
-                        <View style={styles.threadNameRow}>
-                          <Text style={styles.threadNameText}>{thread.name}</Text>
-                          {thread.verified && (
-                            <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
-                          )}
+                    <View style={styles.threadItemRow} key={thread.id}>
+                      {renderThreadAvatar(thread)}
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: "row", alignItems: "center" }}
+                        onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
+                      >
+                        <View style={styles.threadDetails}>
+                          <View style={styles.threadNameRow}>
+                            <Text style={styles.threadNameText}>{thread.name}</Text>
+                            {thread.verified && (
+                              <Lucide name="checkmark-circle" size={17} color="#0095f6" style={styles.verifiedCheck} />
+                            )}
+                          </View>
+                          <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
+                            {thread.lastMessage || "Secure direct message sync handshake established."}
+                          </Text>
                         </View>
-                        <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
-                          {thread.lastMessage || "Secure direct message sync handshake established."}
-                        </Text>
-                      </View>
-                      <TouchableOpacity style={styles.cameraIconBtn}>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.cameraIconBtn} onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}>
                         <Lucide name="camera-outline" size={26} color="rgba(255,255,255,0.6)" />
                       </TouchableOpacity>
-                    </TouchableOpacity>
+                    </View>
                   ))}
                 </ScrollView>
               )}
@@ -1344,26 +1498,26 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   {/* ── Customer Enquiries ── */}
                   <Text style={styles.bizSectionLabel}>Customer Enquiries</Text>
                   {conversations.filter(t => t.name.toLowerCase().includes(dmSearch.toLowerCase())).map((thread) => (
-                    <TouchableOpacity
-                      key={thread.id}
-                      style={[styles.threadItemRow, { marginHorizontal: 16 }]}
-                      onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
-                      activeOpacity={0.75}
-                    >
-                      <Image source={{ uri: thread.avatar }} style={styles.threadAvatar} />
-                      <View style={styles.threadDetails}>
-                        <View style={styles.threadNameRow}>
-                          <Text style={styles.threadNameText}>{thread.name}</Text>
-                          <View style={[styles.bizTagBadge, { backgroundColor: thread.unread ? "#00f5ff22" : "#ffffff11" }]}>
-                            <Text style={[styles.bizTagText, { color: thread.unread ? "#00f5ff" : "rgba(255,255,255,0.4)" }]}>Enquiry</Text>
+                    <View style={[styles.threadItemRow, { marginHorizontal: 16 }]} key={thread.id}>
+                      {renderThreadAvatar(thread)}
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: "row", alignItems: "center" }}
+                        onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
+                      >
+                        <View style={styles.threadDetails}>
+                          <View style={styles.threadNameRow}>
+                            <Text style={styles.threadNameText}>{thread.name}</Text>
+                            <View style={[styles.bizTagBadge, { backgroundColor: thread.unread ? "#00f5ff22" : "#ffffff11" }]}>
+                              <Text style={[styles.bizTagText, { color: thread.unread ? "#00f5ff" : "rgba(255,255,255,0.4)" }]}>Enquiry</Text>
+                            </View>
                           </View>
+                          <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
+                            {thread.lastMessage || "Secure direct message sync handshake established."}
+                          </Text>
                         </View>
-                        <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
-                          {thread.lastMessage || "Secure direct message sync handshake established."}
-                        </Text>
-                      </View>
+                      </TouchableOpacity>
                       {thread.unread && <View style={styles.bizUnreadDot} />}
-                    </TouchableOpacity>
+                    </View>
                   ))}
                   <View style={{ height: 32 }} />
                 </>
@@ -1674,26 +1828,26 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   <Text style={styles.bizSubTitle}>👥 Customer Inbox</Text>
                   <Text style={styles.bizSubSubtitle}>Order & product enquiries</Text>
                   {conversations.map((thread) => (
-                    <TouchableOpacity
-                      key={thread.id}
-                      style={styles.threadItemRow}
-                      onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
-                      activeOpacity={0.75}
-                    >
-                      <Image source={{ uri: thread.avatar }} style={styles.threadAvatar} />
-                      <View style={styles.threadDetails}>
-                        <View style={styles.threadNameRow}>
-                          <Text style={styles.threadNameText}>{thread.name}</Text>
-                          <View style={[styles.bizTagBadge, { backgroundColor: "#fbbf2422" }]}>
-                            <Text style={{ color: "#fbbf24", fontSize: 13.5 }}>Enquiry</Text>
+                    <View style={styles.threadItemRow} key={thread.id}>
+                      {renderThreadAvatar(thread)}
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: "row", alignItems: "center" }}
+                        onPress={() => { triggerHaptic("medium"); setActiveChat(thread); }}
+                      >
+                        <View style={styles.threadDetails}>
+                          <View style={styles.threadNameRow}>
+                            <Text style={styles.threadNameText}>{thread.name}</Text>
+                            <View style={[styles.bizTagBadge, { backgroundColor: "#fbbf2422" }]}>
+                              <Text style={{ color: "#fbbf24", fontSize: 13.5 }}>Enquiry</Text>
+                            </View>
                           </View>
+                          <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
+                            {thread.lastMessage || "Secure direct message sync handshake established."}
+                          </Text>
                         </View>
-                        <Text style={[styles.threadMessageText, thread.unread && styles.threadMessageTextUnread]} numberOfLines={1}>
-                          {thread.lastMessage || "Secure direct message sync handshake established."}
-                        </Text>
-                      </View>
+                      </TouchableOpacity>
                       {thread.unread && <View style={styles.bizUnreadDot} />}
-                    </TouchableOpacity>
+                    </View>
                   ))}
                 </View>
               )}
@@ -1721,21 +1875,25 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                 <TouchableOpacity onPress={() => setActiveChat(null)}>
                   <Lucide name="chevron-back" size={28} color="#fff" />
                 </TouchableOpacity>
-                <Image 
-                  source={{ uri: activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }} 
-                  style={styles.headerAvatar} 
-                />
-                <View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <Text style={styles.headerNameText}>{activeChat?.name}</Text>
-                    {activeChat?.verified && (
-                      <Lucide name="checkmark-circle" size={15} color="#00f5ff" />
-                    )}
+                {renderAvatarWithStory(
+                  activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100",
+                  activeChat?.name || "",
+                  activeChat?.username,
+                  36
+                )}
+                <TouchableOpacity onPress={() => handleViewTargetProfile(activeChat?.name || "", activeChat?.username)}>
+                  <View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Text style={styles.headerNameText}>{activeChat?.name}</Text>
+                      {activeChat?.verified && (
+                        <Lucide name="checkmark-circle" size={15} color="#00f5ff" />
+                      )}
+                    </View>
+                    <Text style={styles.headerUsernameText}>
+                      @{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}
+                    </Text>
                   </View>
-                  <Text style={styles.headerUsernameText}>
-                    @{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}
-                  </Text>
-                </View>
+                </TouchableOpacity>
               </View>
 
               <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
@@ -1759,28 +1917,31 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
             >
               {/* Profile Social Context Information Block at top of chat scroll */}
-              <View style={styles.socialContextContainer}>
-                <Image 
-                  source={{ uri: activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }} 
-                  style={styles.socialContextAvatar} 
-                />
-                <Text style={styles.socialContextTitle}>{activeChat?.name}</Text>
-                <Text style={styles.socialContextUsername}>@{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}</Text>
-                <Text style={styles.socialContextSubtext}>
-                  {activeChat?.socialContextText || "You don't follow each other on Aura"}
-                </Text>
-                <TouchableOpacity 
-                  style={styles.socialContextBtn}
-                  onPress={() => {
-                    triggerHaptic("light");
-                    if (activeChat?.name) {
-                      Alert.alert("Profile", `Redirecting to ${activeChat.name}'s profile...`);
-                    }
-                  }}
-                >
-                  <Text style={styles.socialContextBtnText}>View profile</Text>
-                </TouchableOpacity>
-              </View>
+              {(!activeChat?.messages || activeChat.messages.length === 0) && (
+                <View style={styles.socialContextContainer}>
+                  {renderAvatarWithStory(
+                    activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100",
+                    activeChat?.name || "",
+                    activeChat?.username,
+                    72
+                  )}
+                  <TouchableOpacity onPress={() => handleViewTargetProfile(activeChat?.name || "", activeChat?.username)}>
+                    <Text style={styles.socialContextTitle}>{activeChat?.name}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleViewTargetProfile(activeChat?.name || "", activeChat?.username)}>
+                    <Text style={styles.socialContextUsername}>@{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.socialContextSubtext}>
+                    {activeChat?.socialContextText || "You don't follow each other on Aura"}
+                  </Text>
+                  <TouchableOpacity 
+                    style={styles.socialContextBtn}
+                    onPress={() => handleViewTargetProfile(activeChat?.name || "", activeChat?.username)}
+                  >
+                    <Text style={styles.socialContextBtnText}>View profile</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               
               {(activeChat?.messages || []).map((msg: any) => {
                 const isMine = msg.senderId === (isSeller ? activeMaisonId : currentUserId);
