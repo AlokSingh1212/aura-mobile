@@ -16,6 +16,8 @@ import { Image } from "expo-image";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
+import { useVideoPlayer, VideoView } from "expo-video";
+import * as Clipboard from "expo-clipboard";
 import { API_HOST } from "@/constants/api";
 import { formatCompactNumber } from "@/constants/format";
 
@@ -37,6 +39,23 @@ interface FloatingHeart {
   y: number;
   scale: number;
 }
+
+
+const HlsStreamPlayer = ({ playbackUrl }: { playbackUrl: string }) => {
+  const player = useVideoPlayer(playbackUrl, (p) => {
+    p.loop = true;
+    p.play();
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={StyleSheet.absoluteFillObject}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+};
 
 export interface LiveShowroomProps {
   visible: boolean;
@@ -82,6 +101,39 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
   const [liveHeartsCount, setLiveHeartsCount] = useState(384);
   const [floatingHearts, setFloatingHearts] = useState<FloatingHeart[]>([]);
   const [streamStartTime, setStreamStartTime] = useState<number>(0);
+
+  const [currentLiveSession, setCurrentLiveSession] = useState<any>(null);
+  const [streamSource, setStreamSource] = useState<"phone" | "obs">("phone");
+  const [showObsSettings, setShowObsSettings] = useState(false);
+
+  const stopAgoraRtmpPush = () => {
+    if (engineRef.current && currentLiveSession?.ingestEndpoint && currentLiveSession?.streamKey) {
+      const rtmpUrl = `${currentLiveSession.ingestEndpoint}${currentLiveSession.streamKey}`;
+      try {
+        if (typeof engineRef.current.stopRtmpStream === "function") {
+          engineRef.current.stopRtmpStream(rtmpUrl);
+        }
+      } catch (err) {
+        console.warn("Failed to stop Agora RTMP streaming push:", err);
+      }
+    }
+  };
+
+  const handleSourceChange = async (source: "phone" | "obs") => {
+    setStreamSource(source);
+    if (source === "obs") {
+      stopAgoraRtmpPush();
+      if (engineRef.current) {
+        try {
+          await engineRef.current.leaveChannel();
+        } catch {}
+      }
+    } else {
+      if (activeSessionId) {
+        await initWebRTCEngine();
+      }
+    }
+  };
   
   // Spotlight / Pinned coordinate product
   const [pinnedProduct, setPinnedProduct] = useState<any>(null);
@@ -140,6 +192,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
         setActiveSessionId(data.session.id);
         setLiveViewerCount(data.session.viewerCount);
         setLiveHeartsCount(data.session.heartsCount);
+        setCurrentLiveSession(data.session);
         
         // Broadcast dynamic token generated - start the WebRTC engine
         if (data.rtc) {
@@ -167,6 +220,9 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
           try {
             const detailRes = await fetch(`${API_HOST}/api/mobile/live?sessionId=${sessionId}&role=viewer`);
             const detailData = await detailRes.json();
+            if (detailData.success && detailData.session) {
+              setCurrentLiveSession(detailData.session);
+            }
             if (detailData.success && detailData.rtc) {
               await initWebRTCEngine(detailData.rtc.appId, detailData.rtc.token, detailData.rtc.channelName);
             } else {
@@ -201,6 +257,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
         const data = await res.json();
         if (data.success && data.session) {
           const session = data.session;
+          setCurrentLiveSession(session);
           
           if (!session.active && activeLiveMode === "viewer") {
             Alert.alert("Stream Concluded", "This live showroom has ended.");
@@ -264,6 +321,19 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
           setJoined(true);
           setJoining(false);
           setStreamStartTime(Date.now());
+
+          // Start Agora RTMP streaming push if ingest details exist
+          if (activeLiveMode === "broadcaster" && currentLiveSession?.ingestEndpoint && currentLiveSession?.streamKey) {
+            const rtmpUrl = `${currentLiveSession.ingestEndpoint}${currentLiveSession.streamKey}`;
+            console.log(`[Agora RTMP Push] Publishing stream to RTMP target: ${rtmpUrl}`);
+            try {
+              if (engineRef.current && typeof engineRef.current.startRtmpStreamWithoutTranscoding === "function") {
+                engineRef.current.startRtmpStreamWithoutTranscoding(rtmpUrl);
+              }
+            } catch (err) {
+              console.warn("Failed to initiate startRtmpStreamWithoutTranscoding:", err);
+            }
+          }
         },
         onUserJoined: (connection: any, uid: number, elapsed: number) => {
           setRemoteUid(uid);
@@ -485,11 +555,15 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
       if (data.success && data.sessions && data.sessions.length > 0) {
         const activeSession = data.sessions[0];
         setActiveSessionId(activeSession.id);
+        setCurrentLiveSession(activeSession);
         
         // Fetch viewer token for active session
         try {
           const detailRes = await fetch(`${API_HOST}/api/mobile/live?sessionId=${activeSession.id}&role=viewer`);
           const detailData = await detailRes.json();
+          if (detailData.success && detailData.session) {
+            setCurrentLiveSession(detailData.session);
+          }
           setActiveLiveMode("viewer");
           if (detailData.success && detailData.rtc) {
             await initWebRTCEngine(detailData.rtc.appId, detailData.rtc.token, detailData.rtc.channelName);
@@ -584,7 +658,20 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
               </View>
             ) : (
               <View style={styles.videoPlaceholder}>
-                {RtcSurfaceView && activeLiveMode === "viewer" && remoteUid ? (
+                {currentLiveSession?.playbackUrl && activeLiveMode === "viewer" ? (
+                  <HlsStreamPlayer playbackUrl={currentLiveSession.playbackUrl} />
+                ) : activeLiveMode === "broadcaster" && streamSource === "obs" ? (
+                  <View style={styles.obsActiveContainer}>
+                    <Lucide name="logo-twitch" size={48} color="#00f5ff" style={{ marginBottom: 12 }} />
+                    <Text style={styles.obsActiveTitle}>OBS Output Mode Engaged</Text>
+                    <Text style={styles.obsActiveDesc}>
+                      Start streaming in your desktop encoder (OBS, StreamYard, etc.) using your stream keys.
+                    </Text>
+                    <TouchableOpacity style={styles.obsShowSettingsBtn} onPress={() => setShowObsSettings(true)}>
+                      <Text style={{ color: "#000", fontWeight: "bold" }}>View Stream Keys</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : RtcSurfaceView && activeLiveMode === "viewer" && remoteUid ? (
                   <RtcSurfaceView
                     style={StyleSheet.absoluteFillObject}
                     canvas={{ uid: remoteUid }}
@@ -609,6 +696,76 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
                     />
                   </>
                 )}
+
+                {/* OBS Credentials settings overlay */}
+                {showObsSettings && activeLiveMode === "broadcaster" && (
+                  <View style={styles.obsSettingsCard}>
+                    <View style={styles.obsCardHeader}>
+                      <Text style={styles.obsCardTitle}>Showroom Stream Settings</Text>
+                      <TouchableOpacity onPress={() => setShowObsSettings(false)}>
+                        <Lucide name="close" size={20} color="rgba(255,255,255,0.6)" />
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={styles.obsCardDesc}>
+                      Select your video source. Choose OBS to stream in studio quality using desktop tools.
+                    </Text>
+
+                    <View style={styles.sourceToggleRow}>
+                      <TouchableOpacity 
+                        style={[styles.sourceToggleBtn, streamSource === "phone" && styles.sourceToggleBtnActive]}
+                        onPress={() => { triggerHaptic("medium"); handleSourceChange("phone"); }}
+                      >
+                        <Lucide name="camera" size={18} color={streamSource === "phone" ? "#080415" : "#fff"} />
+                        <Text style={[styles.sourceToggleText, streamSource === "phone" && styles.sourceToggleTextActive]}>Phone Camera</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={[styles.sourceToggleBtn, streamSource === "obs" && styles.sourceToggleBtnActive]}
+                        onPress={() => { triggerHaptic("medium"); handleSourceChange("obs"); }}
+                      >
+                        <Lucide name="desktop-outline" size={18} color={streamSource === "obs" ? "#080415" : "#fff"} />
+                        <Text style={[styles.sourceToggleText, streamSource === "obs" && styles.sourceToggleTextActive]}>OBS Desktop</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {streamSource === "obs" && (
+                      <View style={{ marginTop: 14 }}>
+                        <Text style={styles.obsLabel}>SERVER RTMPS URL</Text>
+                        <View style={styles.obsInputContainer}>
+                          <Text style={styles.obsValueText} numberOfLines={1}>
+                            {currentLiveSession?.ingestEndpoint || "rtmps://demo-ingest.ivs.rocks:443/app/"}
+                          </Text>
+                          <TouchableOpacity onPress={async () => {
+                            triggerHaptic("success");
+                            await Clipboard.setStringAsync(currentLiveSession?.ingestEndpoint || "rtmps://demo-ingest.ivs.rocks:443/app/");
+                            Alert.alert("Copied", "Server URL copied to clipboard.");
+                          }}>
+                            <Lucide name="copy-outline" size={18} color="#00f5ff" />
+                          </TouchableOpacity>
+                        </View>
+
+                        <Text style={[styles.obsLabel, { marginTop: 10 }]}>STREAM KEY</Text>
+                        <View style={styles.obsInputContainer}>
+                          <Text style={styles.obsValueText} numberOfLines={1}>
+                            {currentLiveSession?.streamKey || "sk_us-east-1_demo_stream_key"}
+                          </Text>
+                          <TouchableOpacity onPress={async () => {
+                            triggerHaptic("success");
+                            await Clipboard.setStringAsync(currentLiveSession?.streamKey || "sk_us-east-1_demo_stream_key");
+                            Alert.alert("Copied", "Stream Key copied to clipboard.");
+                          }}>
+                            <Lucide name="copy-outline" size={18} color="#00f5ff" />
+                          </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.obsHelpHint}>
+                          Paste these settings in OBS Studio → Settings → Stream to broadcast your live atelier feed.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
               </View>
             )}
 
@@ -626,9 +783,17 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
               </View>
 
               {activeLiveMode === "broadcaster" ? (
-                <TouchableOpacity style={styles.endStreamBtn} onPress={handleEndLiveStream}>
-                  <Text style={styles.endStreamBtnText}>End Stream</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+                  <TouchableOpacity 
+                    style={styles.broadcasterSettingsBtn} 
+                    onPress={() => { triggerHaptic("light"); setShowObsSettings(!showObsSettings); }}
+                  >
+                    <Lucide name="settings-outline" size={24} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.endStreamBtn} onPress={handleEndLiveStream}>
+                    <Text style={styles.endStreamBtnText}>End Stream</Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <TouchableOpacity style={styles.leaveStreamBtn} onPress={onClose}>
                   <Lucide name="close" size={24} color="#fff" />
@@ -1216,5 +1381,124 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textTransform: "uppercase",
     letterSpacing: 1,
+  },
+  broadcasterSettingsBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+  },
+  obsSettingsCard: {
+    position: "absolute",
+    top: 80,
+    left: 16,
+    right: 16,
+    backgroundColor: "rgba(12, 8, 34, 0.95)",
+    borderRadius: 16,
+    padding: 16,
+    zIndex: 10000,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  obsCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  obsCardTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  obsCardDesc: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 12.5,
+    lineHeight: 17,
+    marginBottom: 14,
+  },
+  sourceToggleRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
+  },
+  sourceToggleBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    gap: 6,
+  },
+  sourceToggleBtnActive: {
+    backgroundColor: "#00f5ff",
+    borderColor: "#00f5ff",
+  },
+  sourceToggleText: {
+    color: "#fff",
+    fontSize: 13.5,
+    fontWeight: "600",
+  },
+  sourceToggleTextActive: {
+    color: "#080415",
+  },
+  obsLabel: {
+    color: "rgba(255, 255, 255, 0.4)",
+    fontSize: 11,
+    fontWeight: "bold",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  obsInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#080415",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 40,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
+  },
+  obsValueText: {
+    color: "#fff",
+    fontSize: 13,
+    flex: 1,
+    marginRight: 10,
+  },
+  obsHelpHint: {
+    color: "#00f5ff",
+    fontSize: 11,
+    marginTop: 10,
+    lineHeight: 15,
+  },
+  obsActiveContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#080415",
+    paddingHorizontal: 30,
+  },
+  obsActiveTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  obsActiveDesc: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 13.5,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 20,
+  },
+  obsShowSettingsBtn: {
+    backgroundColor: "#00f5ff",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
   },
 });

@@ -9,6 +9,7 @@ import {
   TextInput,
   Dimensions,
   Alert,
+  Modal,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -92,6 +93,90 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [dmSearch, setDmSearch] = useState("");
   const [activeDmFilter, setActiveDmFilter] = useState("Primary");
   const [activeBusinessTool, setActiveBusinessTool] = useState<string | null>(null);
+
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [searchNewChat, setSearchNewChat] = useState("");
+  const [suggestedProfiles, setSuggestedProfiles] = useState<any[]>([]);
+  const [loadingSuggested, setLoadingSuggested] = useState(false);
+
+  const fetchSuggestedProfiles = async () => {
+    setLoadingSuggested(true);
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/profile/suggested?viewerProfileId=${activeProfile?.id || "prof_active"}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.profiles)) {
+        setSuggestedProfiles(data.profiles);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch suggested profiles:", e);
+    } finally {
+      setLoadingSuggested(false);
+    }
+  };
+
+  const handleSearchProfiles = async (query: string) => {
+    setSearchNewChat(query);
+    if (query.trim().length < 2) {
+      fetchSuggestedProfiles();
+      return;
+    }
+    setLoadingSuggested(true);
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/profile/search?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.profiles)) {
+        setSuggestedProfiles(data.profiles);
+      }
+    } catch (e) {
+      console.warn("Failed to search profiles:", e);
+    } finally {
+      setLoadingSuggested(false);
+    }
+  };
+
+  const handleInitiateNewChat = async (profile: any) => {
+    triggerHaptic("medium");
+    try {
+      const isMaison = !!profile.maisonId || profile.logo !== null;
+      const type = isMaison ? "MAISON" : "PRIVATE";
+      const payload: any = {
+        userId: currentUserId,
+        userName: currentUser?.name || "Alok Singh",
+        type,
+        initialMessage: "Hey there! 👋",
+      };
+      if (isMaison) {
+        payload.maisonId = profile.maisonId || profile.id;
+        payload.maisonName = profile.name;
+      } else {
+        payload.peerProfileId = profile.id;
+      }
+
+      const res = await fetch(`${API_HOST}/api/mobile/chat/initiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.success && data.conversation) {
+        setShowNewChatModal(false);
+        setSearchNewChat("");
+        await fetchChats();
+        setActiveChat(data.conversation);
+      } else {
+        Alert.alert("Error", data.error || "Failed to start chat.");
+      }
+    } catch (err) {
+      console.warn("Error initiating chat:", err);
+      Alert.alert("Error", "Handshake failed. Connection timeout.");
+    }
+  };
+
+  useEffect(() => {
+    if (showNewChatModal) {
+      fetchSuggestedProfiles();
+    }
+  }, [showNewChatModal]);
 
   // Business states
   const [broadcastText, setBroadcastText] = useState("");
@@ -616,7 +701,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               <View style={styles.dmTitleRedDot} />
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => triggerHaptic("medium")}>
+            <TouchableOpacity onPress={() => { triggerHaptic("medium"); setShowNewChatModal(true); }}>
               <Lucide name="create-outline" size={26} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -1265,6 +1350,74 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           </SafeAreaView>
         </View>
       )}
+
+      {/* 👤 NEW CHAT CREATOR/USER SELECTOR MODAL */}
+      <Modal visible={showNewChatModal} animationType="slide" transparent>
+        <View style={styles.newChatOverlay}>
+          <SafeAreaView style={styles.newChatSafeArea}>
+            {/* Header */}
+            <View style={styles.newChatHeader}>
+              <TouchableOpacity onPress={() => { triggerHaptic("light"); setShowNewChatModal(false); setSearchNewChat(""); }}>
+                <Text style={{ color: "#fff", fontSize: 16 }}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.newChatTitle}>New Message</Text>
+              <View style={{ width: 44 }} />
+            </View>
+
+            {/* Search Input */}
+            <View style={styles.newChatSearchContainer}>
+              <Text style={styles.newChatSearchTo}>To:</Text>
+              <TextInput
+                style={styles.newChatSearchInput}
+                placeholder="Search profiles..."
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={searchNewChat}
+                onChangeText={handleSearchProfiles}
+                autoFocus
+              />
+            </View>
+
+            {/* User List */}
+            {loadingSuggested ? (
+              <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                <ActivityIndicator size="small" color="#00f5ff" />
+              </View>
+            ) : (
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 30 }}>
+                <Text style={styles.newChatSuggestedTitle}>
+                  {searchNewChat ? "SEARCH RESULTS" : "SUGGESTED"}
+                </Text>
+                {suggestedProfiles.length === 0 ? (
+                  <Text style={styles.newChatEmptyText}>No profiles found.</Text>
+                ) : (
+                  suggestedProfiles.map((profile) => (
+                    <TouchableOpacity
+                      key={profile.id}
+                      style={styles.newChatUserRow}
+                      onPress={() => handleInitiateNewChat(profile)}
+                    >
+                      {profile.logo || profile.avatar ? (
+                        <Image source={{ uri: profile.logo || profile.avatar }} style={styles.newChatAvatar} />
+                      ) : (
+                        <View style={[styles.newChatAvatar, styles.newChatAvatarFallback]}>
+                          <Text style={{ color: "#fff", fontWeight: "700" }}>
+                            {profile.name[0]?.toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.newChatName}>{profile.name}</Text>
+                        <Text style={styles.newChatUsername}>@{profile.username}</Text>
+                      </View>
+                      <Lucide name="chevron-forward" size={18} color="rgba(255,255,255,0.4)" />
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            )}
+          </SafeAreaView>
+        </View>
+      </Modal>
     </>
   );
 };
@@ -1729,5 +1882,87 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
     fontSize: 13,
     fontStyle: "italic",
+  },
+  newChatOverlay: {
+    flex: 1,
+    backgroundColor: "#080415",
+  },
+  newChatSafeArea: {
+    flex: 1,
+  },
+  newChatHeader: {
+    flexDirection: "row" as const,
+    justifyContent: "space-between" as const,
+    alignItems: "center" as const,
+    paddingHorizontal: 16,
+    height: 48,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  newChatTitle: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "bold" as const,
+  },
+  newChatSearchContainer: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    paddingHorizontal: 16,
+    height: 52,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  newChatSearchTo: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600" as const,
+    marginRight: 12,
+  },
+  newChatSearchInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 16,
+  },
+  newChatSuggestedTitle: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 12.5,
+    fontWeight: "bold" as const,
+    letterSpacing: 0.5,
+    marginTop: 20,
+    marginBottom: 8,
+    paddingHorizontal: 16,
+  },
+  newChatEmptyText: {
+    color: "rgba(255,255,255,0.35)",
+    fontSize: 15,
+    textAlign: "center" as const,
+    marginTop: 40,
+  },
+  newChatUserRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  newChatAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  newChatAvatarFallback: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  newChatName: {
+    color: "#fff",
+    fontSize: 15.5,
+    fontWeight: "600" as const,
+  },
+  newChatUsername: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 13.5,
+    marginTop: 1,
   },
 });
