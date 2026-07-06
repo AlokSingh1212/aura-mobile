@@ -1766,8 +1766,9 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                 />
                 <Text style={styles.socialContextTitle}>{activeChat?.name}</Text>
                 <Text style={styles.socialContextUsername}>@{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}</Text>
-                <Text style={styles.socialContextSubtext}>You don't follow each other on Instagram</Text>
-                <Text style={styles.socialContextSubtext}>You both follow kimkardashian and 1 other</Text>
+                <Text style={styles.socialContextSubtext}>
+                  {activeChat?.socialContextText || "You don't follow each other on Aura"}
+                </Text>
                 <TouchableOpacity 
                   style={styles.socialContextBtn}
                   onPress={() => {
