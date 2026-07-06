@@ -1920,47 +1920,66 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                     </View>
                   ) : (
                     <ScrollView contentContainerStyle={styles.attachVerticalList}>
+                      {/* Camera */}
+                      <TouchableOpacity style={styles.attachVerticalItem} onPress={handleCaptureCameraImage}>
+                        <View style={[styles.attachIconBg, { backgroundColor: "#1e1e1f" }]}>
+                          <Lucide name="camera" size={22} color="#00f5ff" />
+                        </View>
+                        <Text style={styles.attachVerticalLabel}>Camera</Text>
+                      </TouchableOpacity>
+
+                      {/* Photos */}
                       <TouchableOpacity style={styles.attachVerticalItem} onPress={handleShareImage}>
-                        <View style={[styles.attachIconBg, { backgroundColor: "#3b82f622" }]}>
-                          <Lucide name="image" size={24} color="#3b82f6" />
+                        <View style={[styles.attachIconBg, { backgroundColor: "#ff5e7e22" }]}>
+                          <Lucide name="image" size={22} color="#ff5e7e" />
                         </View>
-                        <View style={{ marginLeft: 16, flex: 1 }}>
-                          <Text style={styles.attachVerticalLabel}>Photos</Text>
-                          <Text style={styles.attachVerticalSubtext}>Choose from camera roll</Text>
-                        </View>
+                        <Text style={styles.attachVerticalLabel}>Photos</Text>
                       </TouchableOpacity>
 
-                      <TouchableOpacity style={styles.attachVerticalItem} onPress={() => setSharingProductsList(true)}>
-                        <View style={[styles.attachIconBg, { backgroundColor: "#ec489922" }]}>
-                          <Lucide name="pricetag" size={24} color="#ec4899" />
+                      {/* Stickers */}
+                      <TouchableOpacity style={styles.attachVerticalItem} onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); setShowEmojiBar(true); }}>
+                        <View style={[styles.attachIconBg, { backgroundColor: "#af52de22" }]}>
+                          <Lucide name="happy" size={22} color="#af52de" />
                         </View>
-                        <View style={{ marginLeft: 16, flex: 1 }}>
-                          <Text style={styles.attachVerticalLabel}>Product</Text>
-                          <Text style={styles.attachVerticalSubtext}>Share atelier catalog listing card</Text>
-                        </View>
+                        <Text style={styles.attachVerticalLabel}>Stickers</Text>
                       </TouchableOpacity>
 
-                      <TouchableOpacity style={styles.attachVerticalItem} onPress={handleShareLocation}>
-                        <View style={[styles.attachIconBg, { backgroundColor: "#10b98122" }]}>
-                          <Lucide name="location" size={24} color="#10b981" />
+                      {/* Aura Cash */}
+                      <TouchableOpacity style={styles.attachVerticalItem} onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); Alert.alert("Aura Cash", "Aura Cash request generated!"); }}>
+                        <View style={[styles.attachIconBg, { backgroundColor: "#34c75922" }]}>
+                          <Lucide name="cash" size={22} color="#34c759" />
                         </View>
-                        <View style={{ marginLeft: 16, flex: 1 }}>
-                          <Text style={styles.attachVerticalLabel}>Location</Text>
-                          <Text style={styles.attachVerticalSubtext}>Share current coordinates pin</Text>
-                        </View>
+                        <Text style={styles.attachVerticalLabel}>Aura Cash</Text>
                       </TouchableOpacity>
 
+                      {/* Audio */}
                       <TouchableOpacity 
                         style={styles.attachVerticalItem} 
                         onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); Alert.alert("Voice Notes", "Recording simulated. Voice note shared!"); }}
                       >
-                        <View style={[styles.attachIconBg, { backgroundColor: "#f59e0b22" }]}>
-                          <Lucide name="mic" size={24} color="#f59e0b" />
+                        <View style={[styles.attachIconBg, { backgroundColor: "#ff950022" }]}>
+                          <Lucide name="mic" size={22} color="#ff9500" />
                         </View>
-                        <View style={{ marginLeft: 16, flex: 1 }}>
-                          <Text style={styles.attachVerticalLabel}>Audio</Text>
-                          <Text style={styles.attachVerticalSubtext}>Record a voice message</Text>
+                        <Text style={styles.attachVerticalLabel}>Audio</Text>
+                      </TouchableOpacity>
+
+                      {/* Send Later */}
+                      <TouchableOpacity 
+                        style={styles.attachVerticalItem} 
+                        onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); Alert.alert("Send Later", "Message scheduled!"); }}
+                      >
+                        <View style={[styles.attachIconBg, { backgroundColor: "#007aff22" }]}>
+                          <Lucide name="time" size={22} color="#007aff" />
                         </View>
+                        <Text style={styles.attachVerticalLabel}>Send Later</Text>
+                      </TouchableOpacity>
+
+                      {/* Store */}
+                      <TouchableOpacity style={styles.attachVerticalItem} onPress={() => setSharingProductsList(true)}>
+                        <View style={[styles.attachIconBg, { backgroundColor: "#5856d622" }]}>
+                          <Lucide name="basket" size={22} color="#5856d6" />
+                        </View>
+                        <Text style={styles.attachVerticalLabel}>Store</Text>
                       </TouchableOpacity>
                     </ScrollView>
                   )}
@@ -2992,23 +3011,22 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   attachVerticalList: {
-    paddingHorizontal: 16,
-    gap: 16,
+    paddingHorizontal: 24,
+    gap: 14,
     paddingTop: 10,
+    paddingBottom: 30,
   },
   attachVerticalItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "transparent",
+    paddingVertical: 8,
+    gap: 16,
   },
   attachVerticalLabel: {
     color: "#fff",
-    fontSize: 15,
-    fontWeight: "bold",
+    fontSize: 18,
+    fontWeight: "600",
   },
   attachVerticalSubtext: {
     color: "rgba(255,255,255,0.4)",
