@@ -1658,18 +1658,18 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                   <Lucide name="chevron-back" size={28} color="#fff" />
                 </TouchableOpacity>
                 <Image 
-                  source={{ uri: activeChat.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }} 
+                  source={{ uri: activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }} 
                   style={styles.headerAvatar} 
                 />
                 <View>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                    <Text style={styles.headerNameText}>{activeChat.name}</Text>
-                    {activeChat.verified && (
+                    <Text style={styles.headerNameText}>{activeChat?.name}</Text>
+                    {activeChat?.verified && (
                       <Lucide name="checkmark-circle" size={15} color="#00f5ff" />
                     )}
                   </View>
                   <Text style={styles.headerUsernameText}>
-                    @{activeChat.username || activeChat.name.toLowerCase().replace(/\s+/g, "_")}
+                    @{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}
                   </Text>
                 </View>
               </View>
@@ -1695,31 +1695,33 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               {/* Profile Social Context Information Block at top of chat scroll */}
               <View style={styles.socialContextContainer}>
                 <Image 
-                  source={{ uri: activeChat.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }} 
+                  source={{ uri: activeChat?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100" }} 
                   style={styles.socialContextAvatar} 
                 />
-                <Text style={styles.socialContextTitle}>{activeChat.name}</Text>
-                <Text style={styles.socialContextUsername}>@{activeChat.username || activeChat.name.toLowerCase().replace(/\s+/g, "_")}</Text>
+                <Text style={styles.socialContextTitle}>{activeChat?.name}</Text>
+                <Text style={styles.socialContextUsername}>@{activeChat?.username || activeChat?.name?.toLowerCase()?.replace(/\s+/g, "_")}</Text>
                 <Text style={styles.socialContextSubtext}>You don't follow each other on Instagram</Text>
                 <Text style={styles.socialContextSubtext}>You both follow kimkardashian and 1 other</Text>
                 <TouchableOpacity 
                   style={styles.socialContextBtn}
                   onPress={() => {
                     triggerHaptic("light");
-                    Alert.alert("Profile", `Redirecting to ${activeChat.name}'s profile...`);
+                    if (activeChat?.name) {
+                      Alert.alert("Profile", `Redirecting to ${activeChat.name}'s profile...`);
+                    }
                   }}
                 >
                   <Text style={styles.socialContextBtnText}>View profile</Text>
                 </TouchableOpacity>
               </View>
               
-              {(activeChat.messages || []).map((msg: any) => {
+              {(activeChat?.messages || []).map((msg: any) => {
                 const isMine = msg.senderId === (isSeller ? activeMaisonId : currentUserId);
                 return (
                   <View key={msg.id} style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}>
                     {!isMine && (
                       <View style={styles.msgAvatar}>
-                        <Text style={styles.msgAvatarText}>{activeChat.name[0]?.toUpperCase()}</Text>
+                        <Text style={styles.msgAvatarText}>{activeChat?.name?.[0]?.toUpperCase()}</Text>
                       </View>
                     )}
                     <View style={[styles.msgBubble, isMine ? styles.msgBubbleRight : styles.msgBubbleLeft]}>
@@ -1743,7 +1745,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               })}
             </ScrollView>
 
-            {activeChat && typingUsers[activeChat.id] && (
+            {activeChat && activeChat.id && typingUsers[activeChat.id] && (
               <View style={styles.typingContainer}>
                 <View style={styles.typingDotWrap}>
                   <View style={styles.typingDot} />
