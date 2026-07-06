@@ -144,6 +144,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
             duration: 150,
             useNativeDriver: true,
           }).start(() => {
+            onConversationStateChange?.(false);
             setActiveChat(null);
             chatTranslateX.setValue(screenWidth);
           });
@@ -176,6 +177,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
       duration: 200,
       useNativeDriver: true,
     }).start(() => {
+      onConversationStateChange?.(false);
       setActiveChat(null);
       chatTranslateX.setValue(screenWidth);
       if (callback) callback();
@@ -191,7 +193,9 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         toValue: 0,
         duration: 220,
         useNativeDriver: true,
-      }).start();
+      }).start(() => {
+        onConversationStateChange?.(true);
+      });
     }
   }, [activeChat]);
 
@@ -1296,9 +1300,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   }, [socialGraphVersion, socialGraph]);
 
   // Trigger callback when activeChat changes to control bottom app menu visibility in parent view
-  useEffect(() => {
-    onConversationStateChange?.(activeChat !== null);
-  }, [activeChat, onConversationStateChange]);
+  // Handled after transitions are complete
 
   useEffect(() => {
     let xhr: XMLHttpRequest | null = null;
