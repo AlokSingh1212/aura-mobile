@@ -119,69 +119,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [sharingProductsList, setSharingProductsList] = useState(false);
 
-  // Emoji States
-  const [showEmojiBar, setShowEmojiBar] = useState(false);
-  const [activeEmojiCategory, setActiveEmojiCategory] = useState("smileys");
-  const [emojiSearchQuery, setEmojiSearchQuery] = useState("");
 
-  const EMOJI_CATEGORIES = [
-    {
-      id: "smileys",
-      name: "Smileys",
-      icon: "happy-outline",
-      emojis: [
-        "😀","😃","😄","😁","😆","😅","😂","🤣","🥲","☺️","😊","😇","🙂","🙃","😉","😌","😍","🥰","😘","😗","😙","😚","😋","😛","😝","😜","🤪","🤨","🧐","🤓","😎","🥸","🤩","🥳","😏","😒","😞","😔","😟","😕","🙁","☹️","😣","😖","😫","😩","🥺","😢","😭","😤","😠","😡","🤬","🤯","😳","🥵","🥶","😱","😨","😰","😥","😓","🤗","🤔","🫣","🤭","🫢","🤫","🤥","😶","😐","😑","😬","🫨","🫠","🙄","😯","😦","😧","😮","😲","🥱","😴","🤤","😪","😵","😵‍💫","🤐","🥴","🤢","🤮","🤧","😷","🤒","🤕","🤑","🤠","😈","👿","👹","👺","🤡","💩","👻","💀","☠️","👽","👾","🤖"
-      ]
-    },
-    {
-      id: "gestures",
-      name: "Gestures",
-      icon: "hand-left-outline",
-      emojis: [
-        "👋","🤚","🖐️","✋","🖖","👌","🤌","🤏","✌️","🤞","🫰","🤟","🤘","🤙","👈","👉","👆","🖕","👇","☝️","👍","👎","✊","👊","🤛","🤜","👏","🙌","👐","🤲","🤝","🙏","✍️","💅","🤳","💪","🦾","🦿","🦵","🦶","👂","🦻","👃","🧠","🫀","🫁","🦷","🦴","👀","👁️","👅","👄","💋","🩸","👣","🧗","🧘","🏄","🏊","🚴","🏃","🚶","🕺","💃","🏌️","🏂","🏋️","⛹️","🏋️‍♀️","⛹️‍♀️","🚴‍♀️","🏊‍♀️","🏃‍♀️","🚶‍♀️","🧘‍♀️","💁","🙅","🙆","🙋","🧏","🙇","🤷","🤷‍♀️","💁‍♀️","🙅‍♀️","🙆‍♀️","🙋‍♀️","🧏‍♀️","🙇‍♀️","👤","👥","👫","👭","👬"
-      ]
-    },
-    {
-      id: "hearts",
-      name: "Hearts",
-      icon: "heart-outline",
-      emojis: [
-        "❤️","🩷","🧡","💛","💚","💙","🩵","💜","🖤","🩶","🤍","🤎","💔","❤️‍🔥","❤️‍🩹","❣️","💕","💞","💓","💗","💖","💘","💝","💟","💌","💏","💑","👩‍❤️‍👩","👨‍❤️‍👨","👩‍❤️‍💋‍👩","👨‍❤️‍💋‍👨","💋","💍","💎","🎁","🎀","🧸","🌹","🥀","🌺","🌸","🌼","🌻","🌷","🎈","🥂","🕯️","🎪","🎡","🎢","💈","🎟️","🎫","🎭","🎨","🎬","🎤","🎧","🎼","🎹","🥁","🎷","🎺","🎸","🪕","🎻","🎲","🎯","🎳","🎮","🎰","🧩","♟️","🪄","🔮","🧿","🪬","🪆","🃏","🪅","🎊","🎉","🎂","🍰","🧁","🍪","🍩","🍫","🍬","🍭","🍮","🍯","🥞","🧇","🍧","🍨","🍦","🥧","🍓","🍒","🍑"
-      ]
-    },
-    {
-      id: "animals",
-      name: "Animals",
-      icon: "paw-outline",
-      emojis: [
-        "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐽","🐸","🐵","🙈","🙉","🙊","🐒","🐔","🐧","🐦","🐤","🐣","🐥","🦆","🦅","🦉","🐺","🐗","🐴","🦄","🐝","🪱","🐛","🦋","🐌","🐞","🐜","🪰","🪲","🪳","🕷️","🕸️","🦂","🐢","🐍","🦎","🦖","🦕","🐙","🦑","🦐","🦞","🦀","🐡","🐠","🐟","🐬","🐳","🐋","🦈","🐊","🐅","🐆","🦓","🦍","🦧","🦣","🐘","🦛","🦏","🐪","🐫","🦒","🦘","🦬","🐃","🐂","🐄","🐎","🐏","🐑","🦙","🐐","🦌","🐕","🐩","🦮","🐈","🐈‍⬛","🐓","🦃","🦤","🦚","🦜","🐙","🦩","🕊️","🐇","🦝","🦨","🦡","🦦","🦥","🐿️","🦫","🦔"
-      ]
-    },
-    {
-      id: "food",
-      name: "Food",
-      icon: "restaurant-outline",
-      emojis: [
-        "🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🫐","🍈","🍒","🍑","🥭","🍍","🥥","🥝","🍅","🍆","🥑","🥦","🥬","🥒","🌶️","🫑","🌽","🥕","🫒","🥔","🧅","🧄","🥐","🥯","🍞","🥖","🧀","🥚","🍳","🥞","🥞","🥓","🥩","🍗","🍖","🌭","🍔","🍟","Pizza","🥪","🌮","🌯","🥙","🧆","🥘","🍲","🥣","🥗","🍿","🧈","🛢️","🥫","🍱","🍙","🍛","🍜","🍝","🍢","🍣","🍤","🍥","🥮","🍡","🥟","🥠","🥡","🍦","🍧","🍨","🍩","🍪","🎂","🍰","🧁","🥧","🍫","🍬","🍭","🍮","🍯","🥛","☕","🫖","🍶","🍾","🍷","🍸","🍹","🍺","🍻","🥂","🥃","🥤"
-      ]
-    },
-    {
-      id: "vehicles",
-      name: "Travel",
-      icon: "car-outline",
-      emojis: [
-        "🚗","🚕","🚙","🚌","🚎","🏎️","🚓","🚑","🚒","🚐","🛻","🚚","🚛","🚜","🏍️","🛵","🦽","🦼","🛺","🚲","🛴","🛹","🛼","🚏","🛣️","🛤️","🛢️","⛽","🚨","🚥","🚦","🛑","🚧","⚓","⛵","🛟","🚤","🛳️","⛴️","🚢","✈️","🛩️","🛫","🛬","🪂","💺","🚁","🚟","🚠","🚡","🚀","🛸","🧳","⌛","⏳","⌚","⏰","⏱️","⏲️","🕰️","🗺️","🧭","🏔️","⛰️","🌋","🗻","🏕️","⛺","🛖","🏠","🏡","🏢","🏣","🏤","🏥","🏦","🏨","🏩","🏪","🏫","🏬","🏭","🏯","🏰","💒","🗼","🗽","⛪","🕌","🛕","🕍","⛩️","🕋","🌅","🌄","🌇","🌆","🌃","🏙️","⛲","🎡","🎢"
-      ]
-    },
-    {
-      id: "sports",
-      name: "Sports",
-      icon: "trophy-outline",
-      emojis: [
-        "⚽","🏀","🏈","⚾","🥎","👑","🏐","🏉","🎱","🪀","🏓","🏸","🏒","🥍","🏹","🎣","🤿","🥊","🥋","🛹","🛷","⛸️","🥌","🎿","🏂","🏋️","🤺","🤼","🤸","🤾","🏊","🤽","🚣","🧗","🚴","🏃","💃","🏌️","🏁","🏴","🏳️","🏳️‍🌈","🏳️‍⚧️","🏴‍☠️","🇺🇸","🇬🇧","🇨🇦","🇦🇺","🇮🇳","🇯🇵","🇩🇪","🇫🇷","🇮🇹","🇪🇸","🇧🇷","🇷🇺","🇨🇳","🇿🇦","🇲🇽","🇸🇬","🇨🇭","🇳🇱","🇸🇪","🇳🇴","🇩🇰","🇫🇮","🇳🇿","🇰🇷","🇮🇪","🇧🇪","🇦🇹","🇵🇹","🇬🇷","🇹🇷","🇸🇦","🇦🇪","🇮🇱","🇪🇬","🇳🇬","🇰🇪","🇮🇩","🇲🇾","🇹🇭"
-      ]
-    }
-  ];
 
   // Long press & reply States
   const [longPressedMessage, setLongPressedMessage] = useState<any>(null);
@@ -2297,79 +2235,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </View>
             )}
 
-            {/* 😀 CATORIZED SEARCHABLE EMOJI KEYBOARD SELECTOR PANEL */}
-            {showEmojiBar && (() => {
-              const activeCategoryObj = EMOJI_CATEGORIES.find(c => c.id === activeEmojiCategory) || EMOJI_CATEGORIES[0];
-              const filteredEmojis = activeCategoryObj.emojis.filter(emoji => {
-                if (!emojiSearchQuery) return true;
-                // Simple character match or inclusion check
-                return emoji.includes(emojiSearchQuery);
-              });
 
-              return (
-                <View style={styles.emojiPanelContainer}>
-                  {/* Search Bar */}
-                  <View style={styles.emojiSearchRow}>
-                    <Lucide name="search-outline" size={16} color="rgba(255,255,255,0.4)" />
-                    <TextInput
-                      style={styles.emojiSearchInput}
-                      placeholder="Search emojis..."
-                      placeholderTextColor="rgba(255,255,255,0.4)"
-                      value={emojiSearchQuery}
-                      onChangeText={setEmojiSearchQuery}
-                    />
-                    {emojiSearchQuery ? (
-                      <TouchableOpacity onPress={() => setEmojiSearchQuery("")}>
-                        <Lucide name="close-circle" size={16} color="rgba(255,255,255,0.4)" />
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-
-                  {/* Emojis Grid ScrollView */}
-                  <ScrollView 
-                    style={styles.emojiPanelGridScroll} 
-                    contentContainerStyle={styles.emojiPanelGridContent}
-                  >
-                    {filteredEmojis.map((emoji, idx) => (
-                      <TouchableOpacity 
-                        key={`${emoji}-${idx}`} 
-                        style={styles.emojiGridItem} 
-                        onPress={() => { 
-                          triggerHaptic("light"); 
-                          setChatReplyText((prev) => prev + emoji); 
-                        }}
-                      >
-                        <Text style={styles.emojiGridItemText}>{emoji}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-
-                  {/* Category Bottom Tabs */}
-                  <View style={styles.emojiTabsContainer}>
-                    {EMOJI_CATEGORIES.map((cat) => {
-                      const isSelected = activeEmojiCategory === cat.id;
-                      return (
-                        <TouchableOpacity
-                          key={cat.id}
-                          style={styles.emojiTabButton}
-                          onPress={() => {
-                            triggerHaptic("light");
-                            setActiveEmojiCategory(cat.id);
-                            setEmojiSearchQuery("");
-                          }}
-                        >
-                          <Lucide 
-                            name={cat.icon as any} 
-                            size={20} 
-                            color={isSelected ? "#00f5ff" : "rgba(255,255,255,0.4)"} 
-                          />
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              );
-            })()}
 
             {/* Input keyboard bar matching Instagram capsule style */}
             <View style={styles.chatInputBar}>
@@ -2401,15 +2267,6 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                     </TouchableOpacity>
                     <TouchableOpacity onPress={handleShareImage}>
                       <Lucide name="image-outline" size={20} color="#fff" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { 
-                      triggerHaptic("light"); 
-                      if (!showEmojiBar) {
-                        Keyboard.dismiss();
-                      }
-                      setShowEmojiBar(!showEmojiBar); 
-                    }}>
-                      <Lucide name={showEmojiBar ? "happy" : "happy-outline"} size={20} color="#fff" />
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => { triggerHaptic("light"); setShowAttachMenu(true); }}>
                       <Lucide name="add-circle-outline" size={21} color="#fff" />
@@ -2477,7 +2334,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                       </TouchableOpacity>
 
                       {/* Stickers */}
-                      <TouchableOpacity style={styles.attachVerticalItem} onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); setShowEmojiBar(true); }}>
+                      <TouchableOpacity style={styles.attachVerticalItem} onPress={() => { setShowAttachMenu(false); triggerHaptic("light"); Alert.alert("Stickers", "Launch sticker options."); }}>
                         <View style={[styles.attachIconBg, { backgroundColor: "#af52de22" }]}>
                           <Lucide name="happy" size={22} color="#af52de" />
                         </View>
@@ -3784,65 +3641,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 15,
     paddingHorizontal: 4,
-  },
-  emojiPanelContainer: {
-    backgroundColor: "#161618",
-    height: 280,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
-  },
-  emojiSearchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    marginHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    height: 36,
-    gap: 8,
-  },
-  emojiSearchInput: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 14,
-    padding: 0,
-  },
-  emojiPanelGridScroll: {
-    flex: 1,
-  },
-  emojiPanelGridContent: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: 12,
-    paddingBottom: 20,
-    gap: 8,
-  },
-  emojiGridItem: {
-    width: (Dimensions.get("window").width - 24 - 48) / 7, // 7 columns
-    height: 44,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emojiGridItemText: {
-    fontSize: 26,
-    color: "#fff",
-  },
-  emojiTabsContainer: {
-    flexDirection: "row",
-    height: 48,
-    backgroundColor: "#0d0d0f",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.06)",
-    justifyContent: "space-around",
-    alignItems: "center",
-  },
-  emojiTabButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    justifyContent: "center",
-    alignItems: "center",
   },
   attachVerticalList: {
     paddingHorizontal: 24,
