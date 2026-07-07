@@ -18,7 +18,8 @@ import {
   getSyncPointer,
   setSyncPointer,
   cacheConversations,
-  cacheMessages
+  cacheMessages,
+  clearDatabase
 } from "@/utils/localDb";
 import { AuraPixel } from "@/lib/auraPixel";
 import {
@@ -1487,6 +1488,7 @@ export const useStore = create<StoreState>((set, get) => ({
     get().triggerHaptic("medium");
     saveAuthBundle(AsyncStorage, null).catch(() => {});
     clearCloudUserState();
+    clearDatabase();
     set({
       currentUser: null,
       activeProfile: null,

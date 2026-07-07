@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Animated, LogBox } from "react-native";
+import { StatusBar } from "expo-status-bar";
 
 // Suppress expo-av deprecation warnings
 LogBox.ignoreLogs([
@@ -20,7 +21,8 @@ import {
   TextInput,
   ScrollView,
   Modal,
-  Linking
+  Linking,
+  BackHandler
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { createAudioPlayer } from "expo-audio";
@@ -609,6 +611,20 @@ export default function ReelsScreen() {
     }
   }, [currentUser, authHydrated]);
 
+  // Handle hardware back button press to close DMs drawer cleanly on Android
+  useEffect(() => {
+    if (showDMs) {
+      const onBackPress = () => {
+        setShowDMs(false);
+        setChatConversationId(null);
+        setActiveFeedTab("posts");
+        return true; // Intercept and block default back action
+      };
+      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => subscription.remove();
+    }
+  }, [showDMs]);
+
   // 🔔 Push notification interaction click listener & deep-linking
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -846,12 +862,12 @@ export default function ReelsScreen() {
   const [onboardGstExempt, setOnboardGstExempt] = useState(false);
   const [onboardTaxId, setOnboardTaxId] = useState("");
 
-  // Trigger onboarding modal after login/signup if user hasn't onboarded
+  // Trigger onboarding modal after login/signup if user hasn't onboarded or has no profiles
   useEffect(() => {
-    if (currentUser && currentUser.isOnboarded === false) {
+    if (currentUser && (currentUser.isOnboarded === false || (authHydrated && userProfiles.length === 0))) {
       setShowOnboardModal(true);
     }
-  }, [currentUser]);
+  }, [currentUser, userProfiles, authHydrated]);
 
   const handleSubmitOnboarding = async (accountType: "PERSONAL" | "INFLUENCER" | "BUSINESS") => {
     if (!currentUser) return;
@@ -2291,6 +2307,7 @@ export default function ReelsScreen() {
 
   return (
     <View style={[styles.container, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }]}>
+      <StatusBar style={showDMs ? "light" : (activeFeedTab === "posts" ? "dark" : "light")} />
       <SafeAreaView style={[styles.safeAreaContainer, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }, { marginBottom: bottomBarHeight }]} edges={["top"]}>
         
         {/* 🏔️ TOP HEADER ROW */}
@@ -2746,6 +2763,8 @@ export default function ReelsScreen() {
         onClose={() => {
           setShowDMs(false);
           setChatConversationId(null);
+          setActiveFeedTab("posts");
+          setIsChatActive(false);
         }}
         bottomBarHeight={bottomBarHeight}
         activeMaisonId={activeMaisonId}
@@ -2764,7 +2783,7 @@ export default function ReelsScreen() {
 
       {/* 💬 Individual conversation is now handled inside ChatDrawer */}
 
-      {!showDMs && (
+      {!(showDMs && isChatActive) && (
         <AuraBottomNav activeTab={bottomNavTab} homeTabHandlers={homeTabHandlers} />
       )}
 

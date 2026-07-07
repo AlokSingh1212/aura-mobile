@@ -40,6 +40,7 @@ import {
   type AlignSettings,
   type ReelLength,
 } from "@/constants/reelStudio";
+import { API_HOST } from "@/constants/api";
 
 const { height, width } = Dimensions.get("window");
 
@@ -133,6 +134,14 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
     return subscribeExportJob(setExportJob);
   }, [visible]);
 
+  // Trigger background wakeup ping to Render worker when camera opens
+  useEffect(() => {
+    if (visible) {
+      fetch(`${API_HOST}/api/mobile/media/compose`)
+        .catch(() => {});
+    }
+  }, [visible]);
+
   useEffect(() => {
     const setupAudioMode = async () => {
       try {
@@ -150,9 +159,7 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
 
   useEffect(() => {
     if (!visible) return;
-    fetchAudioCatalog().then(({ tracks }) => {
-      if (tracks[0] && !selectedAudio) setSelectedAudio(tracks[0]);
-    });
+    fetchAudioCatalog().catch(() => {});
   }, [visible]);
 
   useEffect(() => {
@@ -255,7 +262,10 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
     }, 200);
 
     try {
-      const result = await cameraRef.current.recordAsync({ maxDuration: selectedLength });
+      const result = await cameraRef.current.recordAsync({ 
+        maxDuration: selectedLength,
+        videoQuality: "1080p",
+      });
       if (progressTimerRef.current) clearInterval(progressTimerRef.current);
       setIsRecording(false);
       setRecordingProgress(0);
@@ -372,6 +382,7 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
       onClose();
       Alert.alert("Reel published", "Music, filters, and clips are baked into your reel.");
     } catch (err) {
+      console.error("[CameraStudio] publish failed:", err);
       Alert.alert("Publish failed", err instanceof Error ? err.message : "Could not upload your reel.");
     } finally {
       setIsPublishing(false);

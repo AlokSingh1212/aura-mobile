@@ -1,4 +1,4 @@
-import { readAsStringAsync, getInfoAsync } from "expo-file-system/legacy";
+import { readAsStringAsync, getInfoAsync, uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
 import { API_HOST } from "@/constants/api";
 import { authHeaders } from "@/lib/apiClient";
 
@@ -8,19 +8,6 @@ function isRemoteUrl(uri: string): boolean {
     uri.startsWith("https://") ||
     uri.startsWith("data:")
   );
-}
-
-async function parseUploadResponse(res: Response): Promise<{ success?: boolean; url?: string; error?: string }> {
-  const text = await res.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(
-      res.ok
-        ? "Server returned an invalid response."
-        : `Upload failed (${res.status}): ${text.slice(0, 120) || "no details"}`
-    );
-  }
 }
 
 /** Read a local device URI as base64 (works with Expo Go + gallery paths). */
@@ -42,44 +29,65 @@ export async function readLocalImageBase64(localUri: string): Promise<string> {
   return base64;
 }
 
-/** Upload a gallery/camera URI to the API CDN. Returns a public https or data URL. */
+/** Upload a gallery/camera URI directly to Vercel Blob using binary streaming. */
 export async function uploadMediaFromUri(
   localUri: string,
   purpose: "avatar" | "story" | "post" | "reel" = "post"
 ): Promise<string> {
   const trimmed = localUri?.trim();
   if (!trimmed) {
-    throw new Error("No image selected.");
+    throw new Error("No media selected.");
   }
   if (isRemoteUrl(trimmed)) {
     return trimmed;
   }
 
   const isVideo = purpose === "reel" || /\.(mp4|mov|m4v)$/i.test(trimmed);
-  const base64 = await readAsStringAsync(trimmed, { encoding: "base64" });
-  if (!base64) {
-    throw new Error("Selected media has no readable data.");
-  }
   const contentType = isVideo ? "video/mp4" : "image/jpeg";
   const ext = isVideo ? "mp4" : "jpg";
   const fileName = `aura-${purpose}-${Date.now()}.${ext}`;
 
-  const res = await fetch(`${API_HOST}/api/mobile/media/upload`, {
+  // 1. Get direct client token from Next.js server
+  const tokenRes = await fetch(`${API_HOST}/api/mobile/media/upload/token`, {
     method: "POST",
-    headers: authHeaders({ Accept: "application/json" }),
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({
-      base64,
+      pathname: fileName,
       contentType,
-      fileName,
     }),
   });
 
-  const data = await parseUploadResponse(res);
-  if (res.status === 401) {
-    throw new Error(data.error || "Session expired. Please sign in again.");
+  const tokenData = await tokenRes.json();
+  if (!tokenRes.ok || !tokenData.success) {
+    throw new Error(tokenData.error || "Could not retrieve upload token from server.");
   }
-  if (!data.success || !data.url) {
-    throw new Error(data.error || "Could not upload media to server.");
+
+  const { clientToken, uploadUrl } = tokenData;
+
+  // 2. Upload file directly to Vercel Blob as binary content (bypassing Vercel's payload limit)
+  const uploadResult = await uploadAsync(uploadUrl, trimmed, {
+    httpMethod: "PUT",
+    uploadType: FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      "Authorization": `Bearer ${clientToken}`,
+      "Content-Type": contentType,
+      "x-api-version": "12",
+    },
+  });
+
+  if (uploadResult.status < 200 || uploadResult.status >= 300) {
+    throw new Error(`Direct upload failed (${uploadResult.status}): ${uploadResult.body || "no details"}`);
   }
-  return String(data.url);
+
+  try {
+    const resData = JSON.parse(uploadResult.body);
+    if (resData && resData.url) {
+      return resData.url;
+    }
+  } catch {
+    /* fallback if JSON parsing fails but request succeeded */
+  }
+
+  return uploadUrl;
+
 }

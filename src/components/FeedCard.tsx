@@ -59,6 +59,48 @@ export interface FeedCardProps {
   onCtaPress?: (ctaType: string, metadata: any) => void;
 }
 
+interface ActiveVideoPlayerProps {
+  videoSource: string;
+  feedMuted: boolean;
+  isPlayed: boolean;
+  isScreenFocused: boolean;
+}
+
+function ActiveVideoPlayer({ videoSource, feedMuted, isPlayed, isScreenFocused }: ActiveVideoPlayerProps) {
+  const player = useVideoPlayer(videoSource, (p) => {
+    p.loop = true;
+    p.muted = feedMuted;
+    if (isPlayed && isScreenFocused) {
+      p.play();
+    } else {
+      p.pause();
+    }
+  });
+
+  useEffect(() => {
+    player.muted = feedMuted;
+  }, [feedMuted, player]);
+
+  useEffect(() => {
+    if (isPlayed && isScreenFocused) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [isPlayed, isScreenFocused, player]);
+
+  return (
+    <VideoView
+      player={player}
+      style={StyleSheet.absoluteFillObject}
+      contentFit="cover"
+      nativeControls={false}
+      allowsFullscreen={false}
+      allowsPictureInPicture={false}
+    />
+  );
+}
+
 export const FeedCard: React.FC<FeedCardProps> = ({
   item,
   index,
@@ -218,29 +260,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
     };
   }, [isAdjacent, videoUrl]);
 
-  const player = useVideoPlayer(videoSource, (p) => {
-    p.loop = true;
-    p.muted = feedMuted;
-    if (isPlayed && isScreenFocused) {
-      p.play();
-    } else {
-      p.pause();
-    }
-  });
-
-  // Sync mute setting dynamically
-  useEffect(() => {
-    player.muted = feedMuted;
-  }, [feedMuted, player]);
-
-  // Sync play/pause setting based on visibility and screen focus
-  useEffect(() => {
-    if (isPlayed && isScreenFocused) {
-      player.play();
-    } else {
-      player.pause();
-    }
-  }, [isPlayed, isScreenFocused, player]);
+  // Video player is now lazily managed by ActiveVideoPlayer sub-component to prevent OOM
 
   return (
     <View style={[styles.reelContainer, { height: reelHeight }]}>
@@ -258,14 +278,12 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {isAdjacent && (
-            <VideoView
-              player={player}
-              style={StyleSheet.absoluteFillObject}
-              contentFit="cover"
-              nativeControls={false}
-              allowsFullscreen={false}
-              allowsPictureInPicture={false}
+          {isAdjacent && videoSource && (
+            <ActiveVideoPlayer
+              videoSource={videoSource}
+              feedMuted={feedMuted}
+              isPlayed={isPlayed}
+              isScreenFocused={isScreenFocused}
             />
           )}
         </Animated.View>

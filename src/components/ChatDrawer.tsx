@@ -1590,7 +1590,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
 
   return (
     <>
-      <View style={[styles.dmSlidePanel, { bottom: 0 }]}>
+      <View style={[styles.dmSlidePanel, { bottom: activeChat ? 0 : bottomBarHeight }]}>
         <SafeAreaView style={styles.dmSafeArea}>
           {/* DM Top Bar */}
           <View style={styles.dmHeaderRow}>
@@ -1730,7 +1730,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </View>
 
               {/* Thread list */}
-              {loadingChats ? (
+              {loadingChats && conversations.length === 0 ? (
                 <ActivityIndicator size="small" color="#00f5ff" style={{ marginTop: 24 }} />
               ) : (
                 <ScrollView style={styles.dmThreadsScroll} showsVerticalScrollIndicator={false}>

@@ -135,6 +135,22 @@ export default function ViewProfileScreen() {
   const [promptValue, setPromptValue] = useState("");
   const [promptOnSubmit, setPromptOnSubmit] = useState<((val: string) => void) | null>(null);
 
+  const [prevUsername, setPrevUsername] = useState<string | null>(null);
+  if (username !== prevUsername) {
+    setPrevUsername(username);
+    setProfilePosts([]);
+    setTags([]);
+    setSuggestedProfiles([]);
+    setNetworkUsers([]);
+    setShowSuggested(false);
+    setShowNetworkModal(false);
+    setShowMessageSheet(false);
+    setShowContactSheet(false);
+    setActiveGridTab("posts");
+    setFollowLoading(false);
+    setLoadingPosts(false);
+  }
+
   const showCustomPrompt = (title: string, desc: string, placeholder: string, onSubmit: (val: string) => void) => {
     setPromptTitle(title);
     setPromptDesc(desc);
@@ -272,7 +288,13 @@ export default function ViewProfileScreen() {
     };
   }, [username, activeProfile?.id]);
 
-  const isCorrectProfile = !!(rawViewingProfile && rawViewingProfile.username?.toLowerCase() === username?.toLowerCase());
+  const normalizeUsername = (u: string | null | undefined) => 
+    u?.toLowerCase().replace(/[^a-z0-9]/g, "") || "";
+
+  const isCorrectProfile = !!(
+    rawViewingProfile && 
+    normalizeUsername(rawViewingProfile.username) === normalizeUsername(username)
+  );
   const viewingProfile = isCorrectProfile ? rawViewingProfile : (username ? {
     id: "temp_id",
     profileId: "temp_id",

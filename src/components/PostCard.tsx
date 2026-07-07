@@ -26,6 +26,34 @@ export interface PostCardProps {
   handleThreeDotsPress: (item: any) => void;
 }
 
+interface PostVideoPlayerProps {
+  videoUrl: string;
+  feedMuted: boolean;
+}
+
+function PostVideoPlayer({ videoUrl, feedMuted }: PostVideoPlayerProps) {
+  const player = useVideoPlayer(videoUrl, (p) => {
+    p.loop = true;
+    p.muted = feedMuted;
+    p.play();
+  });
+
+  useEffect(() => {
+    player.muted = feedMuted;
+  }, [feedMuted, player]);
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.photoCardImage}
+      contentFit="cover"
+      nativeControls={false}
+      allowsFullscreen={false}
+      allowsPictureInPicture={false}
+    />
+  );
+}
+
 export const PostCard: React.FC<PostCardProps> = ({
   item,
   currentMaisonName,
@@ -47,15 +75,7 @@ export const PostCard: React.FC<PostCardProps> = ({
   const mockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4";
   const videoUrl = item.url && item.url.endsWith(".mp4") ? item.url : mockVideoUrl;
 
-  const player = useVideoPlayer(item.isVideo ? videoUrl : null, (p) => {
-    p.loop = true;
-    p.muted = feedMuted;
-    p.play();
-  });
-
-  useEffect(() => {
-    player.muted = feedMuted;
-  }, [feedMuted, player]);
+  // Video player is now lazily managed by PostVideoPlayer sub-component to prevent OOM
 
   const img = item.url || item.thumbnail || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400";
 
@@ -109,14 +129,7 @@ export const PostCard: React.FC<PostCardProps> = ({
 
       {item.isVideo ? (
         <View style={{ position: "relative" }}>
-          <VideoView
-            player={player}
-            style={styles.photoCardImage}
-            contentFit="cover"
-            nativeControls={false}
-            allowsFullscreen={false}
-            allowsPictureInPicture={false}
-          />
+          <PostVideoPlayer videoUrl={videoUrl} feedMuted={feedMuted} />
           <TouchableOpacity 
             style={styles.feedVolumeBtn} 
             onPress={() => {

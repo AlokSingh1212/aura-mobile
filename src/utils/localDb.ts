@@ -426,3 +426,19 @@ export const cacheLayoutHeight = (id: string, height: number) => {
     db.runSync("INSERT OR REPLACE INTO layout_caches (id, height) VALUES (?, ?);", [id, height]);
   } catch {}
 };
+
+export const clearDatabase = () => {
+  if (!db) return;
+  try {
+    db.execSync("DELETE FROM feed_items;");
+    db.execSync("DELETE FROM products;");
+    db.execSync("DELETE FROM messages;");
+    db.execSync("DELETE FROM pending_actions;");
+    db.execSync("DELETE FROM conversations;");
+    db.execSync("DELETE FROM sync_pointers;");
+    db.execSync("DELETE FROM layout_caches;");
+    console.log("Local SQLite database cleared successfully.");
+  } catch (err) {
+    console.error("Failed to clear local SQLite database:", err);
+  }
+};
