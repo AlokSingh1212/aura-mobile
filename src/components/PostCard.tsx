@@ -165,7 +165,7 @@ export const PostCard: React.FC<PostCardProps> = ({
         {formatCompactNumber(item.likesCount ? (isLiked ? item.likesCount + 1 : item.likesCount) : 104)} likes
       </Text>
       <Text style={styles.photoCardCaption}>
-        <Text style={{ fontWeight: "bold" }}>{(item.profile?.name || item.user?.name || currentMaisonName).toLowerCase().replace(/\s+/g, "")} </Text>
+        <Text style={{ fontWeight: "bold" }}>{((item.profile?.name || item.user?.name || currentMaisonName || "Aura")).toLowerCase()?.replace(/\s+/g, "")} </Text>
         {item.caption || "Atelier Masterpiece Collection."}
       </Text>
     </View>

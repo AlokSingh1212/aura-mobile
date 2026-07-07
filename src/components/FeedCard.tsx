@@ -394,10 +394,11 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           >
             <View style={[styles.avatar, { overflow: "hidden" }]}>
               {(() => {
-                const isCurrentUser = (item.profile?.username === activeProfile?.username) ||
-                                      (item.profile?.id === activeProfile?.id) ||
-                                      (item.user?.id === currentUser?.id) ||
-                                      (item.profile?.name?.toLowerCase().replace(/\s+/g, "") === activeProfile?.name?.toLowerCase().replace(/\s+/g, ""));
+                const isCurrentUser = (item.profile?.username && item.profile?.username === activeProfile?.username) ||
+                                      (item.profile?.id && item.profile?.id === activeProfile?.id) ||
+                                      (item.user?.id && item.user?.id === currentUser?.id) ||
+                                      (item.profile?.name && item.profile?.name?.toLowerCase()?.replace(/\s+/g, "") === activeProfile?.name?.toLowerCase()?.replace(/\s+/g, ""));
+
 
                 const logoUrl = isCurrentUser
                   ? (activeProfile?.logo || currentUser?.avatar)
