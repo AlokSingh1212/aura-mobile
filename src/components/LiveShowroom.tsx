@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  PermissionsAndroid,
 } from "react-native";
 import { Image } from "expo-image";
 import Lucide from "@expo/vector-icons/Ionicons";
@@ -290,6 +291,24 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
   }, [visible, activeSessionId, activeLiveMode]);
 
   const initWebRTCEngine = async (customAppId?: string, customToken?: string, customChannel?: string) => {
+    if (Platform.OS === "android" && activeLiveMode === "broadcaster") {
+      try {
+        const granted = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ]);
+        if (
+          granted["android.permission.CAMERA"] !== PermissionsAndroid.RESULTS.GRANTED ||
+          granted["android.permission.RECORD_AUDIO"] !== PermissionsAndroid.RESULTS.GRANTED
+        ) {
+          Alert.alert("Permission Denied", "Camera and Audio permissions are required to start a live broadcast.");
+          return;
+        }
+      } catch (err) {
+        console.warn("Permission request failed:", err);
+      }
+    }
+
     if (!createRtcEngine) {
       // Running in simulation fallback mode
       setJoined(true);
@@ -351,10 +370,12 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
       // 3. Configure publisher/subscriber settings based on active mode
       if (activeLiveMode === "broadcaster") {
         await engine.enableVideo();
+        await engine.enableAudio();
         await engine.startPreview();
         await engine.setClientRole(ClientRoleType.CLIENT_ROLE_BROADCASTER);
       } else {
         await engine.enableVideo();
+        await engine.enableAudio();
         await engine.setClientRole(ClientRoleType.CLIENT_ROLE_AUDIENCE);
       }
 
