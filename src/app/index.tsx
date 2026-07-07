@@ -711,6 +711,19 @@ export default function ReelsScreen() {
   }, [params]);
   const [showLiveShowroom, setShowLiveShowroom] = useState(false);
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const myLiveSession = activeSessions.find(
+    (session) =>
+      session.maisonId === activeProfile?.username ||
+      session.maisonId === currentUser?.id ||
+      (activeProfile?.name && session.maisonName === activeProfile?.name)
+  );
+  const isCurrentlyLive = !!myLiveSession;
+  const otherLiveSessions = activeSessions.filter(
+    (session) =>
+      session.maisonId !== activeProfile?.username &&
+      session.maisonId !== currentUser?.id &&
+      !(activeProfile?.name && session.maisonName === activeProfile?.name)
+  );
   const [showroomMode, setShowroomMode] = useState<"lobby" | "viewer">("lobby");
   const [showroomMaisonId, setShowroomMaisonId] = useState("rare_raven");
   const [showroomMaisonName, setShowroomMaisonName] = useState("Rare Raven");
@@ -2462,7 +2475,13 @@ export default function ReelsScreen() {
                 style={{ alignItems: "center" }}
                 onPress={() => {
                   triggerHaptic("medium");
-                  if (yourStoryHasSlides && yourStoryNode) {
+                  if (isCurrentlyLive && myLiveSession) {
+                    setShowroomMode("lobby");
+                    setShowroomMaisonId(myLiveSession.maisonId);
+                    setShowroomMaisonName(myLiveSession.maisonName);
+                    setShowroomSessionId(myLiveSession.id);
+                    setShowLiveShowroom(true);
+                  } else if (yourStoryHasSlides && yourStoryNode) {
                     setSelectedStoriesGroup(yourStoryNode);
                     setActiveSlideIndex(0);
                     setStoryProgress(0);
@@ -2472,7 +2491,40 @@ export default function ReelsScreen() {
                 }}
               >
                 <View style={{ position: "relative" }}>
-                  {yourStoryHasSlides ? (
+                  {isCurrentlyLive ? (
+                    <LinearGradient
+                      colors={["#FF2D55", "#FF9500"]}
+                      style={{
+                        width: 66,
+                        height: 66,
+                        borderRadius: 33,
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
+                    >
+                      <View style={{
+                        width: 60,
+                        height: 60,
+                        borderRadius: 30,
+                        backgroundColor: "#FFFFFF",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        overflow: "hidden",
+                      }}>
+                        {profileLogo ? (
+                          <Image 
+                            source={{ uri: profileLogo }} 
+                            key={profileLogo.slice(0, 64)}
+                            style={{ width: 54, height: 54, borderRadius: 27 }} 
+                          />
+                        ) : (
+                          <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: "#111", alignItems: "center", justifyContent: "center" }}>
+                            <Text style={{ color: "#fff", fontSize: 18, fontWeight: "700" }}>{profileTabInitial}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </LinearGradient>
+                  ) : yourStoryHasSlides ? (
                     <LinearGradient
                       colors={["#fb923c", "#d946ef", "#8b5cf6"]}
                       style={{
@@ -2516,7 +2568,23 @@ export default function ReelsScreen() {
                       <Text style={{ color: "#fff", fontSize: 22, fontWeight: "700" }}>{profileTabInitial}</Text>
                     </View>
                   )}
-                  {!yourStoryHasSlides ? (
+                  {isCurrentlyLive && (
+                    <View style={{
+                      position: "absolute",
+                      bottom: 0,
+                      backgroundColor: "#FF3B30",
+                      paddingHorizontal: 5,
+                      paddingVertical: 1.5,
+                      borderRadius: 3,
+                      borderWidth: 1.5,
+                      borderColor: "#FFFFFF",
+                      alignSelf: "center",
+                      zIndex: 2,
+                    }}>
+                      <Text style={{ color: "#FFFFFF", fontSize: 8, fontWeight: "bold" }}>LIVE</Text>
+                    </View>
+                  )}
+                  {!yourStoryHasSlides && !isCurrentlyLive ? (
                   <View style={{
                     position: "absolute",
                     bottom: 0,
@@ -2537,8 +2605,8 @@ export default function ReelsScreen() {
                 <Text style={{ fontSize: 11, color: "#8E8E93", marginTop: 6, fontWeight: "500" }}>Your Story</Text>
               </TouchableOpacity>
 
-              {/* Live Streams (activeSessions) */}
-              {activeSessions.map((session) => {
+              {/* Live Streams (otherLiveSessions) */}
+              {otherLiveSessions.map((session) => {
                 const hostAvatar = "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&w=150";
                 return (
                   <TouchableOpacity 
