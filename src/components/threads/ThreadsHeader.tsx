@@ -36,14 +36,9 @@ export function ThreadsHeader({
           <Lucide name="chevron-back" size={24} color={T.text} />
         </TouchableOpacity>
 
-        <LinearGradient
-          colors={[...STORY_GRADIENT.colors]}
-          start={STORY_GRADIENT.start}
-          end={STORY_GRADIENT.end}
-          style={styles.logoGradient}
-        >
-          <AuraThreadsLogo size={21} color="#ffffff" />
-        </LinearGradient>
+        <View style={styles.logoGradient}>
+          <AuraThreadsLogo size={26} color="#d4af37" />
+        </View>
 
         <TouchableOpacity
           style={styles.iconBtn}
@@ -52,14 +47,7 @@ export function ThreadsHeader({
             onCompose();
           }}
         >
-          <LinearGradient
-            colors={[...STORY_GRADIENT.colors]}
-            start={STORY_GRADIENT.start}
-            end={STORY_GRADIENT.end}
-            style={styles.composeIconBg}
-          >
-            <Lucide name="create-outline" size={20} color="#fff" />
-          </LinearGradient>
+          <Lucide name="create-outline" size={24} color="#d4af37" />
         </TouchableOpacity>
       </View>
 
