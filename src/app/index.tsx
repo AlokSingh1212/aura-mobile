@@ -1638,7 +1638,18 @@ export default function ReelsScreen() {
     }
 
     return filterContentItems(
-      filterSocialMediaItems(combined, socialGraph, activeProfile?.id)
+      filterSocialMediaItems(
+        combined,
+        socialGraph || {
+          blocked: [],
+          muted: [],
+          closeFriends: [],
+          favorites: [],
+          archived: [],
+          hiddenPostIds: [],
+        },
+        activeProfile?.id
+      )
     );
   }, [tappedReelItem, localReels, stories, simulatedStories, feedItems, reelsSponsoredAd, currentUser?.id, socialGraph, socialGraphVersion, activeProfile?.id]);
 
