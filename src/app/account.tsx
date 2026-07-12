@@ -707,7 +707,8 @@ export default function AccountScreen() {
         thumbnail: publicUrl,
         caption: storyCaption,
         location: "Atelier Flagship",
-        music: storyOnly ? "STORY_ONLY" : "Cinematic Luxury Waves",
+        music: storyOnly ? "STORY_ONLY" : isVideo ? "AURA Original Sound" : "Cinematic Luxury Waves",
+        type: storyOnly ? "STORY" : isVideo ? "CREATOR_COMMERCE" : "CREATOR_POST",
       }),
     });
     const data = await res.json();
@@ -770,7 +771,8 @@ export default function AccountScreen() {
     mediaUploadInFlight.current = true;
     try {
       const publicUrl = await uploadMediaFromUri(url, "story");
-      await publishStoryWithUrl(publicUrl, storyOnly, customCaption);
+      const isVideo = /\.(mp4|mov|m4v|webm)(\?|$)/i.test(publicUrl);
+      await publishStoryWithUrl(publicUrl, storyOnly, customCaption, isVideo);
       Alert.alert(
         storyOnly ? "Story published" : "Story + post published",
         storyOnly
@@ -1449,12 +1451,13 @@ export default function AccountScreen() {
       if (category === "Personal Profile") {
         triggerHaptic("success");
         const wasStoryAndPost = isPublishingStoryAndPost;
+        const isVideo = /\.(mp4|mov|m4v|webm)(\?|$)/i.test(publicUrl);
         if (wasStoryAndPost) {
-          await publishStoryWithUrl(publicUrl, true, postTitle);
-          await publishStoryWithUrl(publicUrl, false, postTitle);
+          await publishStoryWithUrl(publicUrl, true, postTitle, isVideo);
+          await publishStoryWithUrl(publicUrl, false, postTitle, isVideo);
           setIsPublishingStoryAndPost(false);
         } else {
-          await publishStoryWithUrl(publicUrl, false, postTitle);
+          await publishStoryWithUrl(publicUrl, false, postTitle, isVideo);
         }
 
         Alert.alert(
@@ -1695,7 +1698,7 @@ export default function AccountScreen() {
                         text: "🧵 Open AURA Threads Hub",
                         onPress: () => {
                           triggerHaptic("success");
-                          Linking.openURL("https://threads.net");
+                          router.push("/threads" as any);
                         }
                       },
                       {
@@ -1865,7 +1868,7 @@ export default function AccountScreen() {
                 {/* Threads pill badge exactly matching Instagram screenshot */}
                 <TouchableOpacity 
                   style={styles.threadsPill} 
-                  onPress={() => { triggerHaptic("light"); openExternalUrl(`https://threads.net/@${username}`); }}
+                  onPress={() => { triggerHaptic("light"); router.push("/threads" as any); }}
                 >
                   <Text style={styles.threadsIcon}>@</Text>
                   <Text style={styles.threadsPillText}>{username}</Text>
@@ -1895,18 +1898,8 @@ export default function AccountScreen() {
               <TouchableOpacity 
                 style={styles.dashboardCard}
                 onPress={() => { 
-                  triggerHaptic("medium"); 
-                  if (isCreatorProfile) {
-                    Alert.alert(
-                      "Creator Insights", 
-                      "AURA Creator Influence Matrix:\n\n• Aura Score: 9.8 (Top 1.2%)\n• Direct Commission Earned: ₹24,800\n• Brand Deal Campaign: Atelier Paris (Pending Approval)\n• Viral Rank: #42 Fashion Stylist"
-                    );
-                  } else {
-                    Alert.alert(
-                      "Professional Dashboard", 
-                      "AURA Brand Merchant analytics:\n\n• Total Sales: ₹1,85,200\n• Active Inventory Items: 6 boutique items\n• Payouts: ₹85,200 (Escrow Lock settled)\n• Active Promotions: Quiet Luxury Campaign"
-                    );
-                  }
+                  triggerHaptic("medium");
+                  router.push("/account/pro-insights" as any);
                 }}
               >
                 <View>
