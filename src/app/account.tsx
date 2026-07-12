@@ -1651,7 +1651,7 @@ export default function AccountScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} collapsable={false}>
       <StatusBar barStyle="light-content" backgroundColor="#080415" />
       <SafeAreaView style={[styles.safeArea, { marginBottom: 62 + insets.bottom }]} edges={["top", "left", "right"]}>
         
@@ -1685,7 +1685,7 @@ export default function AccountScreen() {
                   router.push("/threads" as any);
                 }}
               >
-                <Lucide name="logo-instagram" size={24} color="#ffffff" />
+                <Lucide name="logo-threads" size={24} color="#ffffff" />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => { triggerHaptic("medium"); router.push("/settings" as any); }}>
                 <Lucide name="menu-outline" size={28} color="#ffffff" />
