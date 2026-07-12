@@ -2,12 +2,12 @@ import React, { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { router } from "expo-router";
 import { CATEGORIES_LAYOUT } from "@/constants/categoriesLayout";
-import { SHOP_CATEGORIES, AURA_DISCOVERY_TILES } from "@/constants/brandCategories";
+import { AURA_DISCOVERY_TILES } from "@/constants/brandCategories";
 import {
-  getSubcategoriesForShopCategory,
-  productsForSubcategory,
-  type ShopSubcategory,
-} from "@/lib/shopCategoryMap";
+  buildDynamicShopCatalog,
+  filterProductsByDynamicCategory,
+  type DynamicCategory,
+} from "@/lib/dynamicShopCatalog";
 import { ShopSection } from "@/components/shop/ShopSection";
 import { PopularStoresRow, ProductLaunchGrid } from "@/components/shop/CategoriesContentBlocks";
 import { useStore } from "@/store/useStore";
@@ -18,25 +18,46 @@ type Props = {
   onViewAll: (slug: string, subcategoryId?: string) => void;
 };
 
-const FOR_YOU_MAX_SECTIONS = 8;
-
-/** Right pane: subcategory sections with live products for the selected category. */
+/** Right pane: dynamic subcategory sections from live product catalog. */
 export function CategoriesMainPanel({ products, selectedSlug, onViewAll }: Props) {
-  const cat = SHOP_CATEGORIES.find((c) => c.slug === selectedSlug) || SHOP_CATEGORIES[0];
-  const subcategories = getSubcategoriesForShopCategory(cat.name);
+  const catalog = useMemo(() => buildDynamicShopCatalog(products), [products]);
+  const cat: DynamicCategory =
+    catalog.find((c) => c.slug === selectedSlug) || catalog[0];
 
   const sections = useMemo(() => {
-    const mapped = subcategories.map((sub) => ({
-      sub,
-      items: productsForSubcategory(products, sub, cat.name),
-    }));
-
-    if (cat.name === "For You") {
-      return mapped.filter((row) => row.items.length > 0).slice(0, FOR_YOU_MAX_SECTIONS);
+    if (cat.slug === "for-you") {
+      return catalog
+        .filter((c) => c.slug !== "for-you" && c.count > 0)
+        .slice(0, 8)
+        .flatMap((root) => {
+          const topSubs = root.subcategories.slice(0, 2);
+          return topSubs.map((sub) => ({
+            key: `${root.slug}-${sub.id}`,
+            title: `${root.label} · ${sub.label}`,
+            slug: root.slug,
+            subId: sub.id,
+            items: filterProductsByDynamicCategory(
+              products,
+              root.slug,
+              sub.id === "all" ? undefined : sub.id
+            ).slice(0, 6),
+          }));
+        })
+        .filter((row) => row.items.length > 0);
     }
 
-    return mapped;
-  }, [subcategories, products, cat.name]);
+    return cat.subcategories.map((sub) => ({
+      key: `${cat.slug}-${sub.id}`,
+      title: sub.label,
+      slug: cat.slug,
+      subId: sub.id,
+      items: filterProductsByDynamicCategory(
+        products,
+        cat.slug,
+        sub.id === "all" ? undefined : sub.id
+      ),
+    }));
+  }, [cat, catalog, products]);
 
   return (
     <View style={styles.panel}>
@@ -44,20 +65,33 @@ export function CategoriesMainPanel({ products, selectedSlug, onViewAll }: Props
         <PopularStoresRow />
       </ShopSection>
 
-      {sections.map(({ sub, items }) => (
-        <SubcategorySection
-          key={`${sub.productCategoryId}-${sub.id}`}
-          sub={sub}
-          products={items}
-          onViewAll={() => onViewAll(cat.slug, sub.id)}
-        />
+      <TouchableOpacity
+        style={styles.allProductsBanner}
+        onPress={() => router.push("/shop/all-products" as any)}
+        activeOpacity={0.9}
+      >
+        <Text style={styles.allProductsTitle}>Browse all products</Text>
+        <Text style={styles.allProductsSub}>Quick shop · {products.length} items</Text>
+      </TouchableOpacity>
+
+      {sections.map(({ key, title, slug, subId, items }) => (
+        <ShopSection key={key} title={title}>
+          {items.length > 0 ? (
+            <ProductLaunchGrid
+              products={items}
+              onViewAll={() => onViewAll(slug, subId === "all" ? undefined : subId)}
+            />
+          ) : (
+            <TouchableEmptySubcategory label={title} onViewAll={() => onViewAll(slug, subId)} />
+          )}
+        </ShopSection>
       ))}
 
-      {sections.every((s) => s.items.length === 0) && cat.name !== "For You" && (
+      {sections.every((s) => s.items.length === 0) && cat.slug !== "for-you" && (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No products yet</Text>
           <Text style={styles.emptySub}>
-            Products listed under {cat.name} will appear in each subcategory here.
+            Products listed under {cat.label} will appear in each subcategory here.
           </Text>
         </View>
       )}
@@ -66,26 +100,6 @@ export function CategoriesMainPanel({ products, selectedSlug, onViewAll }: Props
         <HaveYouTriedRow />
       </ShopSection>
     </View>
-  );
-}
-
-function SubcategorySection({
-  sub,
-  products,
-  onViewAll,
-}: {
-  sub: ShopSubcategory;
-  products: any[];
-  onViewAll: () => void;
-}) {
-  return (
-    <ShopSection title={sub.label}>
-      {products.length > 0 ? (
-        <ProductLaunchGrid products={products} onViewAll={onViewAll} />
-      ) : (
-        <TouchableEmptySubcategory label={sub.label} onViewAll={onViewAll} />
-      )}
-    </ShopSection>
   );
 }
 
@@ -153,6 +167,23 @@ const styles = StyleSheet.create({
     padding: CATEGORIES_LAYOUT.contentPadding,
     paddingBottom: 100,
     backgroundColor: "#FFFFFF",
+  },
+  allProductsBanner: {
+    backgroundColor: "#121212",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+  },
+  allProductsTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  allProductsSub: {
+    color: "#C6FF00",
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: "600",
   },
   brandsRow: {
     flexDirection: "row",

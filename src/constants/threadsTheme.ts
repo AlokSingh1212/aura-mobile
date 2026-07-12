@@ -1,0 +1,15 @@
+export const THREADS_THEME = {
+  bg: "#080415",
+  surface: "#0b071e",
+  surfaceElevated: "#120a28",
+  border: "rgba(0, 245, 255, 0.12)",
+  borderSubtle: "rgba(255,255,255,0.06)",
+  primary: "#00f5ff",
+  primaryMuted: "rgba(0, 245, 255, 0.15)",
+  text: "#ffffff",
+  textSecondary: "#a8b2c1",
+  textMuted: "#6b7280",
+  danger: "#ff4d6d",
+  like: "#ff4d6d",
+  elite: "#00f5ff",
+} as const;

@@ -71,6 +71,24 @@ export default function ShopOrdersScreen() {
                 : "—"}
             </Text>
             <Text style={styles.total}>{formatPrice(item.totalPrice || 0)}</Text>
+            <TouchableOpacity
+              style={styles.returnBtn}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                triggerHaptic("light");
+                const firstItem = item.items?.[0];
+                router.push({
+                  pathname: "/account/returns/request",
+                  params: {
+                    orderId: item.id,
+                    orderItemId: firstItem?.id || "",
+                  },
+                } as any);
+              }}
+            >
+              <Lucide name="swap-horizontal-outline" size={14} color={SHOP.primary} />
+              <Text style={styles.returnBtnText}>Return / exchange</Text>
+            </TouchableOpacity>
           </View>
           <Lucide name="chevron-forward" size={20} color={SHOP.textMuted} />
         </View>
@@ -87,9 +105,14 @@ export default function ShopOrdersScreen() {
             <Lucide name="arrow-back" size={24} color={SHOP.text} />
           </TouchableOpacity>
           <Text style={styles.title}>My Orders</Text>
-          <TouchableOpacity onPress={() => router.push("/settings" as any)}>
-            <Lucide name="settings-outline" size={22} color={SHOP.text} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.headerLink} onPress={() => router.push("/account/returns" as any)}>
+              <Lucide name="swap-horizontal-outline" size={22} color={SHOP.text} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push("/settings" as any)}>
+              <Lucide name="settings-outline" size={22} color={SHOP.text} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loadingOrders && orders.length === 0 ? (
@@ -134,6 +157,8 @@ const styles = StyleSheet.create({
   },
   back: { padding: 8 },
   title: { flex: 1, fontSize: 18, fontWeight: "800", color: SHOP.text, marginLeft: 4 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  headerLink: { padding: 8 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   emptyTitle: { fontSize: 17, fontWeight: "700", color: SHOP.text, marginTop: 12 },
   emptySub: { fontSize: 13, color: SHOP.textSecondary, marginTop: 4 },
@@ -169,4 +194,11 @@ const styles = StyleSheet.create({
   itemTitle: { fontSize: 14, fontWeight: "600", color: SHOP.text },
   meta: { fontSize: 11, color: SHOP.textSecondary, marginTop: 4 },
   total: { fontSize: 15, fontWeight: "800", color: SHOP.text, marginTop: 6 },
+  returnBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 8,
+  },
+  returnBtnText: { fontSize: 12, fontWeight: "700", color: SHOP.primary },
 });

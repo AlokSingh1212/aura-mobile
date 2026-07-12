@@ -78,7 +78,7 @@ export function AuraBottomNav({ activeTab, homeTabHandlers }: Props) {
       homeTabHandlers.onInbox();
       return;
     }
-    router.replace({ pathname: "/", params: { openDMs: "true" } } as any);
+    router.replace("/messages" as any);
   };
 
   const goProducts = () => {

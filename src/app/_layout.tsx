@@ -100,6 +100,8 @@ export default function RootLayout() {
         <Stack.Screen name="post/[id]" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="reel/[id]" options={{ animation: "slide_from_right" }} />
         <Stack.Screen name="product/[id]" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="threads/index" options={{ animation: "slide_from_right" }} />
+        <Stack.Screen name="threads/[id]" options={{ animation: "slide_from_right" }} />
       </Stack>
       </SettingsEnforcementProvider>
     </GestureHandlerRootView>

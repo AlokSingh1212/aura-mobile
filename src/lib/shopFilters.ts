@@ -26,6 +26,9 @@ export function extractFilterOptions(products: any[]) {
     if (Array.isArray(p.colors)) {
       p.colors.forEach((c: string) => colors.add(String(c)));
     }
+    if (Array.isArray(p.arMetadata?.colors)) {
+      p.arMetadata.colors.forEach((c: string) => colors.add(String(c)));
+    }
 
     const gender =
       p.attributes?.gender ||
@@ -49,7 +52,10 @@ export function productMatchesShopFilters(product: any, filters: ShopFilters): b
   }
 
   if (filters.colors.length) {
-    const productColors: string[] = Array.isArray(product.colors) ? product.colors : [];
+    const productColors: string[] = [
+      ...(Array.isArray(product.colors) ? product.colors : []),
+      ...(Array.isArray(product.arMetadata?.colors) ? product.arMetadata.colors : []),
+    ].map(String);
     if (!filters.colors.some((c) => productColors.includes(c))) return false;
   }
 

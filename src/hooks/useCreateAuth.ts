@@ -37,6 +37,11 @@ export function syncAfterPublish(
       caption,
       isVideo,
     });
+    store.fetchFeedItems("", "For You", true);
+    if (store.currentUser?.id) {
+      store.loadUserStories(store.currentUser.id);
+    }
+    return;
   }
 
   store.fetchFeedItems("", "For You", true);

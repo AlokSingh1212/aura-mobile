@@ -23,6 +23,7 @@ import { CouponPickerSheet } from "@/components/shop/CouponPickerSheet";
 import { PdpAddressSheet } from "@/components/shop/PdpAddressSheet";
 import { AddressFormFields, validateAddressForm, normalizeAddressForm } from "@/components/shop/AddressFormFields";
 import { buildDefaultShippingAddress, shortAddressLine, type ShippingAddress } from "@/lib/shopAddress";
+import { loadPrimaryShippingAddress, savePrimaryShippingAddress } from "@/lib/shippingAddressStore";
 import { buildCheckoutTotals, getEmiMonthly, type CheckoutLineItem } from "@/lib/shopCheckout";
 import { getBankOffers, type BankOffer } from "@/lib/shopPdp";
 import { formatPhoneDisplay } from "@/lib/phoneValidation";
@@ -31,10 +32,9 @@ import { loadEcosystemSettings } from "@/lib/ecosystemSettings";
 import type { PaymentMethod } from "@/lib/ecosystemSettings";
 import { appendActivity } from "@/lib/activityLog";
 import {
-  isNativeRazorpayAvailable,
-  openNativeRazorpay,
-  razorpayMethodForCheckout,
-} from "@/lib/razorpayCheckout";
+  executeOrchestratedPayment,
+  type PaymentOrchestration,
+} from "@/lib/juspayCheckout";
 import { applyCountrySelection } from "@/lib/worldLocations";
 
 const PAYMENT_METHODS = [
@@ -45,10 +45,11 @@ const PAYMENT_METHODS = [
 ] as const;
 
 export default function ShopCheckoutScreen() {
-  const { productId, color, size } = useLocalSearchParams<{
+  const { productId, color, size, paymentMethod: paymentMethodParam } = useLocalSearchParams<{
     productId?: string;
     color?: string;
     size?: string;
+    paymentMethod?: string;
   }>();
 
   const {
@@ -113,6 +114,21 @@ export default function ShopCheckoutScreen() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (paymentMethodParam === "EMI") {
+      setPaymentMethod("EMI");
+      setExpandedPayment("EMI");
+      setStep(1);
+    }
+  }, [paymentMethodParam]);
+
+  useEffect(() => {
+    (async () => {
+      const addr = await loadPrimaryShippingAddress(currentUser, activeProfile);
+      setShippingAddress(addr);
+    })();
+  }, [currentUser?.id, activeProfile?.userId]);
 
   useEffect(() => {
     if (!shopPrefs.defaultCountryIso) return;
@@ -216,6 +232,7 @@ export default function ShopCheckoutScreen() {
         return;
       }
       setShippingAddress(normalizeAddressForm(shippingAddress));
+      savePrimaryShippingAddress(normalizeAddressForm(shippingAddress)).catch(() => {});
     }
     triggerHaptic("light");
     setStep((s) => Math.min(2, s + 1));
@@ -273,30 +290,30 @@ export default function ShopCheckoutScreen() {
         return;
       }
 
-      if (isNativeRazorpayAvailable(res.razorpayOrderId) && res.key) {
-        try {
-          const payment = await openNativeRazorpay({
-            key: res.key,
-            amount: Math.round(totals.total * 100),
-            order_id: res.razorpayOrderId,
-            description: `AURA order ${res.orderNumber || ""}`.trim(),
-            method: razorpayMethodForCheckout(paymentMethod),
-            prefill: {
-              email: currentUser?.email,
-              name: activeProfile?.name || currentUser?.username,
-              contact: shippingAddress.phone,
-            },
-          });
+      const orchestration: PaymentOrchestration | undefined = res.orchestration;
+      if (orchestration) {
+        const payResult = await executeOrchestratedPayment({
+          orchestration,
+          paymentMethod,
+          customer: {
+            name: activeProfile?.name || currentUser?.username,
+            email: currentUser?.email,
+            phone: shippingAddress.phone,
+          },
+          description: `AURA order ${res.orderNumber || ""}`.trim(),
+        });
+
+        if (payResult.success && payResult.gateway === "RAZORPAY" && payResult.paymentId) {
           const verify = await verifyPayment({
             razorpayOrderId: res.razorpayOrderId,
-            razorpayPaymentId: payment.razorpay_payment_id,
-            razorpaySignature: payment.razorpay_signature,
+            razorpayPaymentId: payResult.paymentId,
+            razorpaySignature: payResult.signature,
           });
           if (verify.success) {
             appendActivity({
               type: "purchase",
               title: `Order ${verify.orderNumber || res.orderNumber || "placed"}`,
-              subtitle: "Paid with Razorpay",
+              subtitle: "Paid via Juspay · Razorpay",
               targetId: verify.orderId || res.orderId,
             });
             setSuccessDetails({
@@ -309,10 +326,19 @@ export default function ShopCheckoutScreen() {
           } else {
             Alert.alert("Payment failed", verify.error || "Verification failed.");
           }
-        } catch (err: any) {
-          if (err?.code !== 2) {
-            Alert.alert("Payment cancelled", err?.description || "Payment was not completed.");
-          }
+        } else if (payResult.success && payResult.gateway === "PAYU") {
+          appendActivity({
+            type: "purchase",
+            title: `Order ${res.orderNumber || "placed"}`,
+            subtitle: "Paid via Juspay · PayU",
+            targetId: res.orderId,
+          });
+          Alert.alert(
+            "PayU checkout",
+            "Complete payment in the browser, then return to the app."
+          );
+        } else if (!payResult.success && payResult.error !== "Payment cancelled.") {
+          Alert.alert("Payment error", payResult.error || "Could not complete payment.");
         }
         setIsPaying(false);
         return;

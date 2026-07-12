@@ -34,22 +34,6 @@ import { useRouter } from "expo-router";
 
 const { width } = Dimensions.get("window");
 
-const CHAT_THREADS = [
-  { id: "c1", name: "Updates 📢", message: "Raghav Juyal sent a reel by vaibha... • 3h", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100", unread: true, category: "Primary" },
-  { id: "c2", name: "Namita Thapar", message: "Sent 7h ago", avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100", verified: true, category: "From ads" },
-  { id: "c3", name: "vidmikai", message: "Sent 7h ago", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=100", category: "Requests" },
-  { id: "c4", name: "Advocate Priyanka Singh", message: "Sent a reel by bhukkadesi99 • 2d", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=100", category: "General" },
-  { id: "c5", name: "riyabangia_", message: "Sent Monday", avatar: "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=100", category: "Primary" }
-];
-
-const CUSTOMER_THREADS = [
-  { id: "ct1", name: "Priya Mehta", message: "Is the silk scarf still available?", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100", tag: "Order Enquiry", unread: true },
-  { id: "ct2", name: "Rohan Kapoor", message: "Can I get a custom size for order #4821?", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=100", tag: "Custom Request" },
-  { id: "ct3", name: "Ananya Sharma", message: "Loved the jacket! When does restock happen?", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=100", tag: "Restock", unread: true },
-  { id: "ct4", name: "Vikram Nair", message: "Tracking update for my order?", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100", tag: "Shipping" },
-  { id: "ct5", name: "Meera Joshi", message: "Thank you! The packaging was stunning 🙏", avatar: "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=100", tag: "Feedback" },
-];
-
 const BUSINESS_TOOLS = [
   { id: "broadcast", label: "Broadcast", icon: "megaphone-outline", color: "#00f5ff", desc: "Message all followers" },
   { id: "promotions", label: "Promotions", icon: "pricetag-outline", color: "#fb923c", desc: "Discounts & offers" },
@@ -1153,26 +1137,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           console.warn("Failed to cache conversations in SQLite:", err);
         }
       } else {
-        // Auto-seed a starter conversation if none exist yet
-        try {
-          await fetch(`${API_HOST}/api/mobile/seed-chat`, { method: "POST" });
-          const retryRes = await fetch(`${API_HOST}/api/mobile/chat?userId=${currentUserId}&maisonId=${activeMaisonId}&mode=${isSeller ? "seller" : "buyer"}`);
-          const retryData = await retryRes.json();
-          if (retryData.success && retryData.conversations.length > 0) {
-            const mappedRetry = retryData.conversations.map((c: any) => ({ ...c, category: "Primary" }));
-            setConversations(applySocialFilters(mappedRetry));
-
-            const labelMap: Record<string, string> = {};
-            mappedRetry.forEach((c: any) => {
-              if (c.label) labelMap[c.id] = c.label;
-            });
-            setConversationLabels(labelMap);
-
-            cacheConversations(mappedRetry);
-          }
-        } catch {
-          // Keep local state if we have it, otherwise fallback
-        }
+        setConversations([]);
       }
     } catch (e) {
       console.warn("fetchChats API call failed:", e);

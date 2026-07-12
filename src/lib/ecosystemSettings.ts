@@ -8,8 +8,10 @@ import {
   notifySettingsEnforcementChanged,
   setEnforcedSettings,
 } from "@/lib/settingsEnforcement";
+import { pushRemoteAddresses } from "@/lib/addressesApi";
 
 const STORAGE_KEY = "@aura/ecosystem_settings_v2";
+const ADDRESSES_KEY = "@aura/saved_addresses_v1";
 
 export type ShopSettings = {
   defaultCountryIso: string;
@@ -403,7 +405,6 @@ export async function refreshSettingsEnforcement() {
   return all;
 }
 
-const ADDRESSES_KEY = "@aura/saved_addresses_v1";
 
 export async function loadSavedAddresses(): Promise<any[]> {
   try {
@@ -421,13 +422,27 @@ export async function saveAddressEntry(address: any): Promise<any[]> {
   const idx = list.findIndex((a) => a.id === id);
   if (idx >= 0) list[idx] = entry;
   else list.unshift(entry);
-  await AsyncStorage.setItem(ADDRESSES_KEY, JSON.stringify(list.slice(0, 5)));
+  await AsyncStorage.setItem(ADDRESSES_KEY, JSON.stringify(list.slice(0, 10)));
+  try {
+    const { useStore } = await import("@/store/useStore");
+    const uid = useStore.getState().currentUser?.id;
+    if (uid) await pushRemoteAddresses(uid, list.slice(0, 10));
+  } catch {
+    /* best effort */
+  }
   return list;
 }
 
 export async function deleteSavedAddress(id: string): Promise<any[]> {
   const list = (await loadSavedAddresses()).filter((a) => a.id !== id);
   await AsyncStorage.setItem(ADDRESSES_KEY, JSON.stringify(list));
+  try {
+    const { useStore } = await import("@/store/useStore");
+    const uid = useStore.getState().currentUser?.id;
+    if (uid) await pushRemoteAddresses(uid, list);
+  } catch {
+    /* best effort */
+  }
   return list;
 }
 

@@ -17,12 +17,11 @@ import { ShopFilterSheet } from "@/components/shop/ShopFilterSheet";
 import { ProductListCard } from "@/components/shop/ProductListCard";
 import { AuraBottomNav } from "@/components/shop/AuraBottomNav";
 import {
-  categoryFromSlug,
-  productMatchesCategory,
-} from "@/constants/shopCategories";
+  buildDynamicShopCatalog,
+  filterProductsByDynamicCategory,
+} from "@/lib/dynamicShopCatalog";
 import {
   findSubcategoryById,
-  productMatchesSubcategory,
 } from "@/lib/shopCategoryMap";
 import { SHOP } from "@/theme/shopTheme";
 import { formatINR, getBankOfferPrice, getDiscountPercent } from "@/lib/shopPricing";
@@ -31,6 +30,7 @@ import {
   extractFilterOptions,
   productMatchesShopFilters,
   sortProducts,
+  activeFilterCount,
   type ShopFilters,
 } from "@/lib/shopFilters";
 import { useStore } from "@/store/useStore";
@@ -61,8 +61,11 @@ export default function CategoryListingScreen() {
   const [filters, setFilters] = useState<ShopFilters>(DEFAULT_SHOP_FILTERS);
   const [filterSheet, setFilterSheet] = useState<"sort" | "brand" | "color" | "gender" | null>(null);
 
-  const category = categoryFromSlug(slug || "for-you");
-  const categoryName = category?.name || "For You";
+  const category = useMemo(() => {
+    const catalog = buildDynamicShopCatalog(products);
+    return catalog.find((c) => c.slug === (slug || "for-you")) || catalog[0];
+  }, [products, slug]);
+  const categoryName = category?.label || "For You";
   const subcategoryId = typeof subcategoryParam === "string" ? subcategoryParam : undefined;
   const subcategory = subcategoryId
     ? findSubcategoryById(subcategoryId, categoryName)
@@ -81,12 +84,11 @@ export default function CategoryListingScreen() {
 
   const categoryProducts = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    let list = products.filter((p) => {
-      if (subcategory) {
-        return productMatchesSubcategory(p, subcategory, categoryName);
-      }
-      return productMatchesCategory(p, categoryName);
-    });
+    let list = filterProductsByDynamicCategory(
+      products,
+      slug || "for-you",
+      subcategory?.id
+    );
     if (query) {
       list = list.filter(
         (p) =>
@@ -95,7 +97,7 @@ export default function CategoryListingScreen() {
       );
     }
     return list;
-  }, [products, categoryName, subcategory, searchQuery]);
+  }, [products, slug, subcategory, searchQuery]);
 
   const filterOptions = useMemo(
     () => extractFilterOptions(categoryProducts),
@@ -106,6 +108,9 @@ export default function CategoryListingScreen() {
     let list = categoryProducts.filter((p) => productMatchesShopFilters(p, filters));
     return sortProducts(list, filters.sortBy);
   }, [categoryProducts, filters]);
+
+  const filterCount = activeFilterCount(filters);
+  const sortActive = filters.sortBy !== "relevance";
 
   const featured = filtered[0];
 
@@ -148,7 +153,11 @@ export default function CategoryListingScreen() {
           searchValue={searchQuery}
           onSearchChange={setSearchQuery}
         />
-        <FilterChipsRow onFilterPress={handleFilter} />
+        <FilterChipsRow
+          onFilterPress={handleFilter}
+          activeFilterCount={filterCount}
+          sortActive={sortActive}
+        />
         {subcategory ? (
           <View style={styles.subcategoryBar}>
             <Text style={styles.subcategoryLabel}>{listTitle}</Text>

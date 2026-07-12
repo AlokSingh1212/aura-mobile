@@ -43,8 +43,8 @@ export type ProductReviewItem = {
 };
 
 const BANK_TEMPLATES = [
-  { id: "axis", bankName: "AURA Axis Bank", pct: 8 },
-  { id: "paytm", bankName: "Paytm", pct: 5 },
+  { id: "axis", bankName: "Axis Bank", pct: 8 },
+  { id: "paytm", bankName: "Paytm UPI", pct: 5 },
   { id: "icici", bankName: "ICICI Bank", pct: 6 },
 ];
 

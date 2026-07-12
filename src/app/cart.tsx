@@ -25,19 +25,12 @@ import { CheckoutSuccess } from "@/components/CheckoutSuccess";
 import { AuraBottomNav } from "@/components/shop/AuraBottomNav";
 import { CheckoutStepper } from "@/components/shop/CheckoutStepper";
 import { SHOP } from "@/theme/shopTheme";
+import { buildDefaultShippingAddress } from "@/lib/shopAddress";
+import { loadPrimaryShippingAddress, savePrimaryShippingAddress } from "@/lib/shippingAddressStore";
+import { CountrySearchPicker } from "@/components/settings/CountrySearchPicker";
+import { applyCountrySelection } from "@/lib/worldLocations";
 
 const { width } = Dimensions.get("window");
-
-const LUXURY_COUNTRIES = [
-  { name: "India", code: "+91", flag: "🇮🇳" },
-  { name: "United States", code: "+1", flag: "🇺🇸" },
-  { name: "United Kingdom", code: "+44", flag: "🇬🇧" },
-  { name: "United Arab Emirates", code: "+971", flag: "🇦🇪" },
-  { name: "France", code: "+33", flag: "🇫🇷" },
-  { name: "Italy", code: "+39", flag: "🇮🇹" },
-  { name: "Japan", code: "+81", flag: "🇯🇵" },
-  { name: "Singapore", code: "+65", flag: "🇸🇬" }
-];
 
 const formatAddressString = (addr: any) => {
   if (typeof addr === "string") return addr;
@@ -82,17 +75,9 @@ export default function CartScreen() {
   const [paymentMethod, setPaymentMethod] = useState<"RAZORPAY" | "COD">("RAZORPAY");
 
   // Checkout States
-  const [shippingAddress, setShippingAddress] = useState<any>({
-    name: "Alok Singh",
-    email: "alok@auragram.vip",
-    phone: "9999999999",
-    countryCode: "+91",
-    address: "Penthouse Suite 8, Aurelia Towers",
-    city: "Mumbai",
-    state: "Maharashtra",
-    postalCode: "400001",
-    country: "India"
-  });
+  const [shippingAddress, setShippingAddress] = useState<any>(() =>
+    buildDefaultShippingAddress(currentUser, activeProfile)
+  );
   const [isEditingAddress, setIsEditingAddress] = useState(false);
   const [tempAddress, setTempAddress] = useState<any>({ ...shippingAddress });
   const [showCountryPicker, setShowCountryPicker] = useState(false);
@@ -129,6 +114,14 @@ export default function CartScreen() {
   };
 
   const params = useLocalSearchParams<{ payment?: string; orderId?: string; amount?: string; orderNumber?: string; error?: string }>();
+
+  useEffect(() => {
+    (async () => {
+      const addr = await loadPrimaryShippingAddress(currentUser, activeProfile);
+      setShippingAddress(addr);
+      setTempAddress(addr);
+    })();
+  }, [currentUser?.id, activeProfile?.userId]);
   
   useEffect(() => {
     if (params.payment === "success") {
@@ -207,6 +200,7 @@ export default function CartScreen() {
       return;
     }
     setShippingAddress(tempAddress);
+    savePrimaryShippingAddress(tempAddress).catch(() => {});
     setIsEditingAddress(false);
     triggerHaptic("light");
   };
@@ -934,40 +928,19 @@ export default function CartScreen() {
         itemCount={successDetails.itemCount}
       />
       
-      {/* Country Selector Overlay */}
-      {showCountryPicker && (
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg, padding: 24, zIndex: 999 }]}>
-          <SafeAreaView style={{ flex: 1 }}>
-            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.pickerTitle, { color: colors.primary }]}>Select Country</Text>
-              <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
-                <Lucide name="close" size={24} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.pickerList} showsVerticalScrollIndicator={false}>
-              {LUXURY_COUNTRIES.map((c) => (
-                <TouchableOpacity
-                  key={c.name}
-                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                  onPress={() => {
-                    setTempAddress((prev: any) => ({
-                      ...prev,
-                      country: c.name,
-                      countryCode: c.code
-                    }));
-                    setShowCountryPicker(false);
-                    triggerHaptic("light");
-                  }}
-                >
-                  <Text style={styles.pickerFlag}>{c.flag}</Text>
-                  <Text style={[styles.pickerName, { color: colors.text }]}>{c.name}</Text>
-                  <Text style={[styles.pickerCode, { color: colors.primary }]}>{c.code}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </SafeAreaView>
-        </View>
-      )}
+      {/* Country Selector */}
+      <CountrySearchPicker
+        visible={showCountryPicker}
+        onClose={() => setShowCountryPicker(false)}
+        title="Select country"
+        onSelectIso={(iso) => {
+          setTempAddress((prev: any) => ({
+            ...prev,
+            ...applyCountrySelection(iso, prev),
+          }));
+          triggerHaptic("light");
+        }}
+      />
     </View>
   );
 }

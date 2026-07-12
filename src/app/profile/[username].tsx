@@ -413,8 +413,12 @@ export default function ViewProfileScreen() {
     triggerHaptic("medium");
     try {
       const userVal = currentUser || activeProfile;
-      const uId = userVal?.id || "user_2pk5xskr";
-      const uName = userVal?.profileName || userVal?.name || "Alok Singh";
+      const uId = userVal?.id;
+      if (!uId) {
+        router.push("/login" as any);
+        return;
+      }
+      const uName = userVal?.profileName || userVal?.name || "Patron";
       
       const res = await fetch(`${API_HOST}/api/mobile/chat/initiate`, {
         method: "POST",
@@ -430,8 +434,8 @@ export default function ViewProfileScreen() {
       const data = await res.json();
       if (data.success && data.conversation) {
         router.push({
-          pathname: "/",
-          params: { openDMs: "true", conversationId: data.conversation.id }
+          pathname: "/messages",
+          params: { conversationId: data.conversation.id },
         } as any);
       } else {
         Alert.alert("DM Error", data.error || "Could not initiate conversation.");

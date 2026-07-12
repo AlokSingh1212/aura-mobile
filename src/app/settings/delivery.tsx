@@ -21,6 +21,8 @@ import {
   saveAddressEntry,
   deleteSavedAddress,
 } from "@/lib/ecosystemSettings";
+import { savePrimaryShippingAddress } from "@/lib/shippingAddressStore";
+import { syncAddressesWithCloud } from "@/lib/addressesApi";
 import {
   AddressFormFields,
   validateAddressForm,
@@ -28,6 +30,7 @@ import {
 } from "@/components/shop/AddressFormFields";
 import { buildDefaultShippingAddress, shortAddressLine, type ShippingAddress } from "@/lib/shopAddress";
 import { countriesAsOptions } from "@/lib/worldLocations";
+import { CountrySearchPicker } from "@/components/settings/CountrySearchPicker";
 import { useStore } from "@/store/useStore";
 import { IG } from "@/theme/settingsTheme";
 
@@ -36,6 +39,7 @@ export default function DeliverySettingsScreen() {
   const [countryLabel, setCountryLabel] = useState("India");
   const [addresses, setAddresses] = useState<any[]>([]);
   const [editorVisible, setEditorVisible] = useState(false);
+  const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [draft, setDraft] = useState<ShippingAddress>(() =>
     buildDefaultShippingAddress(currentUser, activeProfile)
   );
@@ -44,30 +48,18 @@ export default function DeliverySettingsScreen() {
     const s = await loadEcosystemSettings();
     const match = countriesAsOptions().find((c) => c.id === s.shop.defaultCountryIso);
     setCountryLabel(match?.label || s.shop.defaultCountryIso);
-    setAddresses(await loadSavedAddresses());
-  }, []);
+    if (currentUser?.id) {
+      setAddresses(await syncAddressesWithCloud(currentUser.id));
+    } else {
+      setAddresses(await loadSavedAddresses());
+    }
+  }, [currentUser?.id]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  const pickCountry = () => {
-    const popular = ["IN", "US", "GB", "AE", "SG", "FR", "JP"];
-    const options = popular
-      .map((iso) => countriesAsOptions().find((c) => c.id === iso))
-      .filter(Boolean) as { id: string; label: string }[];
-
-    Alert.alert("Default delivery country", undefined, [
-      ...options.map((c) => ({
-        text: c.label,
-        onPress: async () => {
-          await updateShopSettings({ defaultCountryIso: c.id });
-          setCountryLabel(c.label);
-        },
-      })),
-      { text: "Cancel", style: "cancel" as const },
-    ]);
-  };
+  const pickCountry = () => setCountryPickerOpen(true);
 
   const saveDraft = async () => {
     const err = validateAddressForm(draft);
@@ -75,7 +67,9 @@ export default function DeliverySettingsScreen() {
       Alert.alert("Invalid address", err);
       return;
     }
-    await saveAddressEntry(normalizeAddressForm(draft));
+    const normalized = normalizeAddressForm(draft);
+    await saveAddressEntry(normalized);
+    await savePrimaryShippingAddress(normalized);
     triggerHaptic("success");
     setEditorVisible(false);
     refresh();
@@ -139,6 +133,17 @@ export default function DeliverySettingsScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      <CountrySearchPicker
+        visible={countryPickerOpen}
+        onClose={() => setCountryPickerOpen(false)}
+        title="Default delivery country"
+        onSelectIso={async (iso) => {
+          await updateShopSettings({ defaultCountryIso: iso });
+          const match = countriesAsOptions().find((c) => c.id === iso);
+          setCountryLabel(match?.label || iso);
+        }}
+      />
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { API_HOST } from "@/constants/api";
+import { authHeaders } from "@/lib/apiClient";
 import type { EcosystemSettings } from "@/lib/ecosystemSettings";
 
 export async function fetchRemoteEcosystemSettings(
@@ -6,7 +7,8 @@ export async function fetchRemoteEcosystemSettings(
 ): Promise<EcosystemSettings | null> {
   try {
     const res = await fetch(
-      `${API_HOST}/api/mobile/settings/ecosystem?userId=${encodeURIComponent(userId)}`
+      `${API_HOST}/api/mobile/settings/ecosystem?userId=${encodeURIComponent(userId)}`,
+      { headers: authHeaders() }
     );
     const data = await res.json();
     if (data.success && data.settings) return data.settings as EcosystemSettings;
@@ -24,7 +26,7 @@ export async function patchRemoteEcosystemSection<K extends keyof EcosystemSetti
   try {
     await fetch(`${API_HOST}/api/mobile/settings/ecosystem`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ userId, section, patch }),
     });
   } catch {
@@ -36,7 +38,7 @@ export async function pushRemoteEcosystemSettings(userId: string, settings: Ecos
   try {
     await fetch(`${API_HOST}/api/mobile/settings/ecosystem`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ userId, settings }),
     });
   } catch {

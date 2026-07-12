@@ -31,13 +31,15 @@ export function PdpBuyBar({ price, onAddToCart, onBuyNow, onEmi, disabled }: Pro
         <Lucide name="cart-outline" size={22} color={SHOP.text} />
       </TouchableOpacity>
       <TouchableOpacity
-        style={[styles.emiBtn, disabled && styles.btnDisabled]}
-        onPress={onEmi || onBuyNow}
+        style={[styles.emiBtn, (disabled || !onEmi) && styles.btnDisabled]}
+        onPress={onEmi}
         activeOpacity={0.8}
-        disabled={disabled}
+        disabled={disabled || !onEmi}
       >
-        <Text style={styles.emiTitle}>Buy with EMI</Text>
-        <Text style={styles.emiSub}>From {formatPrice ? formatPrice(emi) : formatINR(emi)}/m</Text>
+        <Text style={styles.emiTitle}>EMI</Text>
+        <Text style={styles.emiSub} numberOfLines={1}>
+          from {formatPrice ? formatPrice(emi) : formatINR(emi)}/mo
+        </Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={[styles.buyBtn, disabled && styles.buyBtnDisabled]}
@@ -45,7 +47,9 @@ export function PdpBuyBar({ price, onAddToCart, onBuyNow, onEmi, disabled }: Pro
         activeOpacity={0.85}
         disabled={disabled}
       >
-        <Text style={styles.buyText}>{disabled ? "Out of stock" : `Buy at ${display}`}</Text>
+        <Text style={styles.buyText} numberOfLines={1}>
+          {disabled ? "Out of stock" : `Buy · ${display}`}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -77,14 +81,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emiBtn: {
-    flex: 1,
+    flex: 0.85,
     height: 48,
     borderRadius: 8,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: SHOP.text,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
   },
   emiTitle: {
     fontSize: 13,
@@ -97,16 +101,16 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   buyBtn: {
-    flex: 1.2,
+    flex: 1.35,
     height: 48,
     borderRadius: 8,
     backgroundColor: SHOP.accent,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
   },
   buyText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "800",
     color: SHOP.accentText,
   },

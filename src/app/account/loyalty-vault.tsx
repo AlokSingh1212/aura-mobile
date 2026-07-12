@@ -34,12 +34,30 @@ export default function LoyaltyVaultScreen() {
   const [selectedBenefit, setSelectedBenefit] = useState<any>(null);
   const [redeeming, setRedeeming] = useState(false);
 
-  // Dynamic User ID linked to session
-  const userId = currentUser?.id || "user_2pk5xskr";
+  const userId = currentUser?.id;
 
   useEffect(() => {
-    fetchLoyaltyInfo(userId);
+    if (userId) fetchLoyaltyInfo(userId);
   }, [userId]);
+
+  if (!userId) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: 16 }}>
+          <Lucide name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>Sign in to open Loyalty Vault</Text>
+          <TouchableOpacity
+            style={{ marginTop: 16, backgroundColor: "#D4AF37", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10 }}
+            onPress={() => router.push("/login" as any)}
+          >
+            <Text style={{ fontWeight: "800" }}>Sign in</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const handleRedeem = async (benefit: any) => {
     if (loyaltyPoints < benefit.cost) {

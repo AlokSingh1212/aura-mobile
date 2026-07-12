@@ -1682,31 +1682,7 @@ export default function AccountScreen() {
                 style={{ marginRight: 16 }} 
                 onPress={() => { 
                   triggerHaptic("light"); 
-                  Alert.alert(
-                    "Unified Crossover",
-                    "Cross over seamlessly to your connected social channels or live web flagship showroom:",
-                    [
-                      {
-                        text: "🕸️ Open Web flagship Store",
-                        onPress: () => {
-                          triggerHaptic("success");
-                          const webUrl = `${API_HOST}/maison/${username}`;
-                          Linking.openURL(webUrl);
-                        }
-                      },
-                      {
-                        text: "🧵 Open AURA Threads Hub",
-                        onPress: () => {
-                          triggerHaptic("success");
-                          router.push("/threads" as any);
-                        }
-                      },
-                      {
-                        text: "Cancel",
-                        style: "cancel"
-                      }
-                    ]
-                  );
+                  router.push("/threads" as any);
                 }}
               >
                 <Lucide name="logo-instagram" size={24} color="#ffffff" />

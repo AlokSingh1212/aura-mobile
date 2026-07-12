@@ -17,6 +17,8 @@ import { useStore } from "@/store/useStore";
 import Lucide from "@expo/vector-icons/Ionicons";
 import MainHeader from "@/components/MainHeader";
 import { router } from "expo-router";
+import { fetchProfessionalInsights, type MobileInsights } from "@/lib/insightsApi";
+import { formatCompactNumber } from "@/constants/format";
 
 const { width } = Dimensions.get("window");
 
@@ -66,11 +68,14 @@ export default function DashboardScreen() {
     orders, loadingOrders, fetchOrders,
     triggerHaptic,
     activeMaisonId,
-    activeProfile
+    activeProfile,
+    currentUser,
   } = useStore();
 
   const [themeMode, setThemeMode] = useState<"obsidian" | "cream">("obsidian");
-  const [activeSegment, setActiveSegment] = useState<"insights" | "logistics" | "inventory" | "orders">("insights");
+  const [activeSegment, setActiveSegment] = useState<"insights" | "logistics" | "inventory" | "orders">("inventory");
+  const [insights, setInsights] = useState<MobileInsights | null>(null);
+  const [loadingInsights, setLoadingInsights] = useState(false);
   
   const colors = {
     bg: themeMode === "obsidian" ? "#080415" : "#fdf8f8",
@@ -117,6 +122,18 @@ export default function DashboardScreen() {
     fetchProducts();
     fetchOrders(maisonId);
   }, [maisonId]);
+
+  useEffect(() => {
+    if (activeSegment !== "insights" || !currentUser?.id) return;
+    setLoadingInsights(true);
+    fetchProfessionalInsights({
+      userId: currentUser.id,
+      profileId: activeProfile?.id,
+      period: "30d",
+    })
+      .then(setInsights)
+      .finally(() => setLoadingInsights(false));
+  }, [activeSegment, currentUser?.id, activeProfile?.id]);
 
   const handleSegmentChange = (segment: "insights" | "logistics" | "inventory" | "orders") => {
     triggerHaptic("light");
@@ -549,8 +566,16 @@ export default function DashboardScreen() {
 
         {/* Dynamic Segment Switcher Bar */}
         <View style={styles.segmentBar}>
-          {(["inventory", "logistics", "orders"] as const).map((seg) => {
+          {(["insights", "inventory", "logistics", "orders"] as const).map((seg) => {
             const isAct = activeSegment === seg;
+            const label =
+              seg === "insights"
+                ? "Insights"
+                : seg === "inventory"
+                  ? "Vault Inventory"
+                  : seg === "logistics"
+                    ? "Regional Nodes"
+                    : "Order Logs";
             return (
               <TouchableOpacity
                 key={seg}
@@ -558,7 +583,7 @@ export default function DashboardScreen() {
                 onPress={() => handleSegmentChange(seg)}
               >
                 <Text style={[styles.segmentText, isAct && styles.segmentTextActive]}>
-                  {seg === "inventory" ? "Vault Inventory" : seg === "logistics" ? "Regional Nodes" : "Order Logs"}
+                  {label}
                 </Text>
               </TouchableOpacity>
             );
@@ -566,6 +591,65 @@ export default function DashboardScreen() {
         </View>
 
         {/* CONTENT SWITCH */}
+        {activeSegment === "insights" && (
+          <ScrollView style={styles.flex1} contentContainerStyle={styles.insightsScrollContent}>
+            <View style={styles.insightsSubHeader}>
+              <Text style={[styles.insightsSectionTitle, { color: colors.text }]}>
+                Creator insights
+              </Text>
+              <TouchableOpacity
+                style={styles.exportBtn}
+                onPress={() => router.push("/account/pro-insights" as any)}
+              >
+                <Text style={{ color: colors.primary, fontWeight: "700", fontSize: 12 }}>
+                  Full dashboard
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingInsights ? (
+              <View style={styles.centerContainer}>
+                <ActivityIndicator size="large" color="#00f5ff" />
+              </View>
+            ) : insights ? (
+              <View style={styles.bentoGridContainer}>
+                <View style={styles.bentoRow}>
+                  <View style={[styles.bentoCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                    <Text style={[styles.bentoCardLabel, { color: colors.textMuted }]}>Reached</Text>
+                    <Text style={[styles.statVal, { color: colors.text }]}>
+                      {formatCompactNumber(insights.accountOverview.accountsReached)}
+                    </Text>
+                  </View>
+                  <View style={[styles.bentoCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                    <Text style={[styles.bentoCardLabel, { color: colors.textMuted }]}>Followers</Text>
+                    <Text style={[styles.statVal, { color: colors.text }]}>
+                      {formatCompactNumber(insights.accountOverview.followersCount)}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.bentoRow}>
+                  <View style={[styles.bentoCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                    <Text style={[styles.bentoCardLabel, { color: colors.textMuted }]}>Profile visits</Text>
+                    <Text style={[styles.statVal, { color: colors.text }]}>
+                      {formatCompactNumber(insights.accountOverview.profileVisits ?? 0)}
+                    </Text>
+                  </View>
+                  <View style={[styles.bentoCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                    <Text style={[styles.bentoCardLabel, { color: colors.textMuted }]}>Wallet</Text>
+                    <Text style={[styles.statVal, { color: colors.text }]}>
+                      ₹{formatCompactNumber(insights.monetization.walletBalance)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <Text style={{ color: colors.textMuted, paddingHorizontal: 24 }}>
+                Could not load insights. Open the full dashboard or pull to refresh later.
+              </Text>
+            )}
+          </ScrollView>
+        )}
+
         {activeSegment === "inventory" && (
           <View style={styles.flex1}>
             {loadingProducts ? (

@@ -5,6 +5,8 @@ import {
 } from "@/lib/socialGraph";
 import { setSocialGraphSyncContext } from "@/lib/socialGraphApi";
 
+import { syncAddressesWithCloud } from "@/lib/addressesApi";
+
 export async function syncCloudUserState(userId: string, profileId?: string | null) {
   setEcosystemSyncUserId(userId);
   setSocialGraphSyncContext(userId, profileId || null);
@@ -13,6 +15,7 @@ export async function syncCloudUserState(userId: string, profileId?: string | nu
     await hydrateSocialGraphFromRemote(profileId).catch(() => {});
   }
   await hydrateEcosystemFromRemote(userId).catch(() => {});
+  await syncAddressesWithCloud(userId).catch(() => {});
 }
 
 export function clearCloudUserState() {

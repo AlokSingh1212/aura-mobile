@@ -51,18 +51,17 @@ export default function SponsorshipsScreen() {
     activeProfile?.category?.toLowerCase().includes("artist");
 
   useEffect(() => {
-    const userId = currentUser?.id || "cmpctrlqn000004ktfuqga0td";
+    const userId = currentUser?.id;
     const maisonId = activeMaisonId;
+    if (!userId && !maisonId) return;
     
     if (isCreatorMode) {
-      // Influencer fetches deals assigned to them
-      fetchBrandDeals({ creatorId: userId });
-    } else {
-      // Brand fetches deals created by them and queries influencers
+      fetchBrandDeals({ creatorId: userId! });
+    } else if (maisonId) {
       fetchBrandDeals({ maisonId });
       fetchInfluencers();
     }
-  }, [isCreatorMode, activeMaisonId, currentUser]);
+  }, [isCreatorMode, activeMaisonId, currentUser?.id]);
 
   const handleProposeDeal = async () => {
     if (!selectedInfluencerId || !budget || !terms) {

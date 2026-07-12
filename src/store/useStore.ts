@@ -2,7 +2,7 @@ import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { API_BASE } from "@/constants/api";
-import { authHeaders, registerAuthTokenGetter, IS_PRODUCTION_APP } from "@/lib/apiClient";
+import { authHeaders, registerAuthTokenGetter, registerAuthLogoutHandler, IS_PRODUCTION_APP } from "@/lib/apiClient";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
@@ -31,6 +31,8 @@ import {
 } from "@/lib/sessionIdentity";
 import { syncCloudUserState, clearCloudUserState } from "@/lib/cloudSync";
 import { refreshSettingsEnforcement } from "@/lib/ecosystemSettings";
+import { validateAuthSession } from "@/lib/authApi";
+import { refreshI18nLanguage } from "@/lib/i18n";
 import {
   shouldDeliverPushNotification,
   type NotificationCategory,
@@ -562,21 +564,45 @@ export const useStore = create<StoreState>((set, get) => ({
   restoreAuthSession: async () => {
     try {
       const bundle = await loadAuthBundle(AsyncStorage);
-      if (bundle?.currentUser?.id) {
-        set({
-          currentUser: bundle.currentUser,
-          activeProfile: bundle.activeProfile,
-          userProfiles: bundle.userProfiles || [],
-          authToken: bundle.authToken || null,
-          activeMaisonId:
-            bundle.activeMaisonId ||
-            resolveMaisonId(bundle.activeProfile, bundle.currentUser),
-        });
-        get().syncProfileIdentity();
-        get()
-          .fetchProfiles(String(bundle.currentUser.id))
-          .catch(() => {});
+      if (!bundle?.currentUser?.id) return;
+
+      set({
+        currentUser: bundle.currentUser,
+        activeProfile: bundle.activeProfile,
+        userProfiles: bundle.userProfiles || [],
+        authToken: bundle.authToken || null,
+        activeMaisonId:
+          bundle.activeMaisonId ||
+          resolveMaisonId(bundle.activeProfile, bundle.currentUser),
+      });
+
+      const session = await validateAuthSession();
+      if (!session.success || !session.user) {
+        get().authLogOut();
+        return;
       }
+
+      const serverUser = session.user;
+      set({
+        currentUser: { ...bundle.currentUser, ...serverUser },
+        activeProfile: (serverUser.activeProfile as typeof bundle.activeProfile) || bundle.activeProfile,
+        userProfiles: (serverUser.profiles as typeof bundle.userProfiles) || bundle.userProfiles,
+      });
+
+      await saveAuthBundle(AsyncStorage, {
+        currentUser: get().currentUser!,
+        activeProfile: get().activeProfile,
+        userProfiles: get().userProfiles,
+        activeMaisonId: get().activeMaisonId,
+        authToken: get().authToken,
+      });
+
+      get().syncProfileIdentity();
+      refreshI18nLanguage().catch(() => {});
+      get()
+        .fetchProfiles(String(serverUser.id))
+        .catch(() => {});
+      syncCloudUserState(String(serverUser.id), get().activeProfile?.id).catch(() => {});
     } catch (e) {
       console.warn("Auth session restore failed:", e);
     } finally {
@@ -592,34 +618,6 @@ export const useStore = create<StoreState>((set, get) => ({
       isYourStory: true,
       slides: [],
     },
-    {
-      id: "g1",
-      username: "garimahuja05",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150",
-      active: true,
-      slides: [
-        { id: "g1_1", url: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=80&w=400", caption: "Atelier Paris Spring Showcase" },
-        { id: "g1_2", url: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400", caption: "Bespoke fabrics, pure sovereign details" }
-      ]
-    },
-    {
-      id: "m1",
-      username: "mahima.unfilter...",
-      avatar: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150",
-      active: true,
-      slides: [
-        { id: "m1_1", url: "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=400", caption: "Milan high-fidelity runways." }
-      ]
-    },
-    {
-      id: "i1",
-      username: "_._issue",
-      avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150",
-      active: true,
-      slides: [
-        { id: "i1_1", url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=400", caption: "Atelier Street coordinates" }
-      ]
-    }
   ],
 
   loadingProducts: false,
@@ -682,18 +680,6 @@ export const useStore = create<StoreState>((set, get) => ({
 
     if (reset) {
       set({ stories: [], feedCursor: null, hasMoreFeed: true });
-      // 💾 Hydrate from AsyncStorage disk cache immediately to show feed offline
-      try {
-        const cachedData = await AsyncStorage.getItem("aura_feed_cache");
-        if (cachedData) {
-          const cachedStories = JSON.parse(cachedData);
-          if (cachedStories && cachedStories.length > 0) {
-            set({ stories: cachedStories });
-          }
-        }
-      } catch (err) {
-        console.warn("Offline cache load failed:", err);
-      }
     }
 
     if (!get().hasMoreFeed && !reset) {
@@ -1907,3 +1893,9 @@ export const useStore = create<StoreState>((set, get) => ({
 }));
 
 registerAuthTokenGetter(() => useStore.getState().authToken);
+registerAuthLogoutHandler(() => {
+  const state = useStore.getState();
+  if (state.authToken) {
+    state.authLogOut();
+  }
+});

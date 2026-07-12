@@ -10,6 +10,7 @@ import { router } from "expo-router";
 import { useStore } from "@/store/useStore";
 import { API_HOST } from "@/constants/api";
 import { authHeaders } from "@/lib/apiClient";
+import { deactivateAccount } from "@/lib/authApi";
 
 export default function DeleteAccountScreen() {
   const { currentUser, triggerHaptic, authLogOut } = useStore() as any;
@@ -26,7 +27,11 @@ export default function DeleteAccountScreen() {
         )
       : Alert.alert("Delete account?", "This cannot be undone.", [
           { text: "Cancel", style: "cancel" },
-          { text: "Delete", style: "destructive", onPress: () => performDelete(currentUser?.email || "") },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => performDelete(currentUser?.email || ""),
+          },
         ]);
   };
 
@@ -54,16 +59,51 @@ export default function DeleteAccountScreen() {
     }
   };
 
+  const confirmDeactivate = () => {
+    Alert.alert(
+      "Temporarily deactivate?",
+      "Your profile, posts and shop will be hidden until you sign in again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Deactivate",
+          style: "destructive",
+          onPress: performDeactivate,
+        },
+      ]
+    );
+  };
+
+  const performDeactivate = async () => {
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required");
+      return;
+    }
+    try {
+      const data = await deactivateAccount(currentUser.id);
+      if (data.success) {
+        triggerHaptic("success");
+        authLogOut?.();
+        router.replace("/login" as any);
+      } else {
+        Alert.alert("Failed", data.error || "Could not deactivate account.");
+      }
+    } catch {
+      Alert.alert("Error", "Network error.");
+    }
+  };
+
   return (
     <IgSettingsScreen title="Delete account">
       <IgBodyText>
-        Deleting removes your profile, posts, shop history and messages from AURA. Some data may be kept where required by law.
+        Deleting removes your profile, posts, shop history and messages from AURA. Some data may be
+        kept where required by law.
       </IgBodyText>
       <IgSectionTitle>Account</IgSectionTitle>
       <IgRow
         label="Temporarily deactivate"
         sublabel="Hide your profile until you log back in"
-        onPress={() => Alert.alert("Deactivated", "Your profile is hidden. Log in anytime to restore.")}
+        onPress={confirmDeactivate}
       />
       <IgRow label="Delete account permanently" danger onPress={confirmDelete} last />
     </IgSettingsScreen>

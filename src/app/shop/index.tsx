@@ -16,6 +16,7 @@ import { AuraBottomNav, getAuraBottomNavHeight } from "@/components/shop/AuraBot
 import { getContentWidth } from "@/constants/categoriesLayout";
 import { SHOP } from "@/theme/shopTheme";
 import { useStore } from "@/store/useStore";
+import { buildDynamicShopCatalog } from "@/lib/dynamicShopCatalog";
 
 export default function ShopHubScreen() {
   const { products, loadingProducts, fetchProducts, triggerHaptic } = useStore();
@@ -25,6 +26,7 @@ export default function ShopHubScreen() {
   const mainScrollRef = useRef<ScrollView>(null);
   const { width: screenW } = useWindowDimensions();
   const contentW = getContentWidth(screenW);
+  const dynamicCatalog = React.useMemo(() => buildDynamicShopCatalog(products), [products]);
 
   useEffect(() => {
     fetchProducts();
@@ -49,7 +51,11 @@ export default function ShopHubScreen() {
         <CategoriesHubHeader onSearchPress={() => openCategoryListing("for-you")} />
 
         <View style={styles.split}>
-          <CategorySidebar selectedSlug={selectedSlug} onSelect={handleCategorySelect} />
+          <CategorySidebar
+            selectedSlug={selectedSlug}
+            onSelect={handleCategorySelect}
+            dynamicCategories={dynamicCatalog}
+          />
 
           <ScrollView
             ref={mainScrollRef}

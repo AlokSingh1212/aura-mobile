@@ -9,7 +9,6 @@ import {
   Dimensions,
   TextInput,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -77,8 +76,10 @@ type Props = {
   isCheckingCoupon?: boolean;
   onAddToCart: (opts?: { color?: string; size?: string }) => void;
   onBuyNow: (opts?: { color?: string; size?: string }) => void;
+  onBuyWithEmi?: (opts?: { color?: string; size?: string }) => void;
   onToggleWishlist: () => void;
   isWishlisted?: boolean;
+  showBankOffers?: boolean;
   reviewSummary?: ProductReviewSummary | null;
   reviewsLoading?: boolean;
   onRateReview?: () => void;
@@ -108,8 +109,10 @@ export function ShopProductDetail({
   isCheckingCoupon,
   onAddToCart,
   onBuyNow,
+  onBuyWithEmi,
   onToggleWishlist,
   isWishlisted,
+  showBankOffers = true,
   reviewSummary,
   reviewsLoading,
   onRateReview,
@@ -185,7 +188,6 @@ export function ShopProductDetail({
     [pinInput, pinChecked, shippingAddress.postalCode, inStock]
   );
 
-  const priceDisplay = formatPrice ? formatPrice(product.price ?? 0) : formatINR(product.price ?? 0);
   const effectiveDisplay = formatPrice ? formatPrice(effectivePrice) : formatINR(effectivePrice);
   const brand = product.maison?.name || product.brand || "AURA";
 
@@ -216,10 +218,6 @@ export function ShopProductDetail({
       onApplyBankOffer?.(null);
     } else {
       onApplyBankOffer?.(offer);
-      Alert.alert(
-        `${offer.bankName} offer applied`,
-        `You save ${formatPrice ? formatPrice(offer.discountAmount) : formatINR(offer.discountAmount)} on this order.`
-      );
     }
   };
 
@@ -323,14 +321,27 @@ export function ShopProductDetail({
 
           <View style={styles.brandRow}>
             <Text style={styles.brand}>{brand.toUpperCase()}</Text>
-            <TouchableOpacity
-              onPress={() => {
-                triggerHaptic("light");
-                if (seller.maisonId) router.push(`/profile/${seller.maisonId}` as any);
-              }}
-            >
-              <Text style={styles.visitStore}>Visit store</Text>
-            </TouchableOpacity>
+            <View style={styles.brandActions}>
+              <TouchableOpacity
+                onPress={() => {
+                  triggerHaptic("light");
+                  router.push({
+                    pathname: "/shop/all-products",
+                    params: { productId: product.id },
+                  } as any);
+                }}
+              >
+                <Text style={styles.allProductsLink}>All Products</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  triggerHaptic("light");
+                  if (seller.maisonId) router.push(`/profile/${seller.maisonId}` as any);
+                }}
+              >
+                <Text style={styles.visitStore}>Visit store</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Text style={styles.productTitle}>
             {product.title}
@@ -345,47 +356,65 @@ export function ShopProductDetail({
                 </Text>
               </Text>
             )}
-            <Text style={styles.price}>{priceDisplay}</Text>
+            <Text style={styles.price}>{effectiveDisplay}</Text>
+            {(appliedBankOffer || appliedCoupon) && effectivePrice < (product.price ?? 0) ? (
+              <Text style={styles.priceNote}>
+                Inclusive of applied offers · MRP{" "}
+                {formatPrice ? formatPrice(product.price ?? 0) : formatINR(product.price ?? 0)}
+              </Text>
+            ) : null}
             {!inStock && <Text style={styles.outOfStock}>Currently unavailable</Text>}
             {inStock && stock <= 5 && (
               <Text style={styles.lowStock}>Only {stock} left in stock</Text>
             )}
           </View>
 
+          {showBankOffers ? (
           <View style={styles.wowCard}>
             <TouchableOpacity
               style={styles.wowHeader}
               onPress={() => setOffersExpanded(!offersExpanded)}
+              activeOpacity={0.85}
             >
-              <Text style={styles.wowTitle}>WOW! DEAL</Text>
-              <Text style={styles.wowSub}>Apply offers for maximum savings</Text>
+              <View style={styles.wowHeaderLeft}>
+                <Text style={styles.wowTitle}>Offers & savings</Text>
+                <Text style={styles.wowSub}>Coupons, bank cashback & EMI options</Text>
+              </View>
               <Lucide
                 name={offersExpanded ? "chevron-up" : "chevron-down"}
-                size={18}
+                size={20}
                 color="#FFF"
               />
             </TouchableOpacity>
             {offersExpanded && (
               <View style={styles.wowBody}>
-                <View style={styles.wowOptions}>
-                  <View style={styles.wowOptionPrimary}>
+                <View style={styles.payModeStack}>
+                  <View style={[styles.payModeCard, styles.payModePrimary]}>
+                    <Text style={styles.payModeLabel}>Pay full amount</Text>
                     <Text style={styles.wowPrice}>{effectiveDisplay}</Text>
                     <Text style={styles.wowPriceSub}>
                       {appliedBankOffer || appliedCoupon
-                        ? "Price after applied offers"
-                        : "Lowest price for you"}
+                        ? "After applied offers"
+                        : "Best direct price"}
                     </Text>
                   </View>
-                  <View style={styles.wowOr}>
-                    <Text style={styles.wowOrText}>OR</Text>
-                  </View>
-                  <View style={styles.wowOptionSecondary}>
+                  <View style={styles.payModeCard}>
+                    <Text style={styles.payModeLabel}>No Cost EMI</Text>
                     <Text style={styles.emiLine}>
-                      {formatPrice ? formatPrice(emi.monthly) : formatINR(emi.monthly)} x {emi.months}m
+                      {formatPrice ? formatPrice(emi.monthly) : formatINR(emi.monthly)}/mo
                     </Text>
                     <Text style={styles.wowPriceSub}>
-                      Pay {formatPrice ? formatPrice(emi.total) : formatINR(emi.total)} total
+                      {emi.months} months · total{" "}
+                      {formatPrice ? formatPrice(emi.total) : formatINR(emi.total)}
                     </Text>
+                    {onBuyWithEmi ? (
+                      <TouchableOpacity
+                        style={styles.emiLinkBtn}
+                        onPress={() => onBuyWithEmi(variantOpts)}
+                      >
+                        <Text style={styles.emiLinkText}>View EMI plans →</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 </View>
 
@@ -409,8 +438,17 @@ export function ShopProductDetail({
                   />
                   {isCheckingCoupon ? (
                     <ActivityIndicator size="small" color={SHOP.primary} />
-                  ) : null}
+                  ) : (
+                    <TouchableOpacity onPress={onApplyCoupon} hitSlop={8}>
+                      <Text style={styles.couponApplyBtn}>Apply</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+                {appliedCoupon ? (
+                  <TouchableOpacity onPress={onClearCoupon}>
+                    <Text style={styles.couponClear}>Remove coupon {appliedCoupon.code}</Text>
+                  </TouchableOpacity>
+                ) : null}
                 {couponError ? <Text style={styles.couponError}>{couponError}</Text> : null}
                 {!appliedCoupon && (
                   <Text style={styles.couponHint}>
@@ -420,9 +458,12 @@ export function ShopProductDetail({
               </View>
             )}
           </View>
+          ) : null}
 
+          {showBankOffers ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Bank offers</Text>
+            <Text style={styles.sectionHint}>Tap to apply · one offer at checkout</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {bankOffers.map((offer) => {
                 const active = appliedBankOffer?.id === offer.id;
@@ -435,21 +476,23 @@ export function ShopProductDetail({
                   >
                     {offer.isBest && (
                       <View style={styles.bestBadge}>
-                        <Text style={styles.bestText}>Best value for you</Text>
+                        <Text style={styles.bestText}>Best value</Text>
                       </View>
                     )}
                     <Text style={styles.bankName}>{offer.bankName}</Text>
                     <Text style={styles.bankOff}>
                       ₹{offer.discountAmount.toLocaleString("en-IN")} off
                     </Text>
+                    <Text style={styles.bankPct}>{offer.discountPercent}% instant discount</Text>
                     <Text style={[styles.bankApply, active && styles.bankApplyActive]}>
-                      {active ? "Applied ✓" : "Apply"}
+                      {active ? "Applied ✓" : "Tap to apply"}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
           </View>
+          ) : null}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Delivery details</Text>
@@ -683,6 +726,7 @@ export function ShopProductDetail({
         price={effectivePrice}
         onAddToCart={() => onAddToCart(variantOpts)}
         onBuyNow={() => onBuyNow(variantOpts)}
+        onEmi={onBuyWithEmi ? () => onBuyWithEmi(variantOpts) : undefined}
         disabled={!inStock}
       />
 
@@ -802,11 +846,13 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     marginTop: 12,
   },
-  brand: { fontSize: 16, fontWeight: "800", color: SHOP.text },
+  brand: { fontSize: 16, fontWeight: "800", color: SHOP.text, flex: 1 },
+  brandActions: { flexDirection: "row", alignItems: "center", gap: 14 },
+  allProductsLink: { fontSize: 13, color: "#121212", fontWeight: "700" },
   visitStore: { fontSize: 13, color: SHOP.primary, fontWeight: "600" },
   productTitle: {
     paddingHorizontal: 16,
@@ -819,6 +865,7 @@ const styles = StyleSheet.create({
   discountRow: { fontSize: 14, color: SHOP.green, fontWeight: "700" },
   strike: { color: SHOP.textMuted, textDecorationLine: "line-through", fontWeight: "400" },
   price: { fontSize: 22, fontWeight: "800", color: SHOP.text, marginTop: 4 },
+  priceNote: { fontSize: 12, color: SHOP.green, fontWeight: "600", marginTop: 4 },
   outOfStock: { marginTop: 4, color: SHOP.red, fontWeight: "600", fontSize: 13 },
   lowStock: { marginTop: 4, color: "#E65100", fontWeight: "600", fontSize: 12 },
   wowCard: {
@@ -830,33 +877,38 @@ const styles = StyleSheet.create({
   wowHeader: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    gap: 8,
+    justifyContent: "space-between",
+    padding: 14,
+    gap: 12,
   },
-  wowTitle: { color: "#FFF", fontWeight: "800", fontSize: 14 },
-  wowSub: { flex: 1, color: "rgba(255,255,255,0.8)", fontSize: 12 },
+  wowHeaderLeft: { flex: 1 },
+  wowTitle: { color: "#FFF", fontWeight: "800", fontSize: 15 },
+  wowSub: { color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 3 },
   wowBody: { backgroundColor: SHOP.bg, padding: 12 },
-  wowOptions: { flexDirection: "row", alignItems: "center" },
-  wowOptionPrimary: {
-    flex: 1,
-    backgroundColor: SHOP.wowBlueLight,
-    padding: 12,
-    borderRadius: 8,
-  },
-  wowOr: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  payModeStack: { gap: 10 },
+  payModeCard: {
+    borderWidth: 1,
+    borderColor: SHOP.border,
+    borderRadius: 10,
+    padding: 14,
     backgroundColor: SHOP.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 4,
   },
-  wowOrText: { fontSize: 10, fontWeight: "700", color: SHOP.textSecondary },
-  wowOptionSecondary: { flex: 1, padding: 12 },
-  wowPrice: { fontSize: 18, fontWeight: "800", color: SHOP.primary },
-  wowPriceSub: { fontSize: 11, color: SHOP.textSecondary, marginTop: 2 },
-  emiLine: { fontSize: 14, fontWeight: "700", color: SHOP.text },
+  payModePrimary: {
+    borderColor: SHOP.primary,
+    backgroundColor: SHOP.wowBlueLight,
+  },
+  payModeLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: SHOP.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  wowPrice: { fontSize: 20, fontWeight: "800", color: SHOP.primary, marginTop: 4 },
+  wowPriceSub: { fontSize: 12, color: SHOP.textSecondary, marginTop: 4 },
+  emiLine: { fontSize: 18, fontWeight: "800", color: SHOP.text, marginTop: 4 },
+  emiLinkBtn: { marginTop: 8, alignSelf: "flex-start" },
+  emiLinkText: { fontSize: 13, fontWeight: "700", color: SHOP.primary },
   couponRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -877,9 +929,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   couponInput: { flex: 1, fontSize: 14, color: SHOP.text, paddingVertical: 0 },
+  couponApplyBtn: { color: SHOP.primary, fontWeight: "800", fontSize: 14 },
+  couponClear: { color: SHOP.red, fontSize: 12, fontWeight: "600", marginTop: 6 },
   couponError: { color: SHOP.red, fontSize: 12, marginTop: 6 },
   couponHint: { fontSize: 11, color: SHOP.textSecondary, marginTop: 6 },
   section: { paddingHorizontal: 16, marginTop: 16 },
+  sectionHint: { fontSize: 12, color: SHOP.textSecondary, marginBottom: 10, marginTop: -4 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -888,13 +943,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: SHOP.text },
   bankCard: {
-    width: 140,
-    borderWidth: 1,
+    width: 152,
+    borderWidth: 1.5,
     borderColor: SHOP.border,
-    borderRadius: 8,
-    padding: 10,
+    borderRadius: 10,
+    padding: 12,
     marginRight: 10,
     position: "relative",
+    backgroundColor: SHOP.surface,
   },
   bankCardActive: { borderColor: SHOP.primary, backgroundColor: SHOP.wowBlueLight },
   bestBadge: {
@@ -907,9 +963,10 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   bestText: { fontSize: 9, fontWeight: "700" },
-  bankName: { fontSize: 12, fontWeight: "700", marginTop: 8 },
-  bankOff: { fontSize: 14, fontWeight: "800", color: SHOP.green, marginTop: 4 },
-  bankApply: { fontSize: 12, color: SHOP.primary, fontWeight: "700", marginTop: 4 },
+  bankName: { fontSize: 13, fontWeight: "800", marginTop: 6, color: SHOP.text },
+  bankOff: { fontSize: 15, fontWeight: "800", color: SHOP.green, marginTop: 4 },
+  bankPct: { fontSize: 11, color: SHOP.textSecondary, marginTop: 2 },
+  bankApply: { fontSize: 12, color: SHOP.primary, fontWeight: "700", marginTop: 8 },
   bankApplyActive: { color: SHOP.green },
   deliveryCard: {
     flexDirection: "row",

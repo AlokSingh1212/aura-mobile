@@ -1,6 +1,16 @@
 import React, { useState } from "react";
-import { Alert, TouchableOpacity, Text, StyleSheet } from "react-native";
+import {
+  Alert,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  View,
+  Share,
+  Platform,
+} from "react-native";
 import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system";
 import {
   IgSettingsScreen,
   IgSectionTitle,
@@ -8,6 +18,7 @@ import {
   IgBodyText,
 } from "@/components/settings/InstagramSettingsUI";
 import { useStore } from "@/store/useStore";
+import { fetchUserDataExport } from "@/lib/authApi";
 import { IG } from "@/theme/settingsTheme";
 
 type ExportKey =
@@ -19,12 +30,13 @@ type ExportKey =
   | "security";
 
 export default function DataExportScreen() {
-  const { currentUser, activeProfile, userProfiles, wishlist, triggerHaptic } = useStore();
+  const { currentUser, triggerHaptic } = useStore();
+  const [exporting, setExporting] = useState(false);
   const [selected, setSelected] = useState<Record<ExportKey, boolean>>({
     profile: true,
     posts: true,
     shop: true,
-    messages: false,
+    messages: true,
     activity: true,
     security: true,
   });
@@ -32,45 +44,94 @@ export default function DataExportScreen() {
   const toggle = (key: ExportKey) =>
     setSelected((s) => ({ ...s, [key]: !s[key] }));
 
-  const exportAll = async () => {
-    triggerHaptic("success");
-    const payload: Record<string, unknown> = {
-      exportedAt: new Date().toISOString(),
-      format: "AURA_JSON_v2",
+  const filterExport = (full: Record<string, unknown>) => {
+    const out: Record<string, unknown> = {
+      exportedAt: full.exportedAt,
+      format: full.format,
     };
-    if (selected.profile) {
-      payload.profile = { user: currentUser, activeProfile, profiles: userProfiles };
+    if (selected.profile && full.user) {
+      out.user = full.user;
+      out.profiles = full.profiles;
     }
+    if (selected.posts && full.posts) out.posts = full.posts;
     if (selected.shop) {
-      payload.shop = { wishlist };
+      out.orders = full.orders;
+      out.wishlist = full.wishlist;
+      out.addresses = full.addresses;
+      out.paymentMethods = full.paymentMethods;
     }
+    if (selected.messages && full.messages) out.conversations = full.messages;
+    if (selected.activity && full.activity) out.engagements = full.activity;
     if (selected.security) {
-      payload.security = { note: "Passwords and tokens are never included in exports." };
+      out.preferences = full.settings;
+      out.walletTransactions = full.walletTransactions;
     }
-    if (selected.posts) payload.posts = { note: "Request full post archive from support for large accounts." };
-    if (selected.messages) payload.messages = { note: "DM export available on web dashboard." };
-    if (selected.activity) payload.activity = { note: "See Settings → Your activity for recent history." };
+    return out;
+  };
 
-    await Clipboard.setStringAsync(JSON.stringify(payload, null, 2));
-    Alert.alert(
-      "Export ready",
-      "Your selected data was copied to the clipboard. Paste into Notes or email to yourself."
-    );
+  const exportAll = async () => {
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required");
+      return;
+    }
+    setExporting(true);
+    try {
+      triggerHaptic("light");
+      const res = await fetchUserDataExport(currentUser.id);
+      if (!res.success || !res.export) {
+        Alert.alert("Export failed", res.error || "Could not fetch your data.");
+        return;
+      }
+
+      const payload = filterExport(res.export as Record<string, unknown>);
+      const json = JSON.stringify(payload, null, 2);
+      const fileName = `aura-export-${Date.now()}.json`;
+      const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+
+      await FileSystem.writeAsStringAsync(fileUri, json, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      if (Platform.OS !== "web") {
+        try {
+          await Share.share({
+            url: fileUri,
+            title: "AURA data export",
+            message: "Your AURA data export",
+          });
+        } catch {
+          await Clipboard.setStringAsync(json);
+          Alert.alert(
+            "Export ready",
+            "Your data was copied to the clipboard. Paste into Notes or email to yourself."
+          );
+        }
+      } else {
+        await Clipboard.setStringAsync(json);
+        Alert.alert("Export ready", "Your data was copied to the clipboard.");
+      }
+      triggerHaptic("success");
+    } catch {
+      Alert.alert("Error", "Could not create export.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const rows: { key: ExportKey; label: string; hint: string }[] = [
     { key: "profile", label: "Profile information", hint: "Name, username, bio, contact" },
-    { key: "posts", label: "Posts and reels", hint: "Metadata and captions" },
-    { key: "shop", label: "Shop & wishlist", hint: "Saved products and preferences" },
-    { key: "messages", label: "Messages", hint: "Requires web export for full history" },
-    { key: "activity", label: "Activity", hint: "Likes, saves and watch history" },
-    { key: "security", label: "Security settings", hint: "Preferences, not secrets" },
+    { key: "posts", label: "Posts and reels", hint: "Captions, media URLs and metadata" },
+    { key: "shop", label: "Shop & orders", hint: "Orders, wishlist, addresses, payments" },
+    { key: "messages", label: "Messages", hint: "Recent conversation history" },
+    { key: "activity", label: "Activity", hint: "Likes, saves and engagement" },
+    { key: "security", label: "Preferences", hint: "Settings and wallet history" },
   ];
 
   return (
     <IgSettingsScreen title="Download your information">
       <IgBodyText>
-        Choose what to include. Instagram-style exports help you move or backup your AURA data.
+        Request a full export from AURA servers. Choose sections to include, then save or share the
+        JSON file.
       </IgBodyText>
 
       <IgSectionTitle>Select data</IgSectionTitle>
@@ -85,8 +146,19 @@ export default function DataExportScreen() {
         />
       ))}
 
-      <TouchableOpacity style={styles.btn} onPress={exportAll}>
-        <Text style={styles.btnText}>Create export</Text>
+      <TouchableOpacity
+        style={[styles.btn, exporting && styles.btnDisabled]}
+        onPress={exportAll}
+        disabled={exporting}
+      >
+        {exporting ? (
+          <View style={styles.btnInner}>
+            <ActivityIndicator color="#fff" />
+            <Text style={styles.btnText}> Preparing export…</Text>
+          </View>
+        ) : (
+          <Text style={styles.btnText}>Create export</Text>
+        )}
       </TouchableOpacity>
     </IgSettingsScreen>
   );
@@ -102,5 +174,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  btnDisabled: { opacity: 0.7 },
+  btnInner: { flexDirection: "row", alignItems: "center" },
   btnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
 });

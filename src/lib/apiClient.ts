@@ -22,6 +22,12 @@ export function authHeaders(extra?: Record<string, string>): Record<string, stri
   return headers;
 }
 
+let authLogoutHandler: (() => void) | null = null;
+
+export function registerAuthLogoutHandler(handler: () => void) {
+  authLogoutHandler = handler;
+}
+
 export async function apiFetch(
   path: string,
   init: RequestInit = {}
@@ -30,7 +36,25 @@ export async function apiFetch(
     ...authHeaders(),
     ...(init.headers as Record<string, string> | undefined),
   };
-  return fetch(`${API_BASE}${path}`, { ...init, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  if (res.status === 401) {
+    authLogoutHandler?.();
+  }
+  return res;
+}
+
+export async function apiFetchJson<T = unknown>(
+  path: string,
+  init: RequestInit = {}
+): Promise<{ ok: boolean; status: number; data: T | null }> {
+  const res = await apiFetch(path, init);
+  let data: T | null = null;
+  try {
+    data = (await res.json()) as T;
+  } catch {
+    data = null;
+  }
+  return { ok: res.ok, status: res.status, data };
 }
 
 export const IS_PRODUCTION_APP = !__DEV__;

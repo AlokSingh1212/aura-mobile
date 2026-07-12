@@ -32,6 +32,7 @@ interface TrackingData {
   trackingNumber: string;
   estimatedDelivery: string;
   items: {
+    id?: string;
     title: string;
     price: number;
     quantity: number;
@@ -230,6 +231,30 @@ export default function TrackOrderScreen() {
               );
             })}
           </View>
+
+          <TouchableOpacity
+            style={styles.returnCta}
+            onPress={() => {
+              triggerHaptic("light");
+              router.push({
+                pathname: "/account/returns/request",
+                params: {
+                  orderId: id,
+                  orderItemId: data.items[0]?.id || "",
+                },
+              } as any);
+            }}
+          >
+            <Lucide name="swap-horizontal-outline" size={18} color="#00f5ff" />
+            <Text style={styles.returnCtaText}>Return or exchange this order</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.returnsLink}
+            onPress={() => router.push("/account/returns" as any)}
+          >
+            <Text style={styles.returnsLinkText}>View all returns & refund status</Text>
+          </TouchableOpacity>
 
         </ScrollView>
       </SafeAreaView>
@@ -496,5 +521,32 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "700",
+  },
+  returnCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 24,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(0, 245, 255, 0.35)",
+    backgroundColor: "rgba(0, 245, 255, 0.06)",
+  },
+  returnCtaText: {
+    color: "#00f5ff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  returnsLink: {
+    marginTop: 12,
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  returnsLinkText: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 13,
+    textDecorationLine: "underline",
   },
 });

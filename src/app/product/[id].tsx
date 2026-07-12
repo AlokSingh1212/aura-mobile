@@ -24,6 +24,7 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import { CheckoutSuccess } from "@/components/CheckoutSuccess";
 import { ShopProductDetail } from "@/components/shop/ShopProductDetail";
 import { buildDefaultShippingAddress } from "@/lib/shopAddress";
+import { loadPrimaryShippingAddress, savePrimaryShippingAddress } from "@/lib/shippingAddressStore";
 import {
   getCategoryRelatedProducts,
   getCategorySectionMeta,
@@ -33,6 +34,9 @@ import {
 } from "@/lib/shopPdp";
 import { fetchProductReviews, submitProductReview, type ProductReviewSummary } from "@/lib/shopReviews";
 import { RateProductSheet } from "@/components/shop/RateProductSheet";
+import { CountrySearchPicker } from "@/components/settings/CountrySearchPicker";
+import { applyCountrySelection } from "@/lib/worldLocations";
+import { loadEcosystemSettings } from "@/lib/ecosystemSettings";
 
 let RazorpayCheckout: any = null;
 try {
@@ -42,17 +46,6 @@ try {
 }
 
 const { width } = Dimensions.get("window");
-
-const LUXURY_COUNTRIES = [
-  { name: "India", code: "+91", flag: "🇮🇳" },
-  { name: "United States", code: "+1", flag: "🇺🇸" },
-  { name: "United Kingdom", code: "+44", flag: "🇬🇧" },
-  { name: "United Arab Emirates", code: "+971", flag: "🇦🇪" },
-  { name: "France", code: "+33", flag: "🇫🇷" },
-  { name: "Italy", code: "+39", flag: "🇮🇹" },
-  { name: "Japan", code: "+81", flag: "🇯🇵" },
-  { name: "Singapore", code: "+65", flag: "🇸🇬" }
-];
 
 const formatAddressString = (addr: any) => {
   if (typeof addr === "string") return addr;
@@ -176,6 +169,19 @@ export default function ProductDetailScreen() {
   const [reviewSummary, setReviewSummary] = useState<ProductReviewSummary | null>(null);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [rateSheetVisible, setRateSheetVisible] = useState(false);
+  const [showBankOffers, setShowBankOffers] = useState(true);
+
+  useEffect(() => {
+    loadEcosystemSettings().then((s) => setShowBankOffers(s.shop.showBankOffers));
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const addr = await loadPrimaryShippingAddress(currentUser, activeProfile);
+      setShippingAddress(addr);
+      setTempAddress(addr);
+    })();
+  }, [currentUser?.id, activeProfile?.userId]);
 
   useEffect(() => {
     if (currentUser || activeProfile) {
@@ -605,6 +611,17 @@ export default function ProductDetailScreen() {
     router.push(`/shop/checkout?${q.toString()}` as any);
   };
 
+  const handleShopBuyWithEmi = (opts?: { color?: string; size?: string }) => {
+    triggerHaptic("heavy");
+    const q = new URLSearchParams({
+      productId: String(product.id),
+      paymentMethod: "EMI",
+    });
+    if (opts?.color) q.set("color", opts.color);
+    if (opts?.size) q.set("size", opts.size);
+    router.push(`/shop/checkout?${q.toString()}` as any);
+  };
+
   const handleClearCoupon = () => {
     setAppliedCoupon(null);
     setCouponCode("");
@@ -647,6 +664,8 @@ export default function ProductDetailScreen() {
         maisonId={maisonId}
         onAddToCart={handleShopAddToCart}
         onBuyNow={handleShopBuyNow}
+        onBuyWithEmi={handleShopBuyWithEmi}
+        showBankOffers={showBankOffers}
         onToggleWishlist={handleToggleWishlist}
         isWishlisted={isFavorited}
       />
@@ -802,6 +821,7 @@ export default function ProductDetailScreen() {
                               return;
                             }
                             setShippingAddress(tempAddress);
+                            savePrimaryShippingAddress(tempAddress).catch(() => {});
                             setIsEditingAddress(false);
                             triggerHaptic("light");
                           }}
@@ -972,38 +992,18 @@ export default function ProductDetailScreen() {
                 </View>
               )}
 
-              {/* Country Selector Overlay */}
-              {showCountryPicker && (
-                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg, borderRadius: 32, padding: 24, zIndex: 999 }]}>
-                  <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.pickerTitle, { color: colors.primary }]}>Select Destination Node</Text>
-                    <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
-                      <Lucide name="close" size={24} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  </View>
-                  <ScrollView style={styles.pickerList} showsVerticalScrollIndicator={false}>
-                    {LUXURY_COUNTRIES.map((c) => (
-                      <TouchableOpacity
-                        key={c.name}
-                        style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                        onPress={() => {
-                          setTempAddress((prev: any) => ({
-                            ...prev,
-                            country: c.name,
-                            countryCode: c.code
-                          }));
-                          setShowCountryPicker(false);
-                          triggerHaptic("light");
-                        }}
-                      >
-                        <Text style={styles.pickerFlag}>{c.flag}</Text>
-                        <Text style={[styles.pickerName, { color: colors.text }]}>{c.name}</Text>
-                        <Text style={[styles.pickerCode, { color: colors.primary }]}>{c.code}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
+              <CountrySearchPicker
+                visible={showCountryPicker}
+                onClose={() => setShowCountryPicker(false)}
+                title="Select country"
+                onSelectIso={(iso) => {
+                  setTempAddress((prev: any) => ({
+                    ...prev,
+                    ...applyCountrySelection(iso, prev),
+                  }));
+                  triggerHaptic("light");
+                }}
+              />
             </View>
           </View>
         </Modal>

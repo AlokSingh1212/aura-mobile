@@ -20,6 +20,14 @@ import { useStore } from "@/store/useStore";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as Clipboard from "expo-clipboard";
 import { API_HOST } from "@/constants/api";
+import { authHeaders } from "@/lib/apiClient";
+import {
+  fetchLiveSession,
+  formatLiveComments,
+  postLiveComment,
+  postLiveHeart,
+} from "@/lib/liveSessionApi";
+import { fetchLiveConfig, mintAgoraToken } from "@/lib/liveConfigApi";
 import { formatCompactNumber } from "@/constants/format";
 
 const { width, height } = Dimensions.get("window");
@@ -106,6 +114,22 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
   const [currentLiveSession, setCurrentLiveSession] = useState<any>(null);
   const [streamSource, setStreamSource] = useState<"phone" | "obs">("phone");
   const [showObsSettings, setShowObsSettings] = useState(false);
+  const [livePlatformConfig, setLivePlatformConfig] = useState<{
+    agoraAppId: string | null;
+    agoraConfigured: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    fetchLiveConfig().then((cfg) => {
+      if (cfg) {
+        setLivePlatformConfig({
+          agoraAppId: cfg.agora.appId,
+          agoraConfigured: cfg.agora.configured,
+        });
+      }
+    });
+  }, [visible]);
 
   const stopAgoraRtmpPush = () => {
     if (engineRef.current && currentLiveSession?.ingestEndpoint && currentLiveSession?.streamKey) {
@@ -179,13 +203,14 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
     try {
       const res = await fetch(`${API_HOST}/api/mobile/live`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({
           action: "create",
           maisonId,
           maisonName,
           title: "Live Atelier Showroom",
           pinnedProductId: pinnedProduct?.id,
+          userId: currentUser?.id,
         }),
       });
       const data = await res.json();
@@ -253,32 +278,27 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
 
     const pollSession = async () => {
       try {
-        const url = `${API_HOST}/api/mobile/live?sessionId=${activeSessionId}&role=${activeLiveMode}`;
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.success && data.session) {
-          const session = data.session;
-          setCurrentLiveSession(session);
-          
-          if (!session.active && activeLiveMode === "viewer") {
-            Alert.alert("Stream Concluded", "This live showroom has ended.");
-            destroyWebRTCEngine();
-            setActiveLiveMode("lobby");
-            onClose();
-            return;
-          }
+        const session = await fetchLiveSession(
+          activeSessionId,
+          activeLiveMode === "broadcaster" ? "broadcaster" : "viewer"
+        );
+        if (!session) return;
 
-          setLiveViewerCount(session.viewerCount);
-          setLiveHeartsCount(session.heartsCount);
+        setCurrentLiveSession(session);
 
-          if (session.comments) {
-            const formatted = session.comments.map((c: any) => ({
-              id: c.id,
-              user: c.username,
-              text: c.text,
-            }));
-            setLiveComments(formatted);
-          }
+        if (!session.active && activeLiveMode === "viewer") {
+          Alert.alert("Stream Concluded", "This live showroom has ended.");
+          destroyWebRTCEngine();
+          setActiveLiveMode("lobby");
+          onClose();
+          return;
+        }
+
+        setLiveViewerCount(session.viewerCount ?? 0);
+        setLiveHeartsCount(session.heartsCount ?? 0);
+
+        if (session.comments) {
+          setLiveComments(formatLiveComments(session.comments));
         }
       } catch (err) {
         console.warn("Error polling live session stats:", err);
@@ -321,9 +341,25 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
       const engine = createRtcEngine();
       engineRef.current = engine;
 
-      const appId = customAppId || "demo-app-id-placeholder-token";
-      const token = customToken || "";
+      let appId = customAppId || livePlatformConfig?.agoraAppId || "";
+      let token = customToken || "";
       const channel = customChannel || maisonId;
+
+      if (!token && livePlatformConfig?.agoraConfigured) {
+        const minted = await mintAgoraToken({
+          channelName: channel,
+          uid: 0,
+          role: activeLiveMode === "broadcaster" ? "publisher" : "subscriber",
+        });
+        if (minted) {
+          appId = minted.appId || appId;
+          token = minted.token;
+        }
+      }
+
+      if (!appId) {
+        appId = "demo-app-id-placeholder-token";
+      }
 
       console.log(`[RTC] Initializing Agora with App ID: ${appId}, Channel: ${channel}`);
 
@@ -405,48 +441,12 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
     setRemoteUid(null);
   };
 
-  // Periodic comments and hearts reactions simulation (Only active when NOT connected to database session)
+  // When not connected to a live session, keep comments empty (no fake spam).
   useEffect(() => {
     if (activeSessionId) return;
-    
-    let commentInterval: any;
-    let statsInterval: any;
-
     if (activeLiveMode === "viewer" || activeLiveMode === "broadcaster") {
-      setLiveComments([
-        { id: "1", user: "Julian Rossi", text: "Breathtaking fits, this is true haute luxury! 👏👏" },
-        { id: "2", user: "namita.thapar", text: "Are early-access coupon reservations stackable?" },
-        { id: "3", user: "garimahuja05", text: "Obsidian Gold Vestment looks absolutely unreal live." },
-      ]);
-
-      const MOCK_LIVE_COMMENTS = [
-        "Is this calfskin ethically sourced from certified nodes?",
-        "Beautiful styling. The gold accents highlight the visual geometry.",
-        "Just loaded my Ad Wallet, will definitely bid CPC on this keyword!",
-        "Can we trigger a repricing evaluation loop right now?",
-        "This showroom stream has 120Hz physics flow, so smooth!",
-        "Stunning drape jacket, ordering to Dubai pavilion!",
-        "Sovereign curators absolutely crushing this launch.",
-      ];
-
-      const USER_HANDLES = ["mikai.vid", "namita_vip", "alok_buyer", "riya_vibe", "garima_style", "julian_r"];
-
-      commentInterval = setInterval(() => {
-        const randComment = MOCK_LIVE_COMMENTS[Math.floor(Math.random() * MOCK_LIVE_COMMENTS.length)];
-        const randUser = USER_HANDLES[Math.floor(Math.random() * USER_HANDLES.length)];
-        setLiveComments((prev) => [...prev.slice(-20), { id: Date.now().toString(), user: randUser, text: randComment }]);
-      }, 4000);
-
-      statsInterval = setInterval(() => {
-        setLiveViewerCount((prev) => Math.max(10, prev + Math.floor(Math.random() * 11) - 5));
-        setLiveHeartsCount((prev) => prev + Math.floor(Math.random() * 3));
-      }, 5000);
+      setLiveComments([]);
     }
-
-    return () => {
-      clearInterval(commentInterval);
-      clearInterval(statsInterval);
-    };
   }, [activeLiveMode, activeSessionId]);
 
   // Floating reactions physics tick
@@ -476,14 +476,9 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
     setLiveHeartsCount((prev) => prev + 1);
 
     if (activeSessionId) {
-      fetch(`${API_HOST}/api/mobile/live`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "heart",
-          sessionId: activeSessionId,
-        }),
-      }).catch((err) => console.warn("Failed to send heart to server:", err));
+      postLiveHeart(activeSessionId, currentUser?.id).catch((err) =>
+        console.warn("Failed to send heart to server:", err)
+      );
     }
   };
 
@@ -504,15 +499,11 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
     }, 50);
 
     if (activeSessionId) {
-      fetch(`${API_HOST}/api/mobile/live`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "comment",
-          sessionId: activeSessionId,
-          username: userHandle,
-          text: commentBody,
-        }),
+      postLiveComment({
+        sessionId: activeSessionId,
+        username: userHandle,
+        text: commentBody,
+        userId: currentUser?.id,
       }).catch((err) => console.warn("Failed to send comment to server:", err));
     }
   };

@@ -375,6 +375,31 @@ export const PRODUCT_CATEGORIES: ProductCategoryDef[] = [
           { key: "shelfLife", label: "Best before", type: "text", required: true },
         ],
       },
+      {
+        id: "cooking-oil",
+        label: "Cooking Oils",
+        fields: [
+          { key: "volume", label: "Volume", type: "text", required: true },
+          { key: "oilType", label: "Oil type", type: "select", options: ["Mustard", "Sunflower", "Olive", "Groundnut", "Coconut", "Other"] },
+          { key: "shelfLife", label: "Best before", type: "text", required: true },
+        ],
+      },
+      {
+        id: "ghee",
+        label: "Ghee & Butter",
+        fields: [
+          { key: "weight", label: "Net weight", type: "text", required: true },
+          { key: "shelfLife", label: "Best before", type: "text", required: true },
+        ],
+      },
+      {
+        id: "staples",
+        label: "Staples",
+        fields: [
+          { key: "weight", label: "Net weight", type: "text", required: true },
+          { key: "grainType", label: "Type", type: "select", options: ["Rice", "Dal", "Atta", "Flour", "Other"] },
+        ],
+      },
     ],
   },
   {

@@ -180,6 +180,22 @@ export const SETTINGS_MENU: SettingsMenuItem[] = [
     keywords: ["track", "purchase", "history"],
   },
   {
+    id: "returns",
+    label: "Returns & exchanges",
+    sublabel: "Track refunds and pickup labels",
+    route: "/account/returns",
+    section: "Orders and payments",
+    keywords: ["refund", "return", "exchange", "money back"],
+  },
+  {
+    id: "wallet",
+    label: "AURA Wallet",
+    sublabel: "Balance and refund credits",
+    route: "/account/wallet",
+    section: "Orders and payments",
+    keywords: ["wallet", "balance", "refund"],
+  },
+  {
     id: "payments",
     label: "Payment methods",
     route: "/settings/payments",
@@ -195,6 +211,14 @@ export const SETTINGS_MENU: SettingsMenuItem[] = [
   },
 
   // —— For professionals ——
+  {
+    id: "pro-insights",
+    label: "Professional dashboard",
+    sublabel: "Content insights, audience, earnings and ads",
+    route: "/account/pro-insights",
+    section: "For professionals",
+    keywords: ["insights", "analytics", "creator", "dashboard", "instagram"],
+  },
   {
     id: "store-management",
     label: "Store management",
