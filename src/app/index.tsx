@@ -22,7 +22,6 @@ import {
   ScrollView,
   Modal,
   Linking,
-  BackHandler
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { createAudioPlayer } from "expo-audio";
@@ -43,7 +42,6 @@ import { uploadMediaFromUri } from "@/lib/uploadMedia";
 import { fetchPostComments, addPostComment, fetchPostEngagement } from "@/lib/profileApi";
 import { formatCompactNumber } from "@/constants/format";
 import { CameraStudio } from "@/components/CameraStudio";
-import { ChatDrawer } from "@/components/ChatDrawer";
 import { FeedCard } from "@/components/FeedCard";
 import { HomeFeedPostCard } from "@/components/HomeFeedPostCard";
 import { ImageEditor, FILTER_PRESETS } from "@/components/ImageEditor";
@@ -65,61 +63,13 @@ import { resolveFeedPostMeta, normalizeUsername } from "@/lib/postNavigation";
 import { resolveReshareSourceId } from "@/lib/postRepost";
 import { filterFeedItems, resolveAuthorFromItem, filterSocialMediaItems } from "@/lib/feedSocialFilter";
 import { filterContentItems } from "@/lib/settingsEnforcement";
+import { isReelFeedItem, isReelVideoUrl } from "@/lib/reelMedia";
 import { isUserBlocked, isUserMuted } from "@/lib/socialGraph";
 import { useSocialGraph } from "@/hooks/useSocialGraph";
 import { appendActivity } from "@/lib/activityLog";
 import { AuraBottomNav, type TabKey } from "@/components/shop/AuraBottomNav";
-
-const MOCK_PRODUCTS = [
-  {
-    id: "p1",
-    title: "Obsidian Gold Vestment",
-    name: "Obsidian Gold Vestment",
-    price: 185000,
-    vibe: "Quiet Luxury",
-    images: ["https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400"],
-    maison: { name: "Rare Raven", id: "rare_raven" },
-    auraScore: 9.9,
-    rating: 4.9,
-    type: "Fashion"
-  },
-  {
-    id: "p2",
-    title: "Atelier Silk Trench Jacket",
-    name: "Atelier Silk Trench Jacket",
-    price: 245000,
-    vibe: "Avant-Garde",
-    images: ["https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400"],
-    maison: { name: "Rare Raven", id: "rare_raven" },
-    auraScore: 9.8,
-    rating: 4.8,
-    type: "Fashion"
-  },
-  {
-    id: "p3",
-    title: "Cyber Penthouse Cuff",
-    name: "Cyber Penthouse Cuff",
-    price: 95000,
-    vibe: "Brutalist",
-    images: ["https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=400"],
-    maison: { name: "Rare Raven", id: "rare_raven" },
-    auraScore: 9.7,
-    rating: 4.7,
-    type: "Jewelry"
-  },
-  {
-    id: "p4",
-    title: "Heritage Calfskin Carryall",
-    name: "Heritage Calfskin Carryall",
-    price: 320000,
-    vibe: "Quiet Luxury",
-    images: ["https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600"],
-    maison: { name: "Rare Raven", id: "rare_raven" },
-    auraScore: 9.9,
-    rating: 4.9,
-    type: "Bags"
-  }
-];
+import { fetchActiveLiveSessions } from "@/lib/liveSessionApi";
+import { matchProductFromQuery } from "@/lib/catalogSearch";
 
 const { height, width } = Dimensions.get("window");
 
@@ -568,9 +518,6 @@ export default function ReelsScreen() {
     return { length: height, offset, index };
   };
 
-  const [chatConversationId, setChatConversationId] = useState<string | null>(null);
-  const [showDMs, setShowDMs] = useState(false);
-  const [isChatActive, setIsChatActive] = useState(false);
   const bottomBarHeight = 62 + insets.bottom;
   const [activeStoryIndex, setActiveStoryIndex] = useState(0);
   const [tappedReelItem, setTappedReelItem] = useState<any>(null);
@@ -611,20 +558,6 @@ export default function ReelsScreen() {
     }
   }, [currentUser, authHydrated]);
 
-  // Handle hardware back button press to close DMs drawer cleanly on Android
-  useEffect(() => {
-    if (showDMs) {
-      const onBackPress = () => {
-        setShowDMs(false);
-        setChatConversationId(null);
-        setActiveFeedTab("posts");
-        return true; // Intercept and block default back action
-      };
-      const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
-      return () => subscription.remove();
-    }
-  }, [showDMs]);
-
   // 🔔 Push notification interaction click listener & deep-linking
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -651,9 +584,13 @@ export default function ReelsScreen() {
           setShowActivityDrawer(true);
           break;
         case "MESSAGE":
-          setShowDMs(true);
           if (data.conversationId) {
-            setChatConversationId(data.conversationId);
+            router.push({
+              pathname: "/messages",
+              params: { conversationId: data.conversationId },
+            } as any);
+          } else {
+            router.push("/messages" as any);
           }
           break;
         default:
@@ -675,16 +612,15 @@ export default function ReelsScreen() {
       params?.openInbox === "true" ||
       params?.openInbox === "1"
     ) {
-      setShowDMs(true);
-      cleanParams.openDMs = undefined;
-      cleanParams.openInbox = undefined;
-      changed = true;
+      router.replace("/messages" as any);
+      return;
     }
     if (params?.conversationId) {
-      setChatConversationId(params.conversationId);
-      setShowDMs(true);
-      cleanParams.conversationId = undefined;
-      changed = true;
+      router.replace({
+        pathname: "/messages",
+        params: { conversationId: params.conversationId },
+      } as any);
+      return;
     }
     if (params?.openSearch === "true") {
       setShowExploreGrid(true);
@@ -731,11 +667,8 @@ export default function ReelsScreen() {
 
   const fetchActiveSessions = async () => {
     try {
-      const res = await fetch(`${API_HOST}/api/mobile/live`);
-      const data = await res.json();
-      if (data.success && data.sessions) {
-        setActiveSessions(data.sessions);
-      }
+      const sessions = await fetchActiveLiveSessions(currentUser?.id);
+      setActiveSessions(sessions);
     } catch (e) {
       console.warn("Failed to fetch active live sessions:", e);
     }
@@ -745,7 +678,7 @@ export default function ReelsScreen() {
     fetchActiveSessions();
     const interval = setInterval(fetchActiveSessions, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentUser?.id]);
 
   const [likedReels, setLikedReels] = useState<Record<string, boolean>>({});
   const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
@@ -767,6 +700,7 @@ export default function ReelsScreen() {
   }, [activeProfile?.id]);
 
   const [showExploreGrid, setShowExploreGrid] = useState(false);
+  const [exploreGridQuery, setExploreGridQuery] = useState("");
   const [selectedMediaUri, setSelectedMediaUri] = useState<string | null>(null);
   const [showImageEditor, setShowImageEditor] = useState<boolean>(false);
   const [newPostCaption, setNewPostCaption] = useState("");
@@ -1213,45 +1147,7 @@ export default function ReelsScreen() {
 
 
 
-  // Periodic comments and statistics generator for Simulated Live streams
-  useEffect(() => {
-    let commentInterval: any;
-    let statsInterval: any;
-    
-    if (activeLiveMode === "viewer" || activeLiveMode === "broadcaster") {
-      setLiveComments([
-        { id: "1", user: "Julian Rossi", text: "Breathtaking fits, this is true haute couture! 👏👏" },
-        { id: "2", user: "namita.thapar", text: "Are early-access coupon reservations stackable?" },
-        { id: "3", user: "garimahuja05", text: "Obsidian Gold Vestment looks absolutely unreal live." }
-      ]);
-      
-      const MOCK_LIVE_COMMENTS = [
-        "Is this calfskin ethically sourced from certified nodes?",
-        "Beautiful styling. The gold accents highlight the visual geometry.",
-        "Just loaded my Ad Wallet, will definitely bid CPC on this keyword!",
-        "Can we trigger a repricing evaluation loop right now?",
-        "This showroom stream has 120Hz physics flow, so smooth!",
-        "Stunning drape jacket, ordering to Dubai pavilion!",
-        "Sovereign curators absolutely crushing this launch."
-      ];
-      
-      commentInterval = setInterval(() => {
-        const randComment = MOCK_LIVE_COMMENTS[Math.floor(Math.random() * MOCK_LIVE_COMMENTS.length)];
-        const randUser = PLATFORM_USERS[Math.floor(Math.random() * PLATFORM_USERS.length)].username;
-        setLiveComments(prev => [...prev.slice(-30), { id: Date.now().toString(), user: randUser, text: randComment }]);
-      }, 3500);
-
-      statsInterval = setInterval(() => {
-        setLiveViewerCount(prev => Math.max(10, prev + Math.floor(Math.random() * 11) - 5));
-        setLiveHeartsCount(prev => prev + Math.floor(Math.random() * 3));
-      }, 4000);
-    }
-
-    return () => {
-      clearInterval(commentInterval);
-      clearInterval(statsInterval);
-    };
-  }, [activeLiveMode]);
+  // Live comments/stats are handled inside LiveShowroom with API polling.
 
   // Hearts drifting up physics tick
   useEffect(() => {
@@ -1641,18 +1537,7 @@ export default function ReelsScreen() {
 
   const displayStories = React.useMemo(() => {
     const feedReels = feedItems
-      .filter((item: any) => {
-        const media =
-          item.content?.videoUrl ||
-          item.content?.mediaUrl ||
-          item.sponsoredMetadata?.creativeMediaUrl;
-        return (
-          !!media &&
-          (item.type === "CREATOR_COMMERCE" ||
-            item.type === "SPONSORED_AD" ||
-            item.type === "CREATOR_POST")
-        );
-      })
+      .filter((item: any) => isReelFeedItem(item))
       .map((item: any) => ({
         id: item.id,
         url:
@@ -1676,7 +1561,7 @@ export default function ReelsScreen() {
         likes: item.content?.likesCount || 0,
         commentsCount: item.content?.commentsCount || 0,
         comments: item.comments || [],
-        isVideo: !!item.content?.videoUrl || item.type === "CREATOR_COMMERCE",
+        isVideo: true,
         product: item.product,
         type: item.type,
         sponsoredMetadata: item.sponsoredMetadata,
@@ -1686,16 +1571,20 @@ export default function ReelsScreen() {
         productStickers: item.productStickers || item.content?.productStickers || [],
         location: item.location || item.content?.location,
         aiLabel: item.aiLabel || item.content?.aiLabel,
-      }));
+      }))
+      .filter((item: any) => isReelVideoUrl(item.url));
 
+    // Legacy `stories` store slice is deprecated — only keep non-story video uploads
     const apiStoryReels = stories.filter(
-      (s: any) => s.music !== "STORY_ONLY" && s.url && (s.isVideo || s.url.includes(".mp4"))
+      (s: any) =>
+        s.music !== "STORY_ONLY" &&
+        isReelVideoUrl(s.url) &&
+        (s.isVideo === true || isReelVideoUrl(s.url))
     );
 
-    // Logged-in users: server + optimistic local only — no demo reels
-    const useDemoReels = !currentUser?.id && stories.length === 0 && feedReels.length === 0;
+    const useDemoReels = false;
     const baseStories = [
-      ...localReels.filter((r) => r.url),
+      ...localReels.filter((r) => isReelVideoUrl(r.url)),
       ...apiStoryReels,
       ...(useDemoReels ? simulatedStories : []),
     ];
@@ -1827,16 +1716,23 @@ export default function ReelsScreen() {
       
       for (let i = start; i <= end; i++) {
         const item = displayStories[i];
-        if (item) {
-          const mockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4";
-          const videoUrl = item.url && item.url.endsWith(".mp4") ? item.url : mockVideoUrl;
-          prefetchVideo(videoUrl).catch(e => {
-            console.warn("Reel prefetch error for index", i, e);
-          });
+        if (item?.url && item.url.endsWith(".mp4")) {
+          prefetchVideo(item.url).catch(() => {});
         }
       }
     }
-  }, [activeStoryIndex, displayStories, activeFeedTab]);
+  }, [activeStoryIndex, activeFeedTab, displayStories, currentUser?.id]);
+
+  const exploreGridItems = React.useMemo(() => {
+    const reels = displayStories.filter((s: any) => isReelVideoUrl(s.url));
+    const q = exploreGridQuery.trim().toLowerCase();
+    if (!q) return reels;
+    return reels.filter(
+      (s: any) =>
+        String(s.caption || "").toLowerCase().includes(q) ||
+        String(s.user?.name || s.creator?.username || "").toLowerCase().includes(q)
+    );
+  }, [displayStories, exploreGridQuery]);
 
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems && viewableItems.length > 0) {
@@ -1900,26 +1796,7 @@ export default function ReelsScreen() {
     // Simulate AI Concierge Typing Response
     setTimeout(() => {
       triggerHaptic("medium");
-      let matchedProd = null;
-      let replyText = "I searched the AURA catalog for you. Here is the closest match for your query:";
-
-      const lower = query.toLowerCase();
-      if (lower.includes("bag") || lower.includes("carryall") || lower.includes("purse")) {
-        matchedProd = products.find(p => p.id === "p4") || MOCK_PRODUCTS[3];
-        replyText = "I found the Heritage Calfskin Carryall. It matches your quiet luxury carryall query. Handcrafted in Milan from premium full-grain leather:";
-      } else if (lower.includes("hoodie") || lower.includes("vestment") || lower.includes("black")) {
-        matchedProd = products.find(p => p.id === "p1") || MOCK_PRODUCTS[0];
-        replyText = "Here is the Obsidian Gold Vestment. It features bespoke heavy-drape fabrics in deep obsidian shades, perfect for quiet luxury styling:";
-      } else if (lower.includes("jacket") || lower.includes("trench") || lower.includes("coat")) {
-        matchedProd = products.find(p => p.id === "p2") || MOCK_PRODUCTS[1];
-        replyText = "Exquisite. I recommend the Atelier Silk Trench Jacket. A rare runway piece made from pure mulberry silk, complete with custom metal hardware details:";
-      } else if (lower.includes("cuff") || lower.includes("jewelry") || lower.includes("accessory")) {
-        matchedProd = products.find(p => p.id === "p3") || MOCK_PRODUCTS[2];
-        replyText = "Here is the Cyber Penthouse Cuff. Brutalist luxury design cast in sterling silver with an electroplated raw platinum finish:";
-      } else {
-        matchedProd = products[Math.floor(Math.random() * products.length)] || MOCK_PRODUCTS[0];
-        replyText = "I found this designer piece matching your taste in our current digital catalog. A limited-edition release:";
-      }
+      const { product: matchedProd, replyText } = matchProductFromQuery(query, products);
 
       setAiChatMessages(prev => [...prev, {
         id: `ai_${Date.now()}`,
@@ -2292,35 +2169,28 @@ export default function ReelsScreen() {
       normalizeUsername(threeDotsTargetPost.creator?.username || "") ===
         normalizeUsername(activeProfile?.username || ""));
 
-  const bottomNavTab: TabKey = showDMs
-    ? "inbox"
-    : activeFeedTab === "reels" && isReelsFullScreen
-      ? "reels"
-      : "home";
+  const bottomNavTab: TabKey =
+    activeFeedTab === "reels" && isReelsFullScreen ? "reels" : "home";
 
   const homeTabHandlers = {
     onHome: () => {
-      setShowDMs(false);
       setShowExploreGrid(false);
       setIsReelsFullScreen(false);
       setActiveFeedTab("posts");
     },
     onReels: () => {
-      setShowDMs(false);
       setShowExploreGrid(false);
       setIsReelsFullScreen(true);
       setActiveFeedTab("reels");
     },
     onInbox: () => {
-      setShowDMs(true);
-      setShowExploreGrid(false);
-      setIsReelsFullScreen(false);
+      router.replace("/messages" as any);
     },
   };
 
   return (
     <View style={[styles.container, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }]}>
-      <StatusBar style={showDMs ? "light" : (activeFeedTab === "posts" ? "dark" : "light")} />
+      <StatusBar style={activeFeedTab === "posts" ? "dark" : "light"} />
       <SafeAreaView style={[styles.safeAreaContainer, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }, { marginBottom: bottomBarHeight }]} edges={["top"]}>
         
         {/* 🏔️ TOP HEADER ROW */}
@@ -2825,35 +2695,7 @@ export default function ReelsScreen() {
 
       </SafeAreaView>
 
-      {/* 📥 DYNAMIC DIRECT MESSAGES SLIDE-UP MODAL PANEL */}
-      <ChatDrawer
-        visible={showDMs}
-        onClose={() => {
-          setShowDMs(false);
-          setChatConversationId(null);
-          setActiveFeedTab("posts");
-          setIsChatActive(false);
-        }}
-        bottomBarHeight={bottomBarHeight}
-        activeMaisonId={activeMaisonId}
-        isSeller={isSeller}
-        setIsSeller={setIsSeller}
-        products={products}
-        activeInstaStories={visibleInstaStories}
-        onOpenStoryGroup={(story) => {
-          setSelectedStoriesGroup(story);
-          setActiveSlideIndex(0);
-          setStoryProgress(0);
-        }}
-        initialConversationId={chatConversationId}
-        onConversationStateChange={setIsChatActive}
-      />
-
-      {/* 💬 Individual conversation is now handled inside ChatDrawer */}
-
-      {!(showDMs && isChatActive) && (
-        <AuraBottomNav activeTab={bottomNavTab} homeTabHandlers={homeTabHandlers} />
-      )}
+      <AuraBottomNav activeTab={bottomNavTab} homeTabHandlers={homeTabHandlers} />
 
       {/* 🛍️ PRODUCT PREVIEW SHEET */}
       {/* ──────────────────────────────────────────────────── */}
@@ -2904,27 +2746,40 @@ export default function ReelsScreen() {
                   style={styles.exploreSearchInput}
                   placeholder="Search video stories..."
                   placeholderTextColor="rgba(255,255,255,0.3)"
+                  value={exploreGridQuery}
+                  onChangeText={setExploreGridQuery}
                 />
               </View>
             </View>
 
             {/* 3-Column Video Thumbnail Grid */}
             <FlatList
-              data={displayStories}
+              data={exploreGridItems}
               numColumns={3}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.exploreGridContent}
-              renderItem={({ item, index }) => {
-                const thumbnail = item.thumbnail || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=200";
+              ListEmptyComponent={
+                <Text style={{ color: "rgba(255,255,255,0.5)", textAlign: "center", padding: 32 }}>
+                  {exploreGridQuery ? "No reels match your search" : "No video reels yet — create one from the + button"}
+                </Text>
+              }
+              renderItem={({ item }) => {
+                const thumbnail =
+                  item.thumbnail ||
+                  item.images?.[0] ||
+                  (item.url && !item.url.endsWith(".mp4") ? item.url : undefined) ||
+                  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=200";
                 return (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.exploreGridItem}
                     activeOpacity={0.8}
                     onPress={() => {
                       triggerHaptic("light");
-                      setActiveStoryIndex(index);
+                      const idx = displayStories.findIndex((s: any) => s.id === item.id);
+                      setActiveStoryIndex(idx >= 0 ? idx : 0);
                       setShowExploreGrid(false);
                       setActiveFeedTab("reels");
+                      setIsReelsFullScreen(true);
                     }}
                   >
                     <Image source={{ uri: thumbnail }} style={styles.exploreGridImg} contentFit="cover" placeholder="L184i9ofbHof00ayjZay~qj[ayof" transition={300} />

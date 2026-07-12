@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { initDatabase } from "@/utils/localDb";
 import { useStore } from "@/store/useStore";
 import { refreshSettingsEnforcement } from "@/lib/ecosystemSettings";
+import { refreshI18nLanguage } from "@/lib/i18n";
 import { SettingsEnforcementProvider } from "@/context/SettingsEnforcementContext";
 
 // Suppress expo-av deprecation warnings
@@ -16,11 +17,15 @@ LogBox.ignoreLogs([
 
 
 export default function RootLayout() {
+  const currentUser = useStore((state) => state.currentUser);
+  const syncDeltaPointer = useStore((state) => state.syncDeltaPointer);
+
   useEffect(() => {
     initDatabase();
     refreshSettingsEnforcement().catch((err) => {
       console.warn("Failed to load settings enforcement:", err);
     });
+    refreshI18nLanguage().catch(() => {});
     useStore.getState().restoreAuthSession().catch((err) => {
       console.warn("Failed to restore auth session:", err);
       useStore.setState({ authHydrated: true });
@@ -50,6 +55,23 @@ export default function RootLayout() {
       unsubscribe?.();
     };
   }, []);
+
+  // Real-time delta sync background interval (Instagram parity)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    // Trigger immediate sync
+    syncDeltaPointer().catch(() => {});
+
+    const intervalId = setInterval(() => {
+      syncDeltaPointer().catch((err) => {
+        console.warn("Background delta sync error:", err);
+      });
+    }, 4000);
+
+    return () => clearInterval(intervalId);
+  }, [currentUser?.id, syncDeltaPointer]);
+
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
