@@ -1,7 +1,10 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import Lucide from "@expo/vector-icons/Ionicons";
-import { THREADS_THEME as T } from "@/constants/threadsTheme";
+import { STORY_GRADIENT, THREADS_THEME as T } from "@/constants/threadsTheme";
+import { StoryGradientPill } from "@/components/threads/StoryGradientRing";
+import { AuraThreadsLogo } from "@/components/threads/AuraThreadsLogo";
 
 type Tab = "forYou" | "following";
 
@@ -11,7 +14,6 @@ type Props = {
   onBack: () => void;
   onCompose: () => void;
   triggerHaptic: (type: "light" | "medium") => void;
-  username?: string;
 };
 
 export function ThreadsHeader({
@@ -20,73 +22,90 @@ export function ThreadsHeader({
   onBack,
   onCompose,
   triggerHaptic,
-  username,
 }: Props) {
   return (
-    <View style={styles.header}>
-      <TouchableOpacity
-        style={styles.iconBtn}
-        onPress={() => {
-          triggerHaptic("medium");
-          onBack();
-        }}
-      >
-        <Lucide name="chevron-back" size={24} color={T.text} />
-      </TouchableOpacity>
+    <View style={styles.wrap}>
+      <View style={styles.topRow}>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => {
+            triggerHaptic("medium");
+            onBack();
+          }}
+        >
+          <Lucide name="chevron-back" size={24} color={T.text} />
+        </TouchableOpacity>
 
-      <View style={styles.center}>
-        <Text style={styles.logo}>@</Text>
-        {username ? <Text style={styles.handle}>@{username}</Text> : null}
-        <View style={styles.tabs}>
-          <TouchableOpacity
-            style={[styles.tab, tab === "forYou" && styles.tabActive]}
-            onPress={() => {
-              triggerHaptic("light");
-              onTabChange("forYou");
-            }}
+        <LinearGradient
+          colors={[...STORY_GRADIENT.colors]}
+          start={STORY_GRADIENT.start}
+          end={STORY_GRADIENT.end}
+          style={styles.logoGradient}
+        >
+          <AuraThreadsLogo size={21} color="#ffffff" />
+        </LinearGradient>
+
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => {
+            triggerHaptic("medium");
+            onCompose();
+          }}
+        >
+          <LinearGradient
+            colors={[...STORY_GRADIENT.colors]}
+            start={STORY_GRADIENT.start}
+            end={STORY_GRADIENT.end}
+            style={styles.composeIconBg}
           >
+            <Lucide name="create-outline" size={20} color="#fff" />
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.tabsRow}>
+        <TouchableOpacity
+          onPress={() => {
+            triggerHaptic("light");
+            onTabChange("forYou");
+          }}
+        >
+          <StoryGradientPill active={tab === "forYou"}>
             <Text style={[styles.tabText, tab === "forYou" && styles.tabTextActive]}>
               For you
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, tab === "following" && styles.tabActive]}
-            onPress={() => {
-              triggerHaptic("light");
-              onTabChange("following");
-            }}
-          >
+          </StoryGradientPill>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => {
+            triggerHaptic("light");
+            onTabChange("following");
+          }}
+        >
+          <StoryGradientPill active={tab === "following"}>
             <Text style={[styles.tabText, tab === "following" && styles.tabTextActive]}>
               Following
             </Text>
-          </TouchableOpacity>
-        </View>
+          </StoryGradientPill>
+        </TouchableOpacity>
       </View>
-
-      <TouchableOpacity
-        style={styles.iconBtn}
-        onPress={() => {
-          triggerHaptic("medium");
-          onCompose();
-        }}
-      >
-        <Lucide name="create-outline" size={22} color={T.primary} />
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
+  wrap: {
     borderBottomWidth: 1,
     borderBottomColor: T.borderSubtle,
+    backgroundColor: T.bg,
+    paddingBottom: 10,
+  },
+  topRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 8,
-    paddingBottom: 8,
-    paddingTop: Platform.OS === "ios" ? 4 : 8,
-    backgroundColor: T.bg,
+    minHeight: 52,
   },
   iconBtn: {
     width: 44,
@@ -94,35 +113,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  center: {
+  logoGradient: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
-    flex: 1,
+    justifyContent: "center",
   },
   logo: {
-    color: T.primary,
-    fontSize: 26,
+    color: "#fff",
+    fontSize: 24,
     fontWeight: "300",
-    lineHeight: 28,
+    lineHeight: 26,
+    includeFontPadding: false,
   },
-  handle: {
-    color: T.textMuted,
-    fontSize: 11,
-    marginTop: -2,
-    marginBottom: 6,
+  composeIconBg: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  tabs: {
+  tabsRow: {
     flexDirection: "row",
-    gap: 8,
-  },
-  tab: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  tabActive: {
-    backgroundColor: T.primaryMuted,
-    borderWidth: 1,
-    borderColor: T.border,
+    justifyContent: "center",
+    gap: 10,
+    paddingTop: 4,
   },
   tabText: {
     color: T.textMuted,

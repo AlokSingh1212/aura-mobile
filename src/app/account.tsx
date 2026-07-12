@@ -57,6 +57,7 @@ import {
 import { useSocialGraph } from "@/hooks/useSocialGraph";
 import { filterProfilePosts } from "@/lib/feedSocialFilter";
 import { useProfileGridViewer } from "@/lib/profileGridNavigation";
+import { AuraThreadsLogo } from "@/components/threads/AuraThreadsLogo";
 
 const { width } = Dimensions.get("window");
 const GRID_ITEM_SIZE = (width - 2) / 3; // 3 columns with 1px gap
@@ -1685,7 +1686,7 @@ export default function AccountScreen() {
                   router.push("/threads" as any);
                 }}
               >
-                <Lucide name="logo-threads" size={24} color="#ffffff" />
+                <AuraThreadsLogo size={23} color="#d4af37" />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => { triggerHaptic("medium"); router.push("/settings" as any); }}>
                 <Lucide name="menu-outline" size={28} color="#ffffff" />
