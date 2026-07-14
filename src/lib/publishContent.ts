@@ -138,11 +138,9 @@ export async function uploadAndPublish(
       label: kind === "reel" ? "Composing reel…" : "Preparing…",
       progress: 45,
       run: async (prev) => {
-        if (kind !== "reel") {
-          return { url: String(prev), mediaUrls: opts.mediaUrls };
-        }
-
+        const isVideo = typeof prev === "string" && isVideoUrl(prev);
         const needsCompose =
+          isVideo ||
           (opts.audioTrack?.url) ||
           (opts.filterId && opts.filterId !== "none") ||
           (Array.isArray(prev) && prev.length > 1);
@@ -176,7 +174,7 @@ export async function uploadAndPublish(
           return { url: composed.url, mediaUrls: opts.mediaUrls };
         }
 
-        return { url: videoUrl, mediaUrls: opts.mediaUrls };
+        return { url: String(prev), mediaUrls: opts.mediaUrls };
       },
     },
     {

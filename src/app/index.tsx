@@ -49,7 +49,7 @@ import { PostCard } from "@/components/PostCard";
 import { LiveShowroom } from "@/components/LiveShowroom";
 import { ProductPreviewSheet } from "@/components/ProductPreviewSheet";
 import { ShimmerFeedList } from "@/components/ui/ShimmerLoader";
-import { prefetchVideo } from "@/utils/videoCache";
+import { prefetchVideo, getCachedVideo } from "@/utils/videoCache";
 import { useLayoutCache } from "@/utils/useLayoutCache";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { InAppBrowserModal } from "@/components/InAppBrowserModal";
@@ -357,7 +357,21 @@ const CreatorCommerceCard: React.FC<CreatorCommerceCardProps> = ({
   const creatorUsername = item.creator?.username || "aura_curator";
   const creatorAvatar = item.creator?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150";
 
-  const videoPlayer = useVideoPlayer(video, (p) => {
+  const [videoSource, setVideoSource] = useState(video);
+
+  useEffect(() => {
+    let active = true;
+    getCachedVideo(video).then((cached) => {
+      if (active && cached) {
+        setVideoSource(cached);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [video]);
+
+  const videoPlayer = useVideoPlayer(videoSource, (p) => {
     p.loop = true;
     p.muted = feedMuted;
     p.play();
