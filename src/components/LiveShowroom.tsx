@@ -117,6 +117,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
   const [livePlatformConfig, setLivePlatformConfig] = useState<{
     agoraAppId: string | null;
     agoraConfigured: boolean;
+    ivsConfigured: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -126,6 +127,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
         setLivePlatformConfig({
           agoraAppId: cfg.agora.appId,
           agoraConfigured: cfg.agora.configured,
+          ivsConfigured: !!cfg.ivs?.configured,
         });
       }
     });
@@ -670,7 +672,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
               </View>
             ) : (
               <View style={styles.videoPlaceholder}>
-                {currentLiveSession?.playbackUrl && activeLiveMode === "viewer" ? (
+                {currentLiveSession?.playbackUrl && activeLiveMode === "viewer" && livePlatformConfig?.ivsConfigured ? (
                   <HlsStreamPlayer playbackUrl={currentLiveSession.playbackUrl} />
                 ) : activeLiveMode === "broadcaster" && streamSource === "obs" ? (
                   <View style={styles.obsActiveContainer}>
