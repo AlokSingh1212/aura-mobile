@@ -39,7 +39,7 @@ import * as Clipboard from "expo-clipboard";
 import { API_HOST } from "@/constants/api";
 import { authHeaders, IS_PRODUCTION_APP } from "@/lib/apiClient";
 import { uploadMediaFromUri } from "@/lib/uploadMedia";
-import { fetchPostComments, addPostComment, fetchPostEngagement } from "@/lib/profileApi";
+import { fetchPostComments, addPostComment, fetchPostEngagement, toggleFollowProfile } from "@/lib/profileApi";
 import { formatCompactNumber } from "@/constants/format";
 import { CameraStudio } from "@/components/CameraStudio";
 import { FeedCard } from "@/components/FeedCard";
@@ -895,6 +895,7 @@ export default function ReelsScreen() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportTargetProfileId, setReportTargetProfileId] = useState("");
   const [reportTargetPostId, setReportTargetPostId] = useState<string | undefined>(undefined);
+  const [justFollowedProfiles, setJustFollowedProfiles] = useState<Record<string, number>>({});
   const [showCommentsModal, setShowCommentsModal] = useState(false);
   const [commentsTargetPost, setCommentsTargetPost] = useState<any>(null);
   const [newCommentText, setNewCommentText] = useState("");
@@ -985,6 +986,26 @@ export default function ReelsScreen() {
       return false;
     }
   }, [reportTargetProfileId]);
+  const handleFollowPress = useCallback(async (creatorProfileId: string) => {
+    if (!activeProfile?.id) {
+      Alert.alert("Sign in required", "Sign in to follow creators.");
+      return;
+    }
+    triggerHaptic("medium");
+    try {
+      const result = await toggleFollowProfile(activeProfile.id, creatorProfileId);
+      if (result.success && result.isFollowing) {
+        setJustFollowedProfiles((prev) => ({
+          ...prev,
+          [creatorProfileId]: Date.now(),
+        }));
+      } else if (!result.success) {
+        Alert.alert("Error", "Could not follow profile.");
+      }
+    } catch {
+      Alert.alert("Error", "Connection error.");
+    }
+  }, [activeProfile?.id, triggerHaptic]);
   const handleCommentsPress = async (item: any) => {
     triggerHaptic("medium");
     setCommentsTargetPost(item);
@@ -1916,6 +1937,13 @@ export default function ReelsScreen() {
       const sharesCount = shareCounts[item.id] ?? item.content?.sharesCount ?? 0;
       const repostsCount = repostCounts[item.id] ?? item.content?.repostsCount ?? item.repostsCount ?? 0;
 
+      const creatorId = item.creator?.id;
+      const isMe = creatorId && activeProfile?.id === creatorId;
+      const followTimestamp = creatorId ? justFollowedProfiles[creatorId] : undefined;
+      const isJustFollowed = followTimestamp !== undefined && (Date.now() - followTimestamp < 5 * 60 * 1000);
+      const initialFollowed = !!item.creator?.isFollowing;
+      const showFollowBtn = !isMe && !initialFollowed && (!followTimestamp || isJustFollowed);
+
       return (
         <HomeFeedPostCard
           item={item}
@@ -1932,6 +1960,9 @@ export default function ReelsScreen() {
           onReshare={() => handleReshare(item)}
           onSave={() => handleFeedItemSave(item.id)}
           onThreeDots={() => handleThreeDotsPress(item)}
+          showFollowBtn={showFollowBtn}
+          isJustFollowed={isJustFollowed}
+          onFollow={() => creatorId && handleFollowPress(creatorId)}
           onDoubleTapLike={() => {
             handleLikePress(item.id);
             triggerHeartBurst(item.id);

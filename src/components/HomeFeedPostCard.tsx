@@ -42,6 +42,9 @@ export interface HomeFeedPostCardProps {
   onThreeDots: () => void;
   onDoubleTapLike?: () => void;
   heartBurst?: React.ReactNode;
+  showFollowBtn?: boolean;
+  isJustFollowed?: boolean;
+  onFollow?: () => void;
 }
 
 /** Instagram-style home feed post — collab, photo tags, #/@ caption, products. */
@@ -62,6 +65,9 @@ export function HomeFeedPostCard({
   onThreeDots,
   onDoubleTapLike,
   heartBurst,
+  showFollowBtn,
+  isJustFollowed,
+  onFollow,
 }: HomeFeedPostCardProps) {
   const meta = resolveFeedPostMeta(item);
   const postProducts = resolvePostProducts(item, products);
@@ -140,9 +146,29 @@ export function HomeFeedPostCard({
             />
           </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={onThreeDots} hitSlop={12}>
-          <Lucide name="ellipsis-horizontal" size={20} color="#8E8E93" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          {showFollowBtn && (
+            <TouchableOpacity
+              style={[
+                styles.followBtn,
+                isJustFollowed ? styles.followingBtn : styles.followBtnActive
+              ]}
+              onPress={onFollow}
+              disabled={isJustFollowed}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.followBtnText,
+                isJustFollowed ? styles.followingBtnText : styles.followBtnTextActive
+              ]}>
+                {isJustFollowed ? "Following" : "Follow"}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={onThreeDots} hitSlop={12}>
+            <Lucide name="ellipsis-horizontal" size={20} color="#8E8E93" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <TouchableOpacity activeOpacity={1} onPress={handleMediaPress} style={styles.mediaWrap}>
@@ -293,5 +319,31 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 6,
     lineHeight: 18,
+  },
+  followBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  followBtnActive: {
+    backgroundColor: "#fb923c",
+    borderColor: "#fb923c",
+  },
+  followingBtn: {
+    backgroundColor: "transparent",
+    borderColor: "rgba(0,0,0,0.12)",
+  },
+  followBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  followBtnTextActive: {
+    color: "#ffffff",
+  },
+  followingBtnText: {
+    color: "#8E8E93",
   },
 });
