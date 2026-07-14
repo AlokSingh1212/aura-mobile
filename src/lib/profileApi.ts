@@ -376,6 +376,11 @@ export async function createProfileHighlight(opts: {
 export async function fetchProductById(id: string): Promise<any | null> {
   const res = await fetch(`${API_HOST}/api/mobile/products?id=${encodeURIComponent(id)}`);
   const data = await res.json();
-  if (data.success && data.product) return data.product;
+  if (data.success && data.product) {
+    return {
+      ...data.product,
+      activeBankOffers: data.activeBankOffers || [],
+    };
+  }
   return null;
 }

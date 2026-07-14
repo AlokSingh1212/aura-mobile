@@ -79,15 +79,28 @@ function humanizeKey(key: string): string {
 export function getBankOffers(product: any): BankOffer[] {
   const price = product?.price ?? 0;
   if (price < 500) return [];
-  const offers: BankOffer[] = BANK_TEMPLATES.map((bank) => ({
-    id: bank.id,
-    bankName: bank.bankName,
-    discountPercent: bank.pct,
-    discountAmount: Math.round(price * (bank.pct / 100)),
-  })).sort((a, b) => b.discountAmount - a.discountAmount);
 
-  if (offers[0]) offers[0].isBest = true;
-  return offers;
+  if (Array.isArray(product?.activeBankOffers) && product.activeBankOffers.length > 0) {
+    const offers: BankOffer[] = product.activeBankOffers.map((o: any) => {
+      const isPct = String(o.type).toUpperCase() === "PERCENTAGE";
+      const pct = isPct ? Number(o.discount) : Math.round((Number(o.discount) / Math.max(1, price)) * 100);
+      const amt = isPct ? Math.round(price * (Number(o.discount) / 100)) : Math.round(Number(o.discount));
+      const rawCode = String(o.code || "").toUpperCase();
+      const bankName = rawCode.includes("BANK") || rawCode.includes("UPI") ? rawCode : `${rawCode} Bank`;
+      
+      return {
+        id: o.id || String(o.code).toLowerCase(),
+        bankName,
+        discountPercent: pct,
+        discountAmount: amt,
+      };
+    }).sort((a: any, b: any) => b.discountAmount - a.discountAmount);
+
+    if (offers[0]) offers[0].isBest = true;
+    return offers;
+  }
+
+  return [];
 }
 
 export function priceAfterBankOffer(price: number, offer?: BankOffer | null): number {
