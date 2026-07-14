@@ -369,7 +369,7 @@ export function ShopProductDetail({
             )}
           </View>
 
-          {showBankOffers ? (
+          {showBankOffers && effectivePrice >= 500 ? (
           <View style={styles.wowCard}>
             <TouchableOpacity
               style={styles.wowHeader}
@@ -398,24 +398,26 @@ export function ShopProductDetail({
                         : "Best direct price"}
                     </Text>
                   </View>
-                  <View style={styles.payModeCard}>
-                    <Text style={styles.payModeLabel}>No Cost EMI</Text>
-                    <Text style={styles.emiLine}>
-                      {formatPrice ? formatPrice(emi.monthly) : formatINR(emi.monthly)}/mo
-                    </Text>
-                    <Text style={styles.wowPriceSub}>
-                      {emi.months} months · total{" "}
-                      {formatPrice ? formatPrice(emi.total) : formatINR(emi.total)}
-                    </Text>
-                    {onBuyWithEmi ? (
-                      <TouchableOpacity
-                        style={styles.emiLinkBtn}
-                        onPress={() => onBuyWithEmi(variantOpts)}
-                      >
-                        <Text style={styles.emiLinkText}>View EMI plans →</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
+                  {effectivePrice >= 3000 ? (
+                    <View style={styles.payModeCard}>
+                      <Text style={styles.payModeLabel}>No Cost EMI</Text>
+                      <Text style={styles.emiLine}>
+                        {formatPrice ? formatPrice(emi.monthly) : formatINR(emi.monthly)}/mo
+                      </Text>
+                      <Text style={styles.wowPriceSub}>
+                        {emi.months} months · total{" "}
+                        {formatPrice ? formatPrice(emi.total) : formatINR(emi.total)}
+                      </Text>
+                      {onBuyWithEmi ? (
+                        <TouchableOpacity
+                          style={styles.emiLinkBtn}
+                          onPress={() => onBuyWithEmi(variantOpts)}
+                        >
+                          <Text style={styles.emiLinkText}>View EMI plans →</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
 
                 <View style={styles.couponRow}>
@@ -460,7 +462,7 @@ export function ShopProductDetail({
           </View>
           ) : null}
 
-          {showBankOffers ? (
+          {showBankOffers && bankOffers.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Bank offers</Text>
             <Text style={styles.sectionHint}>Tap to apply · one offer at checkout</Text>

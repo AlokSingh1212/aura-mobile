@@ -78,7 +78,8 @@ function humanizeKey(key: string): string {
 
 export function getBankOffers(product: any): BankOffer[] {
   const price = product?.price ?? 0;
-  const offers = BANK_TEMPLATES.map((bank) => ({
+  if (price < 500) return [];
+  const offers: BankOffer[] = BANK_TEMPLATES.map((bank) => ({
     id: bank.id,
     bankName: bank.bankName,
     discountPercent: bank.pct,
