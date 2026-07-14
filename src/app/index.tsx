@@ -3809,13 +3809,37 @@ export default function ReelsScreen() {
                 <TouchableOpacity style={styles.optionRow} onPress={() => {
                   triggerHaptic("heavy");
                   setShowThreeDotsModal(false);
+                  const author = resolveAuthorFromItem(threeDotsTargetPost || {});
+                  
+                  const submitReport = async (reason: string) => {
+                    try {
+                      const res = await fetch(`${API_HOST}/api/mobile/profile/report`, {
+                        method: "POST",
+                        headers: authHeaders(),
+                        body: JSON.stringify({
+                          targetProfileId: author.profileId,
+                          reason,
+                          description: `Reported via mobile post three-dots context menu. Post ID: ${threeDotsTargetPost?.id || "unknown"}`
+                        })
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        Alert.alert("Reported", "Thank you. Our AURA Trust & Safety team has logged this report and will review it immediately.");
+                      } else {
+                        Alert.alert("Error", data.error || "Failed to submit report.");
+                      }
+                    } catch (err) {
+                      Alert.alert("Error", "Failed to contact trust & safety servers.");
+                    }
+                  };
+
                   Alert.alert(
-                    "Report Post",
-                    "Why are you reporting this post?",
+                    "Report User/Post",
+                    "Why are you reporting this content?",
                     [
-                      { text: "Spam", onPress: () => Alert.alert("Reported", "Thank you. Our AURA trust & safety team will review this post.") },
-                      { text: "Inappropriate", onPress: () => Alert.alert("Reported", "Thank you. Our AURA trust & safety team will review this post.") },
-                      { text: "Misleading", onPress: () => Alert.alert("Reported", "Thank you. Our AURA trust & safety team will review this post.") },
+                      { text: "Harassment", onPress: () => submitReport("HARASSMENT") },
+                      { text: "Spam", onPress: () => submitReport("SPAM") },
+                      { text: "Abusive", onPress: () => submitReport("ABUSIVE") },
                       { text: "Cancel", style: "cancel" }
                     ]
                   );
