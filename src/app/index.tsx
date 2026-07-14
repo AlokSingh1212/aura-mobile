@@ -48,6 +48,7 @@ import { ImageEditor, FILTER_PRESETS } from "@/components/ImageEditor";
 import { PostCard } from "@/components/PostCard";
 import { LiveShowroom } from "@/components/LiveShowroom";
 import { ProductPreviewSheet } from "@/components/ProductPreviewSheet";
+import { ReportFlowModal } from "@/components/ReportFlowModal";
 import { ShimmerFeedList } from "@/components/ui/ShimmerLoader";
 import { prefetchVideo, getCachedVideo } from "@/utils/videoCache";
 import { useLayoutCache } from "@/utils/useLayoutCache";
@@ -891,6 +892,9 @@ export default function ReelsScreen() {
   const [reshareTargetPost, setReshareTargetPost] = useState<any>(null);
   const [showThreeDotsModal, setShowThreeDotsModal] = useState(false);
   const [threeDotsTargetPost, setThreeDotsTargetPost] = useState<any>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportTargetProfileId, setReportTargetProfileId] = useState("");
+  const [reportTargetPostId, setReportTargetPostId] = useState<string | undefined>(undefined);
   const [showCommentsModal, setShowCommentsModal] = useState(false);
   const [commentsTargetPost, setCommentsTargetPost] = useState<any>(null);
   const [newCommentText, setNewCommentText] = useState("");
@@ -958,7 +962,29 @@ export default function ReelsScreen() {
     replyingTo,
     triggerHaptic,
   ]);
-
+  const handleReportSubmit = useCallback(async (reason: string, description?: string) => {
+    try {
+      const res = await fetch(`${API_HOST}/api/mobile/profile/report`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          targetProfileId: reportTargetProfileId,
+          reason,
+          description: description || "Reported via mobile full-screen options."
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        return true;
+      } else {
+        Alert.alert("Error", data.error || "Failed to submit report.");
+        return false;
+      }
+    } catch (err) {
+      Alert.alert("Error", "Failed to contact trust & safety servers.");
+      return false;
+    }
+  }, [reportTargetProfileId]);
   const handleCommentsPress = async (item: any) => {
     triggerHaptic("medium");
     setCommentsTargetPost(item);
@@ -3611,6 +3637,14 @@ export default function ReelsScreen() {
         }}
       />
 
+      <ReportFlowModal
+        visible={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        targetProfileId={reportTargetProfileId}
+        postId={reportTargetPostId}
+        onSubmitReport={handleReportSubmit}
+      />
+
       {/* 🔴 THREE DOTS OPTIONS BOTTOM SHEET MODAL */}
       {showThreeDotsModal && (
         <Modal
@@ -3810,39 +3844,9 @@ export default function ReelsScreen() {
                   triggerHaptic("heavy");
                   setShowThreeDotsModal(false);
                   const author = resolveAuthorFromItem(threeDotsTargetPost || {});
-                  
-                  const submitReport = async (reason: string) => {
-                    try {
-                      const res = await fetch(`${API_HOST}/api/mobile/profile/report`, {
-                        method: "POST",
-                        headers: authHeaders(),
-                        body: JSON.stringify({
-                          targetProfileId: author.profileId,
-                          reason,
-                          description: `Reported via mobile post three-dots context menu. Post ID: ${threeDotsTargetPost?.id || "unknown"}`
-                        })
-                      });
-                      const data = await res.json();
-                      if (data.success) {
-                        Alert.alert("Reported", "Thank you. Our AURA Trust & Safety team has logged this report and will review it immediately.");
-                      } else {
-                        Alert.alert("Error", data.error || "Failed to submit report.");
-                      }
-                    } catch (err) {
-                      Alert.alert("Error", "Failed to contact trust & safety servers.");
-                    }
-                  };
-
-                  Alert.alert(
-                    "Report User/Post",
-                    "Why are you reporting this content?",
-                    [
-                      { text: "Harassment", onPress: () => submitReport("HARASSMENT") },
-                      { text: "Spam", onPress: () => submitReport("SPAM") },
-                      { text: "Abusive", onPress: () => submitReport("ABUSIVE") },
-                      { text: "Cancel", style: "cancel" }
-                    ]
-                  );
+                  setReportTargetProfileId(author.profileId);
+                  setReportTargetPostId(threeDotsTargetPost?.id);
+                  setShowReportModal(true);
                 }}>
                   <Lucide name="alert-circle-outline" size={24} color="#ff3b30" />
                   <Text style={[styles.optionRowText, { color: "#ff3b30" }]}>Report post</Text>
