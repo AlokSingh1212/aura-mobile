@@ -6,7 +6,10 @@ import {
   TouchableOpacity,
   Dimensions,
   Animated,
+  ScrollView,
+  TextInput,
 } from "react-native";
+import { fetchPostComments, addPostComment } from "@/lib/profileApi";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import Lucide from "@expo/vector-icons/Ionicons";
@@ -157,6 +160,18 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   const otherPeopleCount = Math.max(0, people.length - 1);
   const [peekVisible, setPeekVisible] = useState(false);
 
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [localComments, setLocalComments] = useState<any[]>([]);
+  const [commentText, setCommentText] = useState("");
+
+  useEffect(() => {
+    if (isDetailsOpen) {
+      fetchPostComments(item.id)
+        .then((comms) => setLocalComments(comms || []))
+        .catch(() => {});
+    }
+  }, [isDetailsOpen, item.id]);
+
   // ── Double-Tap Heart Animation ──────────────────────────
   const heartScale = useRef(new Animated.Value(0)).current;
   const heartOpacity = useRef(new Animated.Value(0)).current;
@@ -263,268 +278,389 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   // Video player is now lazily managed by ActiveVideoPlayer sub-component to prevent OOM
 
   return (
-    <View style={[styles.reelContainer, { height: reelHeight }]}>
+    <View style={[styles.reelContainer, { height: reelHeight, backgroundColor: "#000" }]}>
       {PeopleSheet}
-      {/* Fullscreen Video with Pinch-to-Zoom + Double-Tap-to-Like */}
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={triggerDoubleTapLike}
-        onLongPress={() => triggerHaptic("light")}
-        style={StyleSheet.absoluteFillObject}
-      >
-        <Animated.View
-          style={[StyleSheet.absoluteFillObject, { transform: [{ scale: pinchScale }] }]}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {isAdjacent && videoSource && (
-            <ActiveVideoPlayer
-              videoSource={videoSource}
-              feedMuted={feedMuted}
-              isPlayed={isPlayed}
-              isScreenFocused={isScreenFocused}
-            />
-          )}
-        </Animated.View>
-
-        {/* ❤️ Heart Burst Overlay */}
-        {showHeart && (
-          <Animated.View
-            style={[
-              styles.heartOverlay,
-              {
-                transform: [{ scale: heartScale }],
-                opacity: heartOpacity,
-              },
-            ]}
-            pointerEvents="none"
-          >
-            <Lucide name="heart" size={90} color="#FF3B30" />
-          </Animated.View>
-        )}
-
-        {postMeta.photoTags && postMeta.photoTags.length > 0 && hasPositions && (
-          <MediaPeopleOverlay
-            photoTags={postMeta.photoTags}
-            onTagPress={onTagPress}
-            onOverflowPress={openSheet}
-          />
-        )}
-      </TouchableOpacity>
-
-      {/* DYNAMIC SHADER OVERLAYS SYNCED FROM THE CAMERA STUDIO */}
-      {item.filterApplied === "platinum" && (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255,255,255,0.08)", zIndex: 1 }]} />
-      )}
-      {item.filterApplied === "neon" && (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { borderWidth: 3, borderColor: "#00f5ff", backgroundColor: "rgba(0,245,255,0.04)", zIndex: 1 }]} />
-      )}
-      {item.filterApplied === "obsidian" && (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(8,4,21,0.45)", zIndex: 1 }]} />
-      )}
-
-      {/* Dynamic Touch Up simulated glow overlay */}
-      {item.touchUpApplied > 0 && (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255,255,255,0.02)", opacity: item.touchUpApplied / 100, zIndex: 1 }]} />
-      )}
-
-      <View style={styles.gradientOverlay} />
-
-      {/* Creator Metadata Overlay (Bottom Left) */}
-      <View style={[styles.metaContainer, { bottom: floatingBottomOffset }]}>
-        {/* Legacy photo tags (avatar bubbles) rendered above ShopNowBar */}
-        {postMeta.photoTags && postMeta.photoTags.length > 0 && !hasPositions && (
-          <View style={{ height: 32, marginBottom: 8, zIndex: 10 }}>
-            <MediaPeopleOverlay
-              photoTags={postMeta.photoTags}
-              bottom={0}
-              left={0}
-              onTagPress={onTagPress}
-              onOverflowPress={openSheet}
-            />
-          </View>
-        )}
-
-        {/* Product preview strip rendered above ShopNowBar */}
-        {postProducts && postProducts.length > 0 && (
-          <ProductThumbnailStrip
-            products={postProducts}
-            bottom={0}
-            style={{ position: "relative", marginBottom: 8, bottom: 0 }}
-            onPressProduct={(p) => openProduct(p.productId)}
-          />
-        )}
-
-        {/* Render EITHER ShopNowBar (for organic) OR ctaBanner (for ads) */}
-        {!(item.type === "SPONSORED_AD" || item.sponsoredMetadata) ? (
-          <ShopNowBar
-            products={postProducts}
-            onPress={() => postProducts[0] && openProduct(postProducts[0].productId)}
-          />
-        ) : (
+      {!isDetailsOpen ? (
+        <>
           <TouchableOpacity
-            style={[styles.ctaBannerRelative, { marginBottom: 10 }]}
-            activeOpacity={0.9}
-            onPress={() => {
-              triggerHaptic("medium");
-              if (onCtaPress) {
-                onCtaPress(
-                  item.sponsoredMetadata?.ctaType || "LEARN_MORE",
-                  item.sponsoredMetadata || {}
-                );
-              }
-            }}
+            activeOpacity={1}
+            onPress={triggerDoubleTapLike}
+            onLongPress={() => triggerHaptic("light")}
+            style={StyleSheet.absoluteFillObject}
           >
-            <Text style={styles.ctaBannerText}>
-              {item.sponsoredMetadata?.ctaText || "Learn more"}
-            </Text>
-            <Lucide name="chevron-forward" size={16} color="#fff" />
-          </TouchableOpacity>
-        )}
-        <View style={styles.creatorRow}>
-          <TouchableOpacity 
-            onPress={() => onPersonPress(postMeta.authorUsername)} 
-            onLongPress={() => {
-              triggerHaptic("heavy");
-              setPeekVisible(true);
-            }}
-            delayLongPress={300}
-            activeOpacity={0.85}
-          >
-            <View style={[styles.avatar, { overflow: "hidden" }]}>
-              {(() => {
-                const isCurrentUser = (item.profile?.username && item.profile?.username === activeProfile?.username) ||
-                                      (item.profile?.id && item.profile?.id === activeProfile?.id) ||
-                                      (item.user?.id && item.user?.id === currentUser?.id) ||
-                                      (item.profile?.name && item.profile?.name?.toLowerCase()?.replace(/\s+/g, "") === activeProfile?.name?.toLowerCase()?.replace(/\s+/g, ""));
-
-
-                const logoUrl = isCurrentUser
-                  ? (activeProfile?.logo || currentUser?.avatar)
-                  : (item.profile?.logo || item.user?.avatar || item.maison?.logo);
-
-                if (logoUrl) {
-                  return (
-                    <Image
-                      source={{ uri: logoUrl }}
-                      style={{ width: "100%", height: "100%" }}
-                      placeholder="L184i9ofbHof00ayjZay~qj[ayof"
-                      placeholderContentFit="cover"
-                      transition={300}
-                    />
-                  );
-                }
-
-                return (
-                  <Text style={styles.avatarChar}>
-                    {(item.profile?.name || item.user?.name || "A")[0]?.toUpperCase()}
-                  </Text>
-                );
-              })()}
-            </View>
-          </TouchableOpacity>
-          <View style={styles.creatorDetails}>
-            <View style={styles.nameFollowRow}>
-              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, flexWrap: "wrap" }}>
-                <PostAuthorLine
-                  authorName={postMeta.authorName}
-                  authorUsername={postMeta.authorUsername}
-                  collab={postMeta.collab}
-                  collabs={postMeta.collabs}
-                  nameStyle={useSheet ? styles.creatorNamePicker : styles.creatorName}
-                  collabStyle={useSheet ? styles.creatorNamePicker : styles.creatorName}
-                  theme="dark"
-                  showPeoplePicker={useSheet}
-                  otherPeopleCount={otherPeopleCount}
-                  onShowPeoplePicker={openSheet}
-                  onAuthorPress={() => onPersonPress(postMeta.authorUsername)}
-                  onCollabPress={() =>
-                    postMeta.collab ? onPersonPress(postMeta.collab.username) : openSheet()
-                  }
+            <Animated.View
+              style={[StyleSheet.absoluteFillObject, { transform: [{ scale: pinchScale }] }]}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              {isAdjacent && videoSource && (
+                <ActiveVideoPlayer
+                  videoSource={videoSource}
+                  feedMuted={feedMuted}
+                  isPlayed={isPlayed}
+                  isScreenFocused={isScreenFocused}
                 />
-                {item.type === "SPONSORED_AD" || item.sponsoredMetadata ? (
-                  <Text style={styles.adTag}>Ad</Text>
-                ) : null}
-              </View>
-              <TouchableOpacity style={styles.followBtn} onPress={() => triggerHaptic("medium")}>
-                <Text style={styles.followBtnText}>Follow</Text>
-              </TouchableOpacity>
-            </View>
-            {postMeta.isRepost && postMeta.repostOf ? (
-              <RepostAttribution repostOf={postMeta.repostOf} theme="dark" />
-            ) : null}
-            <PostMetaRotator
-              location={item.content?.location || item.location}
-              audio={item.audioTrack ? `${item.audioTrack.title} · ${item.audioTrack.artist}` : item.music}
-              aiLabel={item.content?.aiLabel || item.aiLabel}
-            />
-          </View>
-        </View>
-        <CaptionText
-          caption={
-            postMeta.isRepost && postMeta.repostOf?.originalCaption
-              ? postMeta.caption
-                ? `${postMeta.caption}\n\n${postMeta.repostOf.originalCaption}`
-                : postMeta.repostOf.originalCaption
-              : postMeta.caption
-          }
-          style={styles.caption}
-          numberOfLines={3}
-          onHashtagPress={openHashtag}
-          onMentionPress={onPersonPress}
-        />
-      </View>
+              )}
+            </Animated.View>
 
-      {/* Right Interaction Column (Likes, Comments, Share) */}
-      <View style={[styles.interactionColumn, { bottom: floatingBottomOffset }]}>
-        <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleLikePress(item.id)}>
-          <View style={styles.iconCircle}>
-            <Lucide name={isLiked ? "heart" : "heart-outline"} size={22} color={isLiked ? "#ff3b30" : "#fff"} />
-          </View>
-          <Text style={styles.iconLabel}>{formatCompactNumber(displayLikes)}</Text>
-        </TouchableOpacity>
+            {/* ❤️ Heart Burst Overlay */}
+            {showHeart && (
+              <Animated.View
+                style={[
+                  styles.heartOverlay,
+                  {
+                    transform: [{ scale: heartScale }],
+                    opacity: heartOpacity,
+                  },
+                ]}
+                pointerEvents="none"
+              >
+                <Lucide name="heart" size={90} color="#FF3B30" />
+              </Animated.View>
+            )}
 
-        <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleCommentsPress(item)}>
-          <View style={styles.iconCircle}>
-            <Lucide name="chatbubble-outline" size={22} color="#fff" />
-          </View>
-          <Text style={styles.iconLabel}>{formatCompactNumber(displayComments)}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleShare(item)}>
-          <View style={styles.iconCircle}>
-            <Lucide name="paper-plane-outline" size={22} color="#fff" />
-          </View>
-          <Text style={styles.iconLabel}>{formatCompactNumber(displayShares)}</Text>
-        </TouchableOpacity>
-
-        {handleReshare ? (
-          <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleReshare(item)}>
-            <View style={styles.iconCircle}>
-              <Lucide name="repeat-outline" size={22} color="#fff" />
-            </View>
-            <Text style={styles.iconLabel}>{formatCompactNumber(displayReposts)}</Text>
+            {postMeta.photoTags && postMeta.photoTags.length > 0 && hasPositions && (
+              <MediaPeopleOverlay
+                photoTags={postMeta.photoTags}
+                onTagPress={onTagPress}
+                onOverflowPress={openSheet}
+              />
+            )}
           </TouchableOpacity>
-        ) : null}
 
-        {(() => {
-          const isSaved = savedPosts[item.id] || false;
-          return (
-            <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleSavePress(item.id)}>
+          {/* DYNAMIC SHADER OVERLAYS SYNCED FROM THE CAMERA STUDIO */}
+          {item.filterApplied === "platinum" && (
+            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255,255,255,0.08)", zIndex: 1 }]} />
+          )}
+          {item.filterApplied === "neon" && (
+            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { borderWidth: 3, borderColor: "#00f5ff", backgroundColor: "rgba(0,245,255,0.04)", zIndex: 1 }]} />
+          )}
+          {item.filterApplied === "obsidian" && (
+            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(8,4,21,0.45)", zIndex: 1 }]} />
+          )}
+
+          {/* Dynamic Touch Up simulated glow overlay */}
+          {item.touchUpApplied > 0 && (
+            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255,255,255,0.02)", opacity: item.touchUpApplied / 100, zIndex: 1 }]} />
+          )}
+
+          <View style={styles.gradientOverlay} />
+
+          {/* Creator Metadata Overlay (Bottom Left) */}
+          <View style={[styles.metaContainer, { bottom: floatingBottomOffset }]}>
+            {/* Legacy photo tags */}
+            {postMeta.photoTags && postMeta.photoTags.length > 0 && !hasPositions && (
+              <View style={{ height: 32, marginBottom: 8, zIndex: 10 }}>
+                <MediaPeopleOverlay
+                  photoTags={postMeta.photoTags}
+                  bottom={0}
+                  left={0}
+                  onTagPress={onTagPress}
+                  onOverflowPress={openSheet}
+                />
+              </View>
+            )}
+
+            {/* Product preview strip */}
+            {postProducts && postProducts.length > 0 && (
+              <ProductThumbnailStrip
+                products={postProducts}
+                bottom={0}
+                style={{ position: "relative", marginBottom: 8, bottom: 0 }}
+                onPressProduct={(p) => openProduct(p.productId)}
+              />
+            )}
+
+            {/* Shop Now bar / sponsored CTA */}
+            {!(item.type === "SPONSORED_AD" || item.sponsoredMetadata) ? (
+              <ShopNowBar
+                products={postProducts}
+                onPress={() => postProducts[0] && openProduct(postProducts[0].productId)}
+              />
+            ) : (
+              <TouchableOpacity
+                style={[styles.ctaBannerRelative, { marginBottom: 10 }]}
+                activeOpacity={0.9}
+                onPress={() => {
+                  triggerHaptic("medium");
+                  if (onCtaPress) {
+                    onCtaPress(
+                      item.sponsoredMetadata?.ctaType || "LEARN_MORE",
+                      item.sponsoredMetadata || {}
+                    );
+                  }
+                }}
+              >
+                <Text style={styles.ctaBannerText}>
+                  {item.sponsoredMetadata?.ctaText || "Learn more"}
+                </Text>
+                <Lucide name="chevron-forward" size={16} color="#fff" />
+              </TouchableOpacity>
+            )}
+            <View style={styles.creatorRow}>
+              <TouchableOpacity 
+                onPress={() => onPersonPress(postMeta.authorUsername)} 
+                onLongPress={() => {
+                  triggerHaptic("heavy");
+                  setPeekVisible(true);
+                }}
+                delayLongPress={300}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.avatar, { overflow: "hidden" }]}>
+                  {(() => {
+                    const isCurrentUser = (item.profile?.username && item.profile?.username === activeProfile?.username) ||
+                                          (item.profile?.id && item.profile?.id === activeProfile?.id) ||
+                                          (item.user?.id && item.user?.id === currentUser?.id);
+                    const logoUrl = isCurrentUser ? (activeProfile?.logo || currentUser?.avatar) : (item.profile?.logo || item.user?.avatar || item.maison?.logo);
+                    if (logoUrl) {
+                      return (
+                        <Image source={{ uri: logoUrl }} style={{ width: "100%", height: "100%" }} placeholder="L184i9ofbHof00ayjZay~qj[ayof" transition={300} />
+                      );
+                    }
+                    return (
+                      <Text style={styles.avatarChar}>{(item.profile?.name || item.user?.name || "A")[0]?.toUpperCase()}</Text>
+                    );
+                  })()}
+                </View>
+              </TouchableOpacity>
+              <View style={styles.creatorDetails}>
+                <View style={styles.nameFollowRow}>
+                  <View style={{ flexDirection: "row", alignItems: "center", flex: 1, flexWrap: "wrap" }}>
+                    <PostAuthorLine
+                      authorName={postMeta.authorName}
+                      authorUsername={postMeta.authorUsername}
+                      collab={postMeta.collab}
+                      collabs={postMeta.collabs}
+                      nameStyle={useSheet ? styles.creatorNamePicker : styles.creatorName}
+                      collabStyle={useSheet ? styles.creatorNamePicker : styles.creatorName}
+                      theme="dark"
+                      showPeoplePicker={useSheet}
+                      otherPeopleCount={otherPeopleCount}
+                      onShowPeoplePicker={openSheet}
+                      onAuthorPress={() => onPersonPress(postMeta.authorUsername)}
+                      onCollabPress={() => postMeta.collab ? onPersonPress(postMeta.collab.username) : openSheet()}
+                    />
+                    {(item.type === "SPONSORED_AD" || item.sponsoredMetadata) && <Text style={styles.adTag}>Ad</Text>}
+                  </View>
+                  <TouchableOpacity style={styles.followBtn} onPress={() => triggerHaptic("medium")}>
+                    <Text style={styles.followBtnText}>Follow</Text>
+                  </TouchableOpacity>
+                </View>
+                {postMeta.isRepost && postMeta.repostOf && <RepostAttribution repostOf={postMeta.repostOf} theme="dark" />}
+                <PostMetaRotator
+                  location={item.content?.location || item.location}
+                  audio={item.audioTrack ? `${item.audioTrack.title} · ${item.audioTrack.artist}` : item.music}
+                  aiLabel={item.content?.aiLabel || item.aiLabel}
+                />
+              </View>
+            </View>
+
+            {/* Clickable caption to toggle details expansion screen */}
+            <TouchableOpacity activeOpacity={0.8} onPress={() => { triggerHaptic("medium"); setIsDetailsOpen(true); }} style={{ width: "100%" }}>
+              <CaptionText
+                caption={
+                  postMeta.isRepost && postMeta.repostOf?.originalCaption
+                    ? postMeta.caption
+                      ? `${postMeta.caption}\n\n${postMeta.repostOf.originalCaption}`
+                      : postMeta.repostOf.originalCaption
+                    : postMeta.caption
+                }
+                style={styles.caption}
+                numberOfLines={3}
+                onHashtagPress={openHashtag}
+                onMentionPress={onPersonPress}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Right Interaction Column */}
+          <View style={[styles.interactionColumn, { bottom: floatingBottomOffset }]}>
+            <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleLikePress(item.id)}>
               <View style={styles.iconCircle}>
-                <Lucide name={isSaved ? "bookmark" : "bookmark-outline"} size={22} color={isSaved ? "#00f5ff" : "#fff"} />
+                <Lucide name={isLiked ? "heart" : "heart-outline"} size={22} color={isLiked ? "#ff3b30" : "#fff"} />
+              </View>
+              <Text style={styles.iconLabel}>{formatCompactNumber(displayLikes)}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleCommentsPress(item)}>
+              <View style={styles.iconCircle}>
+                <Lucide name="chatbubble-outline" size={22} color="#fff" />
+              </View>
+              <Text style={styles.iconLabel}>{formatCompactNumber(displayComments)}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleShare(item)}>
+              <View style={styles.iconCircle}>
+                <Lucide name="paper-plane-outline" size={22} color="#fff" />
+              </View>
+              <Text style={styles.iconLabel}>{formatCompactNumber(displayShares)}</Text>
+            </TouchableOpacity>
+
+            {handleReshare && (
+              <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleReshare(item)}>
+                <View style={styles.iconCircle}>
+                  <Lucide name="repeat-outline" size={22} color="#fff" />
+                </View>
+                <Text style={styles.iconLabel}>{formatCompactNumber(displayReposts)}</Text>
+              </TouchableOpacity>
+            )}
+
+            {(() => {
+              const isSaved = savedPosts[item.id] || false;
+              return (
+                <TouchableOpacity style={styles.iconButtonRow} onPress={() => handleSavePress(item.id)}>
+                  <View style={styles.iconCircle}>
+                    <Lucide name={isSaved ? "bookmark" : "bookmark-outline"} size={22} color={isSaved ? "#00f5ff" : "#fff"} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })()}
+
+            <TouchableOpacity style={styles.iconButton} onPress={() => handleThreeDotsPress(item)}>
+              <View style={styles.iconCircle}>
+                <Lucide name="ellipsis-vertical" size={24} color="#fff" />
               </View>
             </TouchableOpacity>
-          );
-        })()}
-
-        <TouchableOpacity style={styles.iconButton} onPress={() => handleThreeDotsPress(item)}>
-          <View style={styles.iconCircle}>
-            <Lucide name="ellipsis-vertical" size={24} color="#fff" />
           </View>
-        </TouchableOpacity>
-      </View>
+        </>
+      ) : (
+        // === SHIFTED DETAILS SCREEN VIEW ===
+        <View style={localStyles.shiftedContainer}>
+          {/* Shrunken Video centered at the top */}
+          <View style={localStyles.shrunkenVideoContainer}>
+            <TouchableOpacity 
+              activeOpacity={0.9} 
+              onPress={() => { triggerHaptic("medium"); setIsDetailsOpen(false); }}
+              style={localStyles.shrunkenVideoWrapper}
+            >
+              {isAdjacent && videoSource && (
+                <ActiveVideoPlayer
+                  videoSource={videoSource}
+                  feedMuted={feedMuted}
+                  isPlayed={isPlayed}
+                  isScreenFocused={isScreenFocused}
+                />
+              )}
+              {/* Tap to expand hint overlay */}
+              <View style={localStyles.expandHintOverlay}>
+                <Lucide name="expand-outline" size={16} color="#fff" />
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Details & Comments panel */}
+          <View style={localStyles.detailsPanel}>
+            <View style={localStyles.panelDragHandle} />
+
+            {/* Author/Follow Row */}
+            <View style={localStyles.panelHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                <View style={localStyles.panelAvatar}>
+                  <Text style={localStyles.panelAvatarChar}>
+                    {(item.profile?.name || item.user?.name || "A")[0]?.toUpperCase()}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={localStyles.panelUsername}>{postMeta.authorUsername || "creator"}</Text>
+                  <Text style={localStyles.panelLocation}>{item.content?.location || item.location || "Original Sound"}</Text>
+                </View>
+              </View>
+              <TouchableOpacity style={localStyles.panelFollowBtn} onPress={() => triggerHaptic("medium")}>
+                <Text style={localStyles.panelFollowText}>Follow</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              style={localStyles.panelScroll}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 60 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Full Caption */}
+              <Text style={localStyles.panelCaption}>
+                {postMeta.caption || "No caption provided."}
+              </Text>
+              <Text style={localStyles.panelDate}>March 15 • See translation</Text>
+
+              {/* Tagged accounts */}
+              {postMeta.photoTags && postMeta.photoTags.length > 0 && (
+                <View style={localStyles.taggedRow}>
+                  <Lucide name="person" size={12} color="rgba(255,255,255,0.6)" />
+                  <Text style={localStyles.taggedText}>
+                    Tagged: {postMeta.photoTags.map((t: any) => `@${t.username || t.name}`).join(", ")}
+                  </Text>
+                </View>
+              )}
+
+              <View style={localStyles.divider} />
+
+              {/* Comments Section */}
+              <Text style={localStyles.commentsTitle}>Comments ({localComments.length})</Text>
+              
+              {localComments.length === 0 ? (
+                <Text style={localStyles.noComments}>No comments yet. Start the conversation!</Text>
+              ) : (
+                localComments.map((comm) => (
+                  <View key={comm.id} style={localStyles.commentItem}>
+                    <View style={localStyles.commentAvatar}>
+                      <Text style={localStyles.commentAvatarText}>
+                        {comm.username[0]?.toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={localStyles.commentUsername}>{comm.username}</Text>
+                      <Text style={localStyles.commentText}>{comm.text}</Text>
+                      <Text style={localStyles.commentTime}>{comm.time || "now"}</Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            {/* Bottom comment box input */}
+            <View style={localStyles.commentInputRow}>
+              <View style={localStyles.avatarMini}>
+                <Text style={localStyles.avatarMiniText}>
+                  {(activeProfile?.name || currentUser?.name || "U")[0]?.toUpperCase()}
+                </Text>
+              </View>
+              <TextInput
+                style={localStyles.commentInput}
+                placeholder="What do you think of this?"
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                value={commentText}
+                onChangeText={setCommentText}
+              />
+              {commentText.trim().length > 0 && (
+                <TouchableOpacity 
+                  onPress={async () => {
+                    const text = commentText.trim();
+                    if (!text) return;
+                    triggerHaptic("heavy");
+                    setCommentText("");
+                    // Add local representation immediately
+                    const newComm = {
+                      id: `temp_${Date.now()}`,
+                      username: activeProfile?.username || currentUser?.email?.split("@")[0] || "user",
+                      text,
+                      time: "now"
+                    };
+                    setLocalComments(prev => [...prev, newComm]);
+                    // Call API in background
+                    try {
+                      await addPostComment(item.id, currentUser?.id || "", text);
+                    } catch {}
+                  }}
+                  style={localStyles.commentSendBtn}
+                >
+                  <Lucide name="arrow-up" size={16} color="#000" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      )}
 
 
 
@@ -726,5 +862,211 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600" as const,
     letterSpacing: 0.3,
+  },
+});
+
+const localStyles = StyleSheet.create({
+  shiftedContainer: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  shrunkenVideoContainer: {
+    height: "30%",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 10,
+    backgroundColor: "#000",
+  },
+  shrunkenVideoWrapper: {
+    height: 160,
+    width: 90,
+    borderRadius: 12,
+    overflow: "hidden",
+    position: "relative",
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  expandHintOverlay: {
+    position: "absolute",
+    bottom: 8,
+    right: 8,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 6,
+    padding: 4,
+  },
+  detailsPanel: {
+    height: "70%",
+    backgroundColor: "#080415",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: "hidden",
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  panelDragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    alignSelf: "center",
+    marginVertical: 10,
+  },
+  panelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  panelAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#fb923c",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  panelAvatarChar: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  panelUsername: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  panelLocation: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 11,
+    marginTop: 1,
+  },
+  panelFollowBtn: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  panelFollowText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  panelScroll: {
+    flex: 1,
+  },
+  panelCaption: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 14,
+  },
+  panelDate: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 11.5,
+    marginTop: 6,
+  },
+  taggedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 8,
+    padding: 8,
+  },
+  taggedText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 12,
+  },
+  divider: {
+    height: 0.5,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    marginVertical: 14,
+  },
+  commentsTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+  noComments: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 13,
+    textAlign: "center",
+    marginVertical: 20,
+  },
+  commentItem: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 14,
+  },
+  commentAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#00f5ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  commentAvatarText: {
+    color: "#000",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  commentUsername: {
+    color: "#fff",
+    fontSize: 12.5,
+    fontWeight: "700",
+  },
+  commentText: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  commentTime: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 10.5,
+    marginTop: 4,
+  },
+  commentInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 0.5,
+    borderTopColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "#080415",
+  },
+  avatarMini: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#fb923c",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarMiniText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 11,
+  },
+  commentInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 13,
+    paddingVertical: 6,
+  },
+  commentSendBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
