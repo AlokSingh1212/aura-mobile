@@ -558,7 +558,7 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
                 <View style={styles.cameraBottomContainer}>
                   <TouchableOpacity style={styles.cameraGalleryBtn} onPress={handleGalleryPress}>
                     {previewClip ? (
-                      <SharePreviewVideo uri={previewClip.uri} />
+                      <Image source={{ uri: previewClip.uri }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
                     ) : (
                       <Lucide name="images-outline" size={24} color="#fff" />
                     )}
