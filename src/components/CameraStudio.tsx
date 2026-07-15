@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   StyleSheet,
   Text,
@@ -118,6 +119,17 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [showAudioDrawer, setShowAudioDrawer] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      AsyncStorage.getItem("@aura/reels_onboarding_seen").then((val) => {
+        if (!val) {
+          setShowOnboarding(true);
+        }
+      });
+    }
+  }, [visible]);
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
   const [showSpeedDrawer, setShowSpeedDrawer] = useState(false);
   const [showCountdownDrawer, setShowCountdownDrawer] = useState(false);
@@ -770,6 +782,54 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
                 </View>
               </View>
             )}
+            {/* Onboarding Dialog Overlay */}
+            {showOnboarding && (
+              <View style={styles.onboardingOverlay} pointerEvents="auto">
+                {/* Close Button */}
+                <TouchableOpacity 
+                  style={styles.onboardingCloseBtn} 
+                  onPress={() => { triggerHaptic("light"); handleClose(); }}
+                >
+                  <Lucide name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+
+                <View style={styles.onboardingContent}>
+                  {/* Reels Clapboard Icon */}
+                  <View style={styles.onboardingIconCircle}>
+                    <Lucide name="film" size={44} color="#fff" />
+                  </View>
+
+                  {/* Title */}
+                  <Text style={styles.onboardingTitle}>Create AURA Reels</Text>
+
+                  {/* Subtitle */}
+                  <Text style={styles.onboardingSub}>
+                    Record and showcase your premium curation, digital designs, and fashion creations to the AURA community.
+                  </Text>
+
+                  {/* Privacy details */}
+                  <Text style={styles.onboardingDetails}>
+                    If your profile is public, other creators can discover, share, and purchase tagged products from your Reels. They can also interact with your AI designs and content directly. You can manage your sharing permissions and visibility at any time in your Settings.{"\n\n"}
+                    <Text style={{ fontWeight: "700", textDecorationLine: "underline" }}>Learn more about AURA Curation.</Text>
+                  </Text>
+
+                  {/* Get Started Button */}
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    style={styles.onboardingBtn}
+                    onPress={async () => {
+                      triggerHaptic("heavy");
+                      try {
+                        await AsyncStorage.setItem("@aura/reels_onboarding_seen", "true");
+                      } catch {}
+                      setShowOnboarding(false);
+                    }}
+                  >
+                    <Text style={styles.onboardingBtnText}>Get started</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </>
         )}
       </View>
@@ -780,6 +840,79 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
 const styles = StyleSheet.create({
   cameraContainer: { flex: 1, backgroundColor: "#000" },
   cameraViewfinder: { ...StyleSheet.absoluteFillObject },
+  onboardingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 99999,
+  },
+  onboardingCloseBtn: {
+    position: "absolute",
+    top: 48,
+    right: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 100000,
+  },
+  onboardingContent: {
+    width: "88%",
+    alignItems: "center",
+    paddingHorizontal: 22,
+    paddingVertical: 32,
+    backgroundColor: "#0d091e",
+    borderRadius: 24,
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  onboardingIconCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  onboardingTitle: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  onboardingSub: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 18,
+    fontWeight: "500",
+  },
+  onboardingDetails: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    marginBottom: 28,
+  },
+  onboardingBtn: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingVertical: 14,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  onboardingBtnText: {
+    color: "#000",
+    fontSize: 14.5,
+    fontWeight: "bold",
+  },
   permissionContainer: { flex: 1, backgroundColor: "#080415" },
   permissionIconCircle: { width: 88, height: 88, borderRadius: 44, backgroundColor: "rgba(0,245,255,0.1)", alignItems: "center", justifyContent: "center", marginBottom: 24 },
   permissionTitle: { color: "#fff", fontSize: 22, fontWeight: "bold", textAlign: "center", marginBottom: 12 },
