@@ -62,21 +62,32 @@ export async function uploadMediaFromUri(
     throw new Error(tokenData.error || "Could not retrieve upload token from server.");
   }
 
-  const { clientToken, uploadUrl } = tokenData;
+  const { clientToken, uploadUrl, publicUrl } = tokenData;
 
-  // 2. Upload file directly to Vercel Blob as binary content (bypassing Vercel's payload limit)
+  const isR2 = clientToken === "r2-presigned-put";
+
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+  };
+  
+  if (!isR2) {
+    headers["Authorization"] = `Bearer ${clientToken}`;
+    headers["x-api-version"] = "12";
+  }
+
+  // 2. Upload file directly to destination container
   const uploadResult = await uploadAsync(uploadUrl, trimmed, {
     httpMethod: "PUT",
     uploadType: FileSystemUploadType.BINARY_CONTENT,
-    headers: {
-      "Authorization": `Bearer ${clientToken}`,
-      "Content-Type": contentType,
-      "x-api-version": "12",
-    },
+    headers,
   });
 
   if (uploadResult.status < 200 || uploadResult.status >= 300) {
     throw new Error(`Direct upload failed (${uploadResult.status}): ${uploadResult.body || "no details"}`);
+  }
+
+  if (isR2 && publicUrl) {
+    return publicUrl;
   }
 
   try {
@@ -88,6 +99,6 @@ export async function uploadMediaFromUri(
     /* fallback if JSON parsing fails but request succeeded */
   }
 
-  return uploadUrl;
+  return publicUrl || uploadUrl;
 
 }

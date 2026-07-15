@@ -88,6 +88,15 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
   >("trending");
   const [audioStartMs, setAudioStartMs] = useState(0);
   const [musicVolume, setMusicVolume] = useState(1);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+
+  useEffect(() => {
+    if (selectedAudio) {
+      setIsMicMuted(true);
+    } else {
+      setIsMicMuted(false);
+    }
+  }, [selectedAudio]);
 
   const [cameraFacing, setCameraFacing] = useState<"back" | "front">("back");
   const [flashMode, setFlashMode] = useState<"off" | "on" | "auto">("off");
@@ -264,7 +273,6 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
     try {
       const result = await cameraRef.current.recordAsync({ 
         maxDuration: selectedLength,
-        videoQuality: "1080p",
       });
       if (progressTimerRef.current) clearInterval(progressTimerRef.current);
       setIsRecording(false);
@@ -425,7 +433,7 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
           </View>
         ) : (
           <>
-            <CameraView ref={cameraRef} style={styles.cameraViewfinder} facing={cameraFacing} mode="video" videoQuality="1080p" />
+            <CameraView ref={cameraRef} style={styles.cameraViewfinder} facing={cameraFacing} mode="video" videoQuality="1080p" mute={isMicMuted} />
 
             {flashMode === "on" && (
               <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { borderWidth: 20, borderColor: "#fffaf0", backgroundColor: "rgba(255,250,240,0.15)", zIndex: 4 }]} />
@@ -518,6 +526,7 @@ export const CameraStudio: React.FC<CameraStudioProps> = ({
                 <View style={styles.cameraLeftToolbar}>
                   {[
                     { label: "Audio", icon: "musical-notes-outline", active: !!selectedAudio, onPress: () => setShowAudioDrawer(true) },
+                    { label: isMicMuted ? "Mic Off" : "Mic On", icon: isMicMuted ? "mic-off-outline" : "mic-outline", active: !isMicMuted, onPress: () => setIsMicMuted(prev => !prev) },
                     { label: "Effects", icon: "sparkles-outline", active: activeFilter !== "none", onPress: () => setShowFilterDrawer(true) },
                     { label: "Prompter", icon: "document-text-outline", active: !!prompter.text, onPress: () => setShowPrompterDrawer(true) },
                     { label: "Align", icon: "copy-outline", active: align.enabled, onPress: () => setShowAlignDrawer(true) },
