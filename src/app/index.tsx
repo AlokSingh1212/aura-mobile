@@ -971,6 +971,7 @@ export default function ReelsScreen() {
         body: JSON.stringify({
           targetProfileId: reportTargetProfileId,
           reason,
+          postId: reportTargetPostId,
           description: description || "Reported via mobile full-screen options."
         })
       });
@@ -985,7 +986,7 @@ export default function ReelsScreen() {
       Alert.alert("Error", "Failed to contact trust & safety servers.");
       return false;
     }
-  }, [reportTargetProfileId]);
+  }, [reportTargetProfileId, reportTargetPostId]);
   const handleFollowPress = useCallback(async (creatorProfileId: string) => {
     if (!activeProfile?.id) {
       Alert.alert("Sign in required", "Sign in to follow creators.");
