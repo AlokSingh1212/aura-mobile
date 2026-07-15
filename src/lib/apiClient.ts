@@ -23,9 +23,14 @@ export function authHeaders(extra?: Record<string, string>): Record<string, stri
 }
 
 let authLogoutHandler: (() => void) | null = null;
+let authSuspensionHandler: (() => void) | null = null;
 
 export function registerAuthLogoutHandler(handler: () => void) {
   authLogoutHandler = handler;
+}
+
+export function registerAuthSuspensionHandler(handler: () => void) {
+  authSuspensionHandler = handler;
 }
 
 export async function apiFetch(
@@ -39,6 +44,17 @@ export async function apiFetch(
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   if (res.status === 401) {
     authLogoutHandler?.();
+  }
+  if (res.status === 403) {
+    try {
+      const clone = res.clone();
+      const body = await clone.json();
+      if (body?.error === "ACCOUNT_SUSPENDED") {
+        authSuspensionHandler?.();
+      }
+    } catch {
+      // Ignored
+    }
   }
   return res;
 }

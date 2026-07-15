@@ -2,7 +2,7 @@ import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { API_BASE } from "@/constants/api";
-import { authHeaders, registerAuthTokenGetter, registerAuthLogoutHandler, IS_PRODUCTION_APP } from "@/lib/apiClient";
+import { authHeaders, registerAuthTokenGetter, registerAuthLogoutHandler, registerAuthSuspensionHandler, IS_PRODUCTION_APP } from "@/lib/apiClient";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
@@ -263,6 +263,8 @@ interface StoreState {
   syncProfileIdentity: () => void;
   patchActiveProfile: (patch: Record<string, unknown>) => void;
 
+  isAccountSuspended: boolean;
+  setAccountSuspended: (suspended: boolean) => void;
   activeProfile: any | null;
   userProfiles: any[];
   fetchProfiles: (userId: string) => Promise<void>;
@@ -1174,6 +1176,8 @@ export const useStore = create<StoreState>((set, get) => ({
 
   activeProfile: null,
   userProfiles: [],
+  isAccountSuspended: false,
+  setAccountSuspended: (suspended) => set({ isAccountSuspended: suspended }),
   currentUser: null,
   setCurrentUser: (user) => set({ currentUser: user }),
   isSubscribed: false,
@@ -1483,6 +1487,7 @@ export const useStore = create<StoreState>((set, get) => ({
       authToken: null,
       notifications: [],
       viewingProfile: null,
+      isAccountSuspended: false,
       viewingProducts: [],
       viewingHighlights: [],
     });
@@ -1898,4 +1903,8 @@ registerAuthLogoutHandler(() => {
   if (state.authToken) {
     state.authLogOut();
   }
+});
+
+registerAuthSuspensionHandler(() => {
+  useStore.getState().setAccountSuspended(true);
 });

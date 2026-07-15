@@ -466,6 +466,84 @@ const CreatorCommerceCard: React.FC<CreatorCommerceCardProps> = ({
   );
 };
 
+const suspensionStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#0d0a21",
+  },
+  safe: {
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  headerText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  body: {
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 36,
+  },
+  icon: {
+    marginBottom: 20,
+  },
+  title: {
+    color: "#ffffff",
+    fontSize: 24,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  card: {
+    backgroundColor: "rgba(255,255,255,0.035)",
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.06)",
+    width: "100%",
+    marginBottom: 16,
+  },
+  cardTitle: {
+    color: "#fb923c",
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  cardText: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 13.5,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  footer: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+  logoutBtn: {
+    backgroundColor: "#ff3b30",
+    borderRadius: 12,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+  },
+  logoutText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+});
+
 export default function ReelsScreen() {
   const { 
     products, 
@@ -500,7 +578,9 @@ export default function ReelsScreen() {
     logFeedCartAdd,
     cart,
     formatPrice,
-    addToCart
+    addToCart,
+    isAccountSuspended,
+    authLogOut
   } = useStore();
   const {
     graph: socialGraph,
@@ -2270,6 +2350,55 @@ export default function ReelsScreen() {
       router.replace("/messages" as any);
     },
   };
+
+  if (isAccountSuspended) {
+    return (
+      <View style={suspensionStyles.container}>
+        <StatusBar style="light" />
+        <SafeAreaView style={suspensionStyles.safe}>
+          <View style={suspensionStyles.header}>
+            <Lucide name="shield-half" size={24} color="#fb923c" />
+            <Text style={suspensionStyles.headerText}>AURA Guidelines & Safety</Text>
+          </View>
+          
+          <ScrollView contentContainerStyle={suspensionStyles.body}>
+            <Lucide name="ban-outline" size={72} color="#ff3b30" style={suspensionStyles.icon} />
+            <Text style={suspensionStyles.title}>Your account has been suspended</Text>
+            
+            <View style={suspensionStyles.card}>
+              <Text style={suspensionStyles.cardTitle}>Why this happened</Text>
+              <Text style={suspensionStyles.cardText}>
+                Your account was flagged for community guidelines violations regarding harassment, unwanted contact, fake profile representation, or abusive behaviour.
+              </Text>
+              <Text style={suspensionStyles.cardText}>
+                AURA is a trusted premium ecosystem for creators and collectors. Abusive or deceptive behaviors are not tolerated.
+              </Text>
+            </View>
+
+            <View style={suspensionStyles.card}>
+              <Text style={suspensionStyles.cardTitle}>What you can do</Text>
+              <Text style={suspensionStyles.cardText}>
+                If you believe this is a mistake, you have 30 days from the suspension date to appeal this decision. You can submit an appeal or download your account data.
+              </Text>
+            </View>
+          </ScrollView>
+
+          <View style={suspensionStyles.footer}>
+            <TouchableOpacity 
+              style={suspensionStyles.logoutBtn} 
+              activeOpacity={0.8}
+              onPress={() => {
+                triggerHaptic("medium");
+                authLogOut();
+              }}
+            >
+              <Text style={suspensionStyles.logoutText}>Log Out</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, activeFeedTab === "posts" && { backgroundColor: "#FFFFFF" }]}>
