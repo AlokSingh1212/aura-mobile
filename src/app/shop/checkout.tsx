@@ -36,6 +36,11 @@ import {
   type PaymentOrchestration,
 } from "@/lib/juspayCheckout";
 import { applyCountrySelection } from "@/lib/worldLocations";
+import {
+  getCheckoutBlockReason,
+  getStoreProcessingDays,
+  tryAutoApplyCheckoutCoupon,
+} from "@/lib/settingsRuntime";
 
 const PAYMENT_METHODS = [
   { id: "UPI", icon: "phone-portrait-outline", title: "UPI", sub: "Pay by any UPI app", offer: "Get upto ₹50 cashback" },
@@ -45,11 +50,12 @@ const PAYMENT_METHODS = [
 ] as const;
 
 export default function ShopCheckoutScreen() {
-  const { productId, color, size, paymentMethod: paymentMethodParam } = useLocalSearchParams<{
+  const { productId, color, size, paymentMethod: paymentMethodParam, affiliateCode: affiliateCodeParam } = useLocalSearchParams<{
     productId?: string;
     color?: string;
     size?: string;
     paymentMethod?: string;
+    affiliateCode?: string;
   }>();
 
   const {
@@ -155,6 +161,7 @@ export default function ShopCheckoutScreen() {
           maisonName: p.maison?.name,
           selectedColor: color,
           selectedSize: size,
+          affiliateCode: affiliateCodeParam || undefined,
         },
       ];
     }
@@ -165,8 +172,26 @@ export default function ShopCheckoutScreen() {
       quantity: item.quantity || 1,
       image: item.images?.[0],
       maisonName: item.maison?.name,
+      affiliateCode: item.affiliateCode,
     }));
-  }, [productId, products, cart, color, size]);
+  }, [productId, products, cart, color, size, affiliateCodeParam]);
+
+  useEffect(() => {
+    if (appliedCoupon || !lineItems.length || isCheckingCoupon) return;
+    let cancelled = false;
+    (async () => {
+      const auto = await tryAutoApplyCheckoutCoupon(
+        (payload) => applyCoupon(payload),
+        activeMaisonId || undefined
+      );
+      if (cancelled || !auto) return;
+      setAppliedCoupon(auto.coupon);
+      setCouponCode(auto.code);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lineItems.length, appliedCoupon, activeMaisonId, isCheckingCoupon]);
 
   const primaryProduct = productId ? products.find((p) => p.id === productId) : cart[0];
   const maisonId = primaryProduct?.maison?.id || activeMaisonId;
@@ -240,6 +265,11 @@ export default function ShopCheckoutScreen() {
 
   const handlePay = async () => {
     if (!lineItems.length) return;
+    const blockReason = getCheckoutBlockReason();
+    if (blockReason) {
+      Alert.alert("Store unavailable", blockReason);
+      return;
+    }
     setIsPaying(true);
     triggerHaptic("heavy");
     try {
@@ -247,12 +277,13 @@ export default function ShopCheckoutScreen() {
         artifactId: item.id,
         quantity: item.quantity,
         price: item.price,
+        affiliateCode: item.affiliateCode || undefined,
       }));
 
       const res = await initiateCheckout({
         userId: currentUser?.id || activeProfile?.userId || "guest",
         cartItems,
-        shippingAddress,
+        shippingAddress: JSON.stringify(shippingAddress),
         couponCode: appliedCoupon?.code,
       });
 
@@ -365,6 +396,7 @@ export default function ShopCheckoutScreen() {
   }
 
   const item = lineItems[0];
+  const checkoutBlock = getCheckoutBlockReason();
 
   return (
     <View style={styles.root}>
@@ -387,6 +419,13 @@ export default function ShopCheckoutScreen() {
             </View>
           )}
         </View>
+
+        {checkoutBlock ? (
+          <View style={styles.vacationBanner}>
+            <Lucide name="pause-circle-outline" size={18} color="#E65100" />
+            <Text style={styles.vacationText}>{checkoutBlock}</Text>
+          </View>
+        ) : null}
 
         <CheckoutStepper currentStep={step} />
 
@@ -428,7 +467,7 @@ export default function ShopCheckoutScreen() {
                   <Text style={styles.seller}>Seller: {item.maisonName || "AURA"}</Text>
                   <Text style={styles.productPrice}>{formatPrice(item.price)}</Text>
                   <Text style={styles.deliveryEta}>
-                    Delivery in {shopPrefs.expressDelivery ? "1–2 days" : "3–6 days"} |{" "}
+                    Delivery in {shopPrefs.expressDelivery ? "1–2 days" : `${getStoreProcessingDays() + 2}–${getStoreProcessingDays() + 5} days`} |{" "}
                     {shopPrefs.expressDelivery ? "Express ₹49" : "Free"}
                   </Text>
                 </View>
@@ -622,6 +661,19 @@ const styles = StyleSheet.create({
   },
   stepLabel: { fontSize: 11, color: SHOP.textSecondary },
   headerTitle: { fontSize: 17, fontWeight: "700", color: SHOP.text },
+  vacationBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#FFF3E0",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#FFCC80",
+  },
+  vacationText: { flex: 1, color: "#E65100", fontSize: 13, lineHeight: 18 },
   secureBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
   secureText: { fontSize: 11, color: SHOP.green, fontWeight: "700" },
   scroll: { padding: 16, paddingBottom: 120 },

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -9,19 +9,27 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  TextInput,
 } from "react-native";
-import { router } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { router, useLocalSearchParams } from "expo-router";
 import Lucide from "@expo/vector-icons/Ionicons";
-import { ComposerShell } from "@/components/create/ComposerShell";
-import { StoryCompositor } from "@/components/create/StoryCompositor";
-import { pickMediaFromLibrary } from "@/lib/createMediaPicker";
+import { StoryCompositor, type StoryCompositorExportMeta } from "@/components/create/StoryCompositor";
+import {
+  StoryGalleryStep,
+  type StoryGalleryPick,
+} from "@/components/create/StoryGalleryStep";
+import type { BrandStoreOption } from "@/components/profile/AddProductSheet";
+import { buildStoryPublishExtras } from "@/lib/storyPublishPayload";
+import { uploadStoryStickerAssets } from "@/lib/uploadStoryStickers";
 import { compressImageForStory } from "@/lib/compressMedia";
 import { uploadAndPublish } from "@/lib/publishContent";
 import { createEmptyDraft, saveDraft, type StickerLayer } from "@/lib/createDraft";
 import { resetExportJob } from "@/lib/exportJob";
 import { useCreateAuth, syncAfterPublish } from "@/hooks/useCreateAuth";
 import { useStore } from "@/store/useStore";
+import { SafeVideoPlayer } from "@/components/SafeVideoPlayer";
+import type { AudioTrack } from "@/lib/audioLibrary";
+import { isReelVideoUrl } from "@/lib/reelMedia";
 
 const { width, height } = Dimensions.get("window");
 
@@ -29,73 +37,98 @@ type Step = "pick" | "edit" | "preview" | "share";
 
 export default function StoryComposerScreen() {
   const { ready, userId, profileId, profileName } = useCreateAuth();
+  const activeProfile = useStore((s) => s.activeProfile);
+  const userProfiles = useStore((s) => s.userProfiles);
+  const { templateId, prompt } = useLocalSearchParams<{ templateId?: string; prompt?: string }>();
+  const participateTemplateId = typeof templateId === "string" ? templateId : undefined;
+  const participatePrompt = typeof prompt === "string" ? decodeURIComponent(prompt) : "";
   const triggerHaptic = useStore((s) => s.triggerHaptic);
   const [step, setStep] = useState<Step>("pick");
   const [localUri, setLocalUri] = useState<string | null>(null);
+  const [isVideoStory, setIsVideoStory] = useState(false);
   const [bakedUri, setBakedUri] = useState<string | null>(null);
   const [stickers, setStickers] = useState<StickerLayer[]>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [showCompositor, setShowCompositor] = useState(false);
   const [alsoPostToGrid, setAlsoPostToGrid] = useState(false);
+  const [addYoursPrompt, setAddYoursPrompt] = useState("");
   const [publishing, setPublishing] = useState(false);
-  const [picking, setPicking] = useState(false);
-  const pickerStarted = useRef(false);
+  const [processingPick, setProcessingPick] = useState(false);
+  const [exportMeta, setExportMeta] = useState<StoryCompositorExportMeta | null>(null);
+  const [initialMusic, setInitialMusic] = useState<AudioTrack | null>(null);
 
-  const openGallery = useCallback(async () => {
-    setPicking(true);
-    try {
-      const asset = await pickMediaFromLibrary("story");
-      if (!asset?.uri) {
-        setStep("pick");
-        return;
-      }
-      triggerHaptic("success");
-      const compressed = await compressImageForStory(asset.uri);
-      setLocalUri(compressed);
-      setBakedUri(null);
-      setStickers([]);
-
-      const draft = createEmptyDraft("story");
-      draft.clips = [{ id: "clip_1", uri: compressed, inMs: 0, outMs: 0 }];
-      draft.step = "edit";
-      const saved = await saveDraft(draft);
-      setDraftId(saved.id);
-
-      setShowCompositor(true);
-      setStep("edit");
-    } catch (e) {
-      Alert.alert(
-        "Photo error",
-        e instanceof Error ? e.message : "Could not process photo."
-      );
-      setStep("pick");
-    } finally {
-      setPicking(false);
-    }
-  }, [triggerHaptic]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (!ready) return;
-      let cancelled = false;
-      if (!pickerStarted.current) {
-        pickerStarted.current = true;
-        openGallery().finally(() => {
-          if (cancelled) return;
-        });
-      }
-      return () => {
-        cancelled = true;
-        pickerStarted.current = false;
-      };
-    }, [ready, openGallery])
+  const brandStores: BrandStoreOption[] = useMemo(
+    () =>
+      userProfiles
+        .filter((p) => p.type === "BUSINESS")
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          username: p.username,
+          maisonId: p.maisonId || p.username,
+          logo: p.logo,
+        })),
+    [userProfiles]
   );
 
-  const handleCompositorExport = async (uri: string, exportedStickers: StickerLayer[]) => {
+  const handleGalleryPick = useCallback(
+    async (pick: StoryGalleryPick) => {
+      setProcessingPick(true);
+      try {
+        triggerHaptic("success");
+        setInitialMusic(pick.musicTrack || null);
+
+        const draft = createEmptyDraft("story");
+        draft.clips = [{ id: "clip_1", uri: pick.uri, inMs: 0, outMs: 0 }];
+        draft.step = pick.mediaType === "video" ? "preview" : "edit";
+        const saved = await saveDraft(draft);
+        setDraftId(saved.id);
+
+        if (pick.mediaType === "video" || isReelVideoUrl(pick.uri)) {
+          setLocalUri(pick.uri);
+          setIsVideoStory(true);
+          setBakedUri(null);
+          setStickers([]);
+          setShowCompositor(false);
+          setStep("preview");
+          return;
+        }
+
+        const compressed = await compressImageForStory(pick.uri);
+        setLocalUri(compressed);
+        setIsVideoStory(false);
+        setBakedUri(null);
+        setStickers([]);
+        setShowCompositor(true);
+        setStep("edit");
+      } catch (e) {
+        Alert.alert(
+          "Media error",
+          e instanceof Error ? e.message : "Could not process media."
+        );
+        setStep("pick");
+      } finally {
+        setProcessingPick(false);
+      }
+    },
+    [triggerHaptic]
+  );
+
+  const handleCompositorExport = async (
+    uri: string,
+    exportedStickers: StickerLayer[],
+    meta: StoryCompositorExportMeta
+  ) => {
     setBakedUri(uri);
     setStickers(exportedStickers);
+    setExportMeta(meta);
     setShowCompositor(false);
     setStep("preview");
+
+    const addYoursFromSticker = exportedStickers.find((s) => s.type === "add_yours");
+    if (addYoursFromSticker?.meta?.addYoursPrompt && !participateTemplateId) {
+      setAddYoursPrompt(addYoursFromSticker.meta.addYoursPrompt);
+    }
 
     if (draftId) {
       const draft = createEmptyDraft("story");
@@ -114,20 +147,56 @@ export default function StoryComposerScreen() {
     resetExportJob();
     try {
       triggerHaptic("medium");
+      const partnership = exportMeta?.partnership ?? {
+        paidPartnershipLabel: false,
+        partnershipAdCode: false,
+        partnershipAdCodeValue: null,
+      };
+      const uploadedStickers = await uploadStoryStickerAssets(stickers);
+      const extras = buildStoryPublishExtras(
+        uploadedStickers,
+        partnership,
+        partnership.partnershipAdCodeValue
+      );
       const result = await uploadAndPublish(publishUri, "story", {
         userId,
         profileId,
         profileName,
-        caption: "Story",
+        caption: participatePrompt || extras.addYoursPrompt || "Story",
         alsoPostToGrid,
+        templateId: participateTemplateId,
+        addYoursPrompt: participateTemplateId
+          ? undefined
+          : addYoursPrompt.trim() || extras.addYoursPrompt || undefined,
+        photoTags: extras.photoTags,
+        productStickers: extras.productStickers,
+        location: extras.location,
+        latitude: extras.latitude,
+        longitude: extras.longitude,
+        music: extras.music || initialMusic?.title,
+        musicTrack: extras.musicTrack || (initialMusic
+          ? {
+              id: initialMusic.id,
+              title: initialMusic.title,
+              artist: initialMusic.artist,
+              url: initialMusic.url,
+              cover: initialMusic.cover,
+            }
+          : null),
+        storyLayers: extras.storyLayers,
+        partnership: extras.partnership,
       });
-      syncAfterPublish("story", result, "Story");
+      syncAfterPublish("story", { ...result, storyLayers: extras.storyLayers }, "Story");
       triggerHaptic("success");
       Alert.alert(
-        alsoPostToGrid ? "Story + post shared" : "Story shared",
-        alsoPostToGrid
-          ? "Your story and grid post are live."
-          : "Your story is live for 24 hours.",
+        participateTemplateId ? "Added to template" : alsoPostToGrid ? "Story + post shared" : "Story shared",
+        participateTemplateId
+          ? "Your story was added to the Add Yours chain."
+          : alsoPostToGrid
+            ? "Your story and grid post are live."
+            : addYoursPrompt.trim()
+              ? "Your story and Add Yours template are live for 24 hours."
+              : "Your story is live for 24 hours.",
         [{ text: "OK", onPress: () => router.replace("/account") }]
       );
     } catch (e) {
@@ -150,76 +219,143 @@ export default function StoryComposerScreen() {
     );
   }
 
+  if (step === "pick") {
+    return (
+      <>
+        <StoryGalleryStep
+          onClose={() => router.back()}
+          onNext={handleGalleryPick}
+        />
+        {processingPick ? (
+          <View style={styles.processingOverlay}>
+            <ActivityIndicator size="large" color="#fff" />
+          </View>
+        ) : null}
+      </>
+    );
+  }
+
   const previewUri = bakedUri || localUri;
 
   return (
     <>
-      {localUri ? (
+      {localUri && !isVideoStory ? (
         <StoryCompositor
           visible={showCompositor}
           imageUri={localUri}
+          userId={userId}
+          profileId={profileId}
+          profileAvatar={activeProfile?.logo}
+          profileUsername={activeProfile?.username}
+          brandStores={brandStores}
+          initialMusicTrack={initialMusic}
           onClose={() => {
             setShowCompositor(false);
-            if (!bakedUri) router.back();
+            if (!bakedUri) {
+              setStep("pick");
+              setLocalUri(null);
+            }
           }}
           onExport={handleCompositorExport}
         />
       ) : null}
 
-      {step === "pick" && (
-        <ComposerShell title="New story" stepLabel="Select photo">
-          <View style={styles.emptyPick}>
-            {picking ? (
-              <ActivityIndicator size="large" color="#00f5ff" />
-            ) : (
-              <Lucide name="add-circle-outline" size={48} color="rgba(255,255,255,0.3)" />
-            )}
-            <Text style={styles.emptyText}>
-              {picking ? "Opening gallery…" : "Choose a vertical photo for your story"}
-            </Text>
-            <TouchableOpacity style={styles.primaryBtn} onPress={openGallery} disabled={picking}>
-              <Text style={styles.primaryBtnText}>Open gallery</Text>
+      {step === "preview" && previewUri && (
+        <View style={styles.fullScreen}>
+          <View style={styles.previewHeader}>
+            <TouchableOpacity
+              onPress={() => {
+                if (isVideoStory) {
+                  setStep("pick");
+                  setLocalUri(null);
+                } else {
+                  setShowCompositor(true);
+                  setStep("edit");
+                }
+              }}
+              hitSlop={12}
+            >
+              <Lucide name="chevron-back" size={28} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.previewTitle}>Preview</Text>
+            <TouchableOpacity onPress={() => setStep("share")} hitSlop={12}>
+              <Text style={styles.previewNext}>Next</Text>
             </TouchableOpacity>
           </View>
-        </ComposerShell>
-      )}
-
-      {step === "preview" && previewUri && (
-        <ComposerShell
-          title="New story"
-          stepLabel="Preview"
-          onBack={() => {
-            setShowCompositor(true);
-            setStep("edit");
-          }}
-          rightLabel="Next"
-          onRightPress={() => setStep("share")}
-        >
           <View style={styles.previewWrap}>
-            <Image source={{ uri: previewUri }} style={styles.storyPreview} resizeMode="cover" />
+            {isVideoStory ? (
+              <SafeVideoPlayer
+                source={previewUri}
+                playing
+                loop
+                style={styles.storyPreview}
+                contentFit="cover"
+              />
+            ) : (
+              <Image source={{ uri: previewUri }} style={styles.storyPreview} resizeMode="cover" />
+            )}
             {stickers.length > 0 ? (
               <Text style={styles.bakedHint}>
                 {stickers.length} sticker{stickers.length === 1 ? "" : "s"} baked into image
               </Text>
             ) : null}
           </View>
-        </ComposerShell>
+        </View>
       )}
 
       {step === "share" && (
-        <ComposerShell
-          title="New story"
-          stepLabel="Share"
-          onBack={() => setStep("preview")}
-          rightLabel="Share"
-          onRightPress={handleShare}
-          rightLoading={publishing}
-        >
+        <View style={styles.fullScreen}>
+          <View style={styles.previewHeader}>
+            <TouchableOpacity onPress={() => setStep("preview")} hitSlop={12}>
+              <Lucide name="chevron-back" size={28} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.previewTitle}>Share story</Text>
+            <TouchableOpacity onPress={handleShare} disabled={publishing} hitSlop={12}>
+              {publishing ? (
+                <ActivityIndicator color="#00f5ff" size="small" />
+              ) : (
+                <Text style={styles.previewNext}>Share</Text>
+              )}
+            </TouchableOpacity>
+          </View>
           <View style={styles.shareWrap}>
             {previewUri ? (
-              <Image source={{ uri: previewUri }} style={styles.shareThumb} />
+              isVideoStory ? (
+                <SafeVideoPlayer
+                  source={previewUri}
+                  playing={false}
+                  style={styles.shareThumb}
+                  contentFit="cover"
+                />
+              ) : (
+                <Image source={{ uri: previewUri }} style={styles.shareThumb} />
+              )
+            ) : null}
+            {participateTemplateId && participatePrompt ? (
+              <View style={styles.addYoursBanner}>
+                <Text style={styles.addYoursBannerLabel}>Add Yours</Text>
+                <Text style={styles.addYoursBannerPrompt}>{participatePrompt}</Text>
+              </View>
             ) : null}
             <View style={styles.shareOptions}>
+              {!participateTemplateId ? (
+                <View style={styles.optionRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.optionTitle}>Start Add Yours</Text>
+                    <Text style={styles.optionDesc}>
+                      Let others respond with their own story using your prompt
+                    </Text>
+                    <TextInput
+                      style={styles.promptInput}
+                      placeholder='e.g. "Show your fit of the day"'
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      value={addYoursPrompt}
+                      onChangeText={setAddYoursPrompt}
+                      maxLength={280}
+                    />
+                  </View>
+                </View>
+              ) : null}
               <View style={styles.optionRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.optionTitle}>Also share to profile grid</Text>
@@ -234,7 +370,7 @@ export default function StoryComposerScreen() {
               </View>
             </View>
           </View>
-        </ComposerShell>
+        </View>
       )}
     </>
   );
@@ -252,30 +388,27 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
   },
-  emptyPick: {
-    flex: 1,
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
     alignItems: "center",
     justifyContent: "center",
-    padding: 32,
+    zIndex: 100,
   },
-  emptyText: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 15,
-    marginTop: 16,
-    marginBottom: 24,
-    textAlign: "center",
+  fullScreen: {
+    flex: 1,
+    backgroundColor: "#000",
   },
-  primaryBtn: {
-    backgroundColor: "#00f5ff",
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderRadius: 12,
+  previewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingTop: 54,
+    paddingBottom: 10,
   },
-  primaryBtnText: {
-    color: "#080415",
-    fontWeight: "700",
-    fontSize: 16,
-  },
+  previewTitle: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  previewNext: { color: "#00f5ff", fontSize: 16, fontWeight: "700" },
   previewWrap: {
     flex: 1,
     backgroundColor: "#000",
@@ -325,5 +458,36 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.45)",
     fontSize: 12,
     marginTop: 4,
+  },
+  addYoursBanner: {
+    backgroundColor: "rgba(229,57,53,0.2)",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(229,57,53,0.35)",
+  },
+  addYoursBannerLabel: {
+    color: "#ff6b6b",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  addYoursBannerPrompt: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22,
+  },
+  promptInput: {
+    marginTop: 10,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#fff",
+    fontSize: 14,
   },
 });

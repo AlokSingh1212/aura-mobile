@@ -462,7 +462,7 @@ export default function DashboardScreen() {
   );
 
   const renderArtifactCard = ({ item }: { item: any }) => {
-    const imageUrl = item.images?.[0] || "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600";
+    const imageUrl = item.images?.[0] || "https://auragram.com/logo.png";
     return (
       <View style={styles.inventoryCard}>
         <Image source={{ uri: imageUrl }} style={styles.inventoryImg} />

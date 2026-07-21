@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import Lucide from "@expo/vector-icons/Ionicons";
 
-type ProfileGridTab = "posts" | "reels" | "products" | "collabs";
+type ProfileGridTab = "posts" | "reels" | "tagged" | "products" | "collabs";
 
 const EMPTY_COPY: Record<ProfileGridTab, { icon: string; title: string; subtitle: string }> = {
   posts: {
@@ -14,6 +14,11 @@ const EMPTY_COPY: Record<ProfileGridTab, { icon: string; title: string; subtitle
     icon: "film-outline",
     title: "No reels yet",
     subtitle: "When you share reels, they'll appear here.",
+  },
+  tagged: {
+    icon: "person-outline",
+    title: "No tagged posts",
+    subtitle: "When people tag you in photos, they'll appear here.",
   },
   products: {
     icon: "bag-handle-outline",

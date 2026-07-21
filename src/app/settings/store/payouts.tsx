@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Text, View, StyleSheet, ActivityIndicator } from "react-native";
-import { IgSettingsScreen, IgSectionTitle, IgBodyText } from "@/components/settings/InstagramSettingsUI";
+import { router } from "expo-router";
+import { IgSettingsScreen, IgSectionTitle, IgBodyText, IgRow } from "@/components/settings/InstagramSettingsUI";
 import { useStore } from "@/store/useStore";
 import { fetchEarnings, type MaisonEarnings } from "@/lib/earningsApi";
 import { IG } from "@/theme/settingsTheme";
@@ -27,8 +28,16 @@ export default function StorePayoutsSettings() {
   return (
     <IgSettingsScreen title="Payouts & earnings">
       <IgBodyText>
-        Track escrow, settled payouts from shop sales, and affiliate commissions.
+        Track escrow, settled payouts from shop sales, and affiliate commissions. All earnings
+        are paid to your verified bank account.
       </IgBodyText>
+
+      <IgSectionTitle>Bank account</IgSectionTitle>
+      <IgRow
+        label="Payout setup (KYC & bank)"
+        sublabel="Required to receive shop sales & commissions"
+        onPress={() => router.push("/settings/payouts" as any)}
+      />
 
       {loading ? (
         <ActivityIndicator color={IG.text} style={{ marginTop: 24 }} />

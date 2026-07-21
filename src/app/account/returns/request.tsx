@@ -22,6 +22,8 @@ type OrderItem = {
   price: number;
   quantity: number;
   images?: string[];
+  returnPolicy?: "RETURN" | "EXCHANGE";
+  returnPolicyLabel?: string;
 };
 
 export default function ReturnRequestScreen() {
@@ -45,8 +47,15 @@ export default function ReturnRequestScreen() {
     const line =
       order?.items?.find((i: OrderItem) => i.id === params.orderItemId) ||
       order?.items?.[0];
-    if (line) setItem(line as OrderItem);
+    if (line) {
+      setItem(line as OrderItem);
+      const policy = (line as OrderItem).returnPolicy || "RETURN";
+      setType(policy === "EXCHANGE" ? "EXCHANGE" : "RETURN");
+    }
   }, [params.orderId, params.orderItemId, orders]);
+
+  const productPolicy = item?.returnPolicy || "RETURN";
+  const policyLabel = item?.returnPolicyLabel || (productPolicy === "EXCHANGE" ? "7-day exchange" : "7-day return");
 
   const submit = async () => {
     if (!currentUser) {
@@ -135,28 +144,19 @@ export default function ReturnRequestScreen() {
           <ActivityIndicator color={SHOP.primary} style={{ marginVertical: 20 }} />
         )}
 
-        <Text style={styles.sectionLabel}>What would you like to do?</Text>
-        <View style={styles.typeRow}>
-          {(["RETURN", "EXCHANGE"] as const).map((t) => (
-            <TouchableOpacity
-              key={t}
-              style={[styles.typeBtn, type === t && styles.typeBtnActive]}
-              onPress={() => {
-                triggerHaptic("light");
-                setType(t);
-              }}
-            >
-              <Text style={[styles.typeBtnText, type === t && styles.typeBtnTextActive]}>
-                {t === "RETURN" ? "Return & refund" : "Exchange"}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <Text style={styles.sectionLabel}>Seller policy for this product</Text>
+        <View style={styles.policyBadge}>
+          <Text style={styles.policyBadgeText}>{policyLabel}</Text>
         </View>
 
-        {type === "EXCHANGE" && (
+        {productPolicy === "EXCHANGE" ? (
           <Text style={styles.hint}>
-            Exchanges are processed as instant wallet credit + a new order. Pick your replacement
-            item from the shop after submitting.
+            This product is eligible for exchange only (not refund). Exchanges are processed as
+            instant wallet credit so you can place a new order.
+          </Text>
+        ) : (
+          <Text style={styles.hint}>
+            This product is eligible for return & refund within 7 days of delivery.
           </Text>
         )}
 
@@ -180,9 +180,10 @@ export default function ReturnRequestScreen() {
         ))}
 
         <View style={styles.policyBox}>
-          <Text style={styles.policyTitle}>Automatic refund policy</Text>
+          <Text style={styles.policyTitle}>Payout & refund timing</Text>
           <Text style={styles.policyText}>
-            • 7-day return window from delivery{"\n"}
+            • {policyLabel} from delivery{"\n"}
+            • Seller & creator payouts release after this window{"\n"}
             • Free return pickup label provided{"\n"}
             • Wallet refund is instant on approval{"\n"}
             • UPI/card refunds via Razorpay in 5–7 days
@@ -234,6 +235,15 @@ const styles = StyleSheet.create({
   itemTitle: { fontSize: 15, fontWeight: "700" },
   itemMeta: { fontSize: 13, color: "#757575", marginTop: 4 },
   sectionLabel: { fontSize: 14, fontWeight: "800", marginBottom: 10, color: "#212121" },
+  policyBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#EDE7F6",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  policyBadgeText: { color: "#5E35B1", fontWeight: "700", fontSize: 13 },
   typeRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
   typeBtn: {
     flex: 1,

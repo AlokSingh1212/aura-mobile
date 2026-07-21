@@ -141,6 +141,14 @@ export const SETTINGS_MENU: SettingsMenuItem[] = [
     keywords: ["caption", "contrast"],
   },
   {
+    id: "appearance",
+    label: "Appearance",
+    sublabel: "Light, dark or system theme",
+    route: "/settings/appearance",
+    section: "Your app and media",
+    keywords: ["dark", "light", "theme", "mode"],
+  },
+  {
     id: "language",
     label: "Language",
     route: "/settings/language",

@@ -26,7 +26,7 @@ export type UserLike = {
 };
 
 const DEFAULT_AVATAR =
-  "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80";
+  "https://auragram.com/logo.png";
 
 export function resolveMaisonId(
   activeProfile: ProfileLike | null | undefined,

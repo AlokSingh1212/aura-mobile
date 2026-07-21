@@ -17,6 +17,10 @@ import { router } from "expo-router";
 import { ShopHeader } from "@/components/shop/ShopHeader";
 import { PdpBuyBar } from "@/components/shop/PdpBuyBar";
 import { ProductListCard } from "@/components/shop/ProductListCard";
+import {
+  VerifiedMaisonBadge,
+  isProductFromVerifiedMaison,
+} from "@/components/shop/VerifiedMaisonBadge";
 import { PdpAddressSheet } from "@/components/shop/PdpAddressSheet";
 import { SHOP } from "@/theme/shopTheme";
 import {
@@ -54,6 +58,10 @@ import { CouponPickerSheet } from "@/components/shop/CouponPickerSheet";
 import type { ProductReviewSummary } from "@/lib/shopReviews";
 import { formatReviewDate } from "@/lib/shopReviews";
 import { useStore } from "@/store/useStore";
+import {
+  shouldShowInventoryOnProduct,
+  shouldShowLowStockAlert,
+} from "@/lib/settingsRuntime";
 
 const { width } = Dimensions.get("window");
 
@@ -190,6 +198,7 @@ export function ShopProductDetail({
 
   const effectiveDisplay = formatPrice ? formatPrice(effectivePrice) : formatINR(effectivePrice);
   const brand = product.maison?.name || product.brand || "AURA";
+  const verifiedMaison = isProductFromVerifiedMaison(product);
 
   const variantLabel =
     selectedColor !== "Default" || selectedSize !== "One Size"
@@ -320,7 +329,10 @@ export function ShopProductDetail({
           )}
 
           <View style={styles.brandRow}>
-            <Text style={styles.brand}>{brand.toUpperCase()}</Text>
+            <View style={styles.brandTitleRow}>
+              <Text style={styles.brand}>{brand.toUpperCase()}</Text>
+              {verifiedMaison ? <VerifiedMaisonBadge size={16} /> : null}
+            </View>
             <View style={styles.brandActions}>
               <TouchableOpacity
                 onPress={() => {
@@ -364,8 +376,11 @@ export function ShopProductDetail({
               </Text>
             ) : null}
             {!inStock && <Text style={styles.outOfStock}>Currently unavailable</Text>}
-            {inStock && stock <= 5 && (
+            {inStock && shouldShowLowStockAlert(stock) && (
               <Text style={styles.lowStock}>Only {stock} left in stock</Text>
+            )}
+            {shouldShowInventoryOnProduct() && inStock && stock > 0 && !shouldShowLowStockAlert(stock) && (
+              <Text style={styles.stockCount}>{stock} in stock</Text>
             )}
           </View>
 
@@ -852,7 +867,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginTop: 12,
   },
-  brand: { fontSize: 16, fontWeight: "800", color: SHOP.text, flex: 1 },
+  brandTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+  },
+  brand: { fontSize: 16, fontWeight: "800", color: SHOP.text },
   brandActions: { flexDirection: "row", alignItems: "center", gap: 14 },
   allProductsLink: { fontSize: 13, color: "#121212", fontWeight: "700" },
   visitStore: { fontSize: 13, color: SHOP.primary, fontWeight: "600" },
@@ -870,6 +891,7 @@ const styles = StyleSheet.create({
   priceNote: { fontSize: 12, color: SHOP.green, fontWeight: "600", marginTop: 4 },
   outOfStock: { marginTop: 4, color: SHOP.red, fontWeight: "600", fontSize: 13 },
   lowStock: { marginTop: 4, color: "#E65100", fontWeight: "600", fontSize: 12 },
+  stockCount: { marginTop: 4, color: SHOP.textSecondary, fontSize: 12 },
   wowCard: {
     margin: 16,
     borderRadius: 12,

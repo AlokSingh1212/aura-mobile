@@ -1,4 +1,4 @@
-import { normalizeUsername } from "@/lib/postNavigation";
+import { normalizeUsername } from "@/lib/usernameUtils";
 import type { ProfilePost } from "@/lib/profileApi";
 import type { SocialGraph, SocialUser } from "@/lib/socialGraph";
 import {

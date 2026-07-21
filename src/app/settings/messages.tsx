@@ -1,4 +1,5 @@
 import React from "react";
+import { Alert } from "react-native";
 import {
   IgSettingsScreen,
   IgSectionTitle,
@@ -13,6 +14,32 @@ import { router } from "expo-router";
 export default function MessagesSettingsScreen() {
   const { data, patch } = useSettingsSection("messages");
   if (!data) return null;
+
+  const handleToggleVideoCalls = (value: boolean) => {
+    Alert.alert(
+      value ? "Enable Video Calls?" : "Disable Video Calls?",
+      value
+        ? "Enabling video calls allows mutually followed users to start one-to-one video calls with you. This uses cellular data or Wi-Fi to establish a peer connection."
+        : "Disabling video calls blocks all incoming video call requests from reaching your device. Callers will see an alert that you are currently unavailable.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "OK", onPress: () => patch({ allowVideoCalls: value }) }
+      ]
+    );
+  };
+
+  const handleToggleAudioCalls = (value: boolean) => {
+    Alert.alert(
+      value ? "Enable Audio Calls?" : "Disable Audio Calls?",
+      value
+        ? "Enabling audio calls allows mutually followed users to start one-to-one voice calls with you. This uses cellular data or Wi-Fi to establish a peer connection."
+        : "Disabling audio calls blocks all incoming voice call requests from reaching your device. Callers will see an alert that you are currently unavailable.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "OK", onPress: () => patch({ allowAudioCalls: value }) }
+      ]
+    );
+  };
 
   return (
     <IgSettingsScreen title="Messages and story replies">
@@ -36,6 +63,21 @@ export default function MessagesSettingsScreen() {
         label="No one"
         selected={data.dmFrom === "none"}
         onPress={() => patch({ dmFrom: "none" })}
+        last
+      />
+
+      <IgSectionTitle>Calls</IgSectionTitle>
+      <IgToggle
+        label="Allow video calling"
+        hint="Allow video calls from mutually followed users"
+        value={!!data.allowVideoCalls}
+        onValueChange={handleToggleVideoCalls}
+      />
+      <IgToggle
+        label="Allow audio calling"
+        hint="Allow audio calls from mutually followed users"
+        value={!!data.allowAudioCalls}
+        onValueChange={handleToggleAudioCalls}
         last
       />
 

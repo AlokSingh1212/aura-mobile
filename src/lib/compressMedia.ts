@@ -1,4 +1,5 @@
 import * as ImageManipulator from "expo-image-manipulator";
+import { getUploadCompressionQuality } from "@/lib/settingsRuntime";
 
 async function compressImage(
   uri: string,
@@ -22,9 +23,9 @@ async function compressImage(
 }
 
 export function compressImageForPost(uri: string) {
-  return compressImage(uri, 1080, 0.72);
+  return compressImage(uri, 1080, getUploadCompressionQuality());
 }
 
 export function compressImageForStory(uri: string) {
-  return compressImage(uri, 1080, 0.72);
+  return compressImage(uri, 1080, getUploadCompressionQuality());
 }

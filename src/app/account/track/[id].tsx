@@ -218,7 +218,7 @@ export default function TrackOrderScreen() {
           <Text style={styles.sectionHeading}>SECURED ARTIFACTS</Text>
           <View style={styles.itemsCard}>
             {data.items.map((item, idx) => {
-              const itemImg = item.image || "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=400";
+              const itemImg = item.image || "https://auragram.com/logo.png";
               return (
                 <View key={idx} style={styles.itemRow}>
                   <Image source={{ uri: itemImg }} style={styles.itemImage} />

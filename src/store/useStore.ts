@@ -33,15 +33,22 @@ import { syncCloudUserState, clearCloudUserState } from "@/lib/cloudSync";
 import { refreshSettingsEnforcement } from "@/lib/ecosystemSettings";
 import { validateAuthSession } from "@/lib/authApi";
 import { refreshI18nLanguage } from "@/lib/i18n";
+import { mapApiStoryToSlide } from "@/lib/storyLayers";
+import { groupStoriesIntoRings } from "@/lib/storyFeedMapper";
 import {
   shouldDeliverPushNotification,
   type NotificationCategory,
 } from "@/lib/settingsEnforcement";
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => {
+  handleNotification: async (notification) => {
     try {
-      const deliver = shouldDeliverPushNotification();
+      const rawCategory = notification.request.content.data?.category;
+      const category =
+        typeof rawCategory === "string"
+          ? (rawCategory as NotificationCategory)
+          : undefined;
+      const deliver = shouldDeliverPushNotification(category);
       return {
         shouldShowAlert: deliver,
         shouldPlaySound: deliver,
@@ -219,10 +226,21 @@ interface StoreState {
   createAdBid: (payload: any) => Promise<boolean>;
   fundAdWallet: (maisonId: string, amount: number) => Promise<boolean>;
   generateAiCreative: (artifactId: string, maisonId: string) => Promise<boolean>;
-  fetchBrandDeals: (filters?: { creatorId?: string; maisonId?: string }) => Promise<void>;
+  fetchBrandDeals: (filters?: { creatorId?: string; creatorProfileId?: string; maisonId?: string }) => Promise<void>;
   fetchInfluencers: () => Promise<void>;
-  proposeBrandDeal: (payload: { creatorId: string; maisonId: string; budget: number; type: string; terms: string }) => Promise<boolean>;
-  respondToBrandDeal: (dealId: string, status: "ACCEPTED" | "DECLINED" | "COMPLETED") => Promise<boolean>;
+  proposeBrandDeal: (payload: {
+    creatorProfileId?: string;
+    creatorId?: string;
+    maisonId: string;
+    budget: number;
+    type: string;
+    terms: string;
+    title?: string;
+  }) => Promise<boolean>;
+  respondToBrandDeal: (
+    dealId: string,
+    status: "ACCEPTED" | "DECLINED" | "COMPLETED" | "CONFIRM"
+  ) => Promise<boolean>;
 
   // New Competitor repricing actions
   fetchRepricer: (maisonId: string) => Promise<void>;
@@ -246,7 +264,8 @@ interface StoreState {
   currentUser: any | null;
   setCurrentUser: (user: any | null) => void;
   authSignUp: (payload: any) => Promise<{ success: boolean; error?: string; user?: any; token?: string; devOtp?: string }>;
-  authLogIn: (payload: any) => Promise<{ success: boolean; error?: string; token?: string }>;
+  authLogIn: (payload: any) => Promise<{ success: boolean; error?: string; token?: string; requiresOtp?: boolean; userId?: string; devOtp?: string }>;
+  authCompleteLoginWithOtp: (userId: string, otpCode: string) => Promise<{ success: boolean; error?: string }>;
   authOAuth: (payload: {
     provider: "google" | "apple";
     idToken?: string;
@@ -270,13 +289,15 @@ interface StoreState {
   fetchProfiles: (userId: string) => Promise<void>;
   createNewProfile: (payload: any) => Promise<{ success: boolean; error?: string }>;
   switchActiveProfile: (profileId: string) => Promise<{ success: boolean; error?: string }>;
+  switchSavedAccount: (userId: string) => Promise<{ success: boolean; error?: string }>;
   instaStories: any[];
   addInstaStorySlide: (slide: any) => void;
   loadUserStories: (userId: string) => Promise<void>;
+  loadStoryRings: (userId: string) => Promise<void>;
 
   notifications: any[];
   loadingNotifications: boolean;
-  fetchNotifications: (profileId: string) => Promise<void>;
+  fetchNotifications: (profileId: string, type?: "ALL" | "LIKE" | "COMMENT" | "FOLLOW") => Promise<void>;
   markNotificationsRead: (profileId: string) => Promise<void>;
 
   // View Other User Profile
@@ -293,10 +314,11 @@ interface StoreState {
   fetchWishlist: (userId: string) => Promise<void>;
   toggleWishlist: (userId: string, artifactId: string) => Promise<{ success: boolean; wishlisted?: boolean }>;
 
-  // AURA Home Feed & Discovery System Expansion
   feedItems: any[];
   reelsSponsoredAd: any | null;
   loadingFeedItems: boolean;
+  searchTiles: any[];
+  activeSearchQuery: string;
   fetchFeedItems: (category?: string, tab?: "For You" | "Following", reset?: boolean) => Promise<void>;
   fetchSearchResults: (query: string) => Promise<void>;
   logEngagement: (
@@ -320,7 +342,7 @@ const MOCK_PRODUCTS = [
     title: "Obsidian Gold Vestment",
     price: 185000,
     vibe: "Quiet Luxury",
-    images: ["https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400"],
+    images: ["https://auragram.com/logo.png"],
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 9.9,
     rating: 4.9,
@@ -350,7 +372,7 @@ const MOCK_PRODUCTS = [
     title: "Atelier Silk Trench Jacket",
     price: 245000,
     vibe: "Avant-Garde",
-    images: ["https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=400"],
+    images: ["https://auragram.com/logo.png"],
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 9.8,
     rating: 4.8,
@@ -378,7 +400,7 @@ const MOCK_PRODUCTS = [
     title: "Cyber Penthouse Cuff",
     price: 95000,
     vibe: "Brutalist",
-    images: ["https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=400"],
+    images: ["https://auragram.com/logo.png"],
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 9.7,
     rating: 4.7,
@@ -407,7 +429,7 @@ const MOCK_PRODUCTS = [
     title: "Heritage Calfskin Carryall",
     price: 320000,
     vibe: "Quiet Luxury",
-    images: ["https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600"],
+    images: ["https://auragram.com/logo.png"],
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 9.9,
     rating: 4.9,
@@ -428,7 +450,7 @@ const MOCK_PRODUCTS = [
     title: "Monochrome Linen Shirt",
     price: 12500,
     vibe: "Quiet Luxury",
-    images: ["https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=400"],
+    images: ["https://auragram.com/logo.png"],
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 4.6,
     rating: 4.6,
@@ -452,7 +474,7 @@ const MOCK_PRODUCTS = [
     title: "Sculpted Wool Blazer",
     price: 89000,
     vibe: "Avant-Garde",
-    images: ["https://images.unsplash.com/photo-1507679799987-c73779515223?auto=format&fit=crop&q=80&w=400"],
+    images: ["https://auragram.com/logo.png"],
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 4.8,
     rating: 4.8,
@@ -473,7 +495,7 @@ const MOCK_PRODUCTS = [
     title: "Aura Glow Serum",
     price: 4500,
     vibe: "Aesthetic Core",
-    images: ["https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&q=80&w=400"],
+    images: ["https://auragram.com/logo.png"],
     maison: { name: "Rare Raven", id: "rare_raven" },
     auraScore: 4.7,
     rating: 4.7,
@@ -499,6 +521,8 @@ export const useStore = create<StoreState>((set, get) => ({
   feedItems: [],
   reelsSponsoredAd: null,
   loadingFeedItems: false,
+  searchTiles: [],
+  activeSearchQuery: "",
 
   currency: CURRENCY_MAP['IN'],
   countryCode: 'IN',
@@ -566,8 +590,14 @@ export const useStore = create<StoreState>((set, get) => ({
   restoreAuthSession: async () => {
     try {
       const bundle = await loadAuthBundle(AsyncStorage);
-      if (!bundle?.currentUser?.id) return;
+      if (!bundle?.currentUser?.id) {
+        // No cached session — mark hydrated immediately so login screen shows instantly
+        set({ authHydrated: true });
+        return;
+      }
 
+      // ✅ INSTANT LAUNCH: Restore from local cache and mark hydrated immediately
+      // This lets the app navigate to the home screen in ~50ms (Instagram-style)
       set({
         currentUser: bundle.currentUser,
         activeProfile: bundle.activeProfile,
@@ -576,38 +606,45 @@ export const useStore = create<StoreState>((set, get) => ({
         activeMaisonId:
           bundle.activeMaisonId ||
           resolveMaisonId(bundle.activeProfile, bundle.currentUser),
+        authHydrated: true,
       });
 
-      const session = await validateAuthSession();
-      if (!session.success || !session.user) {
-        get().authLogOut();
-        return;
-      }
+      // 🔄 BACKGROUND VALIDATION: Verify session with server silently
+      // If server says session is invalid, log out then. User sees no delay.
+      validateAuthSession().then(async (session) => {
+        if (!session.success || !session.user) {
+          // Keep cached session when offline / slow network — don't wipe on timeout.
+          if (session.error === "CONNECTION_TIMEOUT") return;
+          get().authLogOut();
+          return;
+        }
 
-      const serverUser = session.user;
-      set({
-        currentUser: { ...bundle.currentUser, ...serverUser },
-        activeProfile: (serverUser.activeProfile as typeof bundle.activeProfile) || bundle.activeProfile,
-        userProfiles: (serverUser.profiles as typeof bundle.userProfiles) || bundle.userProfiles,
+        const serverUser = session.user;
+        set({
+          currentUser: { ...bundle.currentUser, ...serverUser },
+          activeProfile: (serverUser.activeProfile as typeof bundle.activeProfile) || bundle.activeProfile,
+          userProfiles: (serverUser.profiles as typeof bundle.userProfiles) || bundle.userProfiles,
+        });
+
+        await saveAuthBundle(AsyncStorage, {
+          currentUser: get().currentUser!,
+          activeProfile: get().activeProfile,
+          userProfiles: get().userProfiles,
+          activeMaisonId: get().activeMaisonId,
+          authToken: get().authToken,
+        });
+
+        get().syncProfileIdentity();
+        refreshI18nLanguage().catch(() => {});
+        get()
+          .fetchProfiles(String(serverUser.id))
+          .catch(() => {});
+        syncCloudUserState(String(serverUser.id), get().activeProfile?.id).catch(() => {});
+      }).catch((e) => {
+        console.warn("Background auth validation failed:", e);
       });
-
-      await saveAuthBundle(AsyncStorage, {
-        currentUser: get().currentUser!,
-        activeProfile: get().activeProfile,
-        userProfiles: get().userProfiles,
-        activeMaisonId: get().activeMaisonId,
-        authToken: get().authToken,
-      });
-
-      get().syncProfileIdentity();
-      refreshI18nLanguage().catch(() => {});
-      get()
-        .fetchProfiles(String(serverUser.id))
-        .catch(() => {});
-      syncCloudUserState(String(serverUser.id), get().activeProfile?.id).catch(() => {});
     } catch (e) {
       console.warn("Auth session restore failed:", e);
-    } finally {
       set({ authHydrated: true });
     }
   },
@@ -949,11 +986,16 @@ export const useStore = create<StoreState>((set, get) => ({
   fetchBrandDeals: async (filters = {}) => {
     set({ loadingDeals: true });
     try {
-      const query = new URLSearchParams();
+      const userId = get().currentUser?.id;
+      if (!userId) return;
+      const query = new URLSearchParams({ userId });
       if (filters.creatorId) query.append("creatorId", filters.creatorId);
       if (filters.maisonId) query.append("maisonId", filters.maisonId);
+      if (filters.creatorProfileId) query.append("creatorProfileId", filters.creatorProfileId);
 
-      const res = await fetch(`${API_BASE}/brand-deals?${query.toString()}`);
+      const res = await fetch(`${API_BASE}/brand-deals?${query.toString()}`, {
+        headers: (await import("@/lib/apiClient")).authHeaders(),
+      });
       const data = await res.json();
       if (data.success) {
         set({ brandDeals: data.deals });
@@ -967,33 +1009,28 @@ export const useStore = create<StoreState>((set, get) => ({
 
   fetchInfluencers: async () => {
     try {
-      const res = await fetch(`${API_BASE}/profile?type=INFLUENCER`);
+      const userId = get().currentUser?.id;
+      if (!userId) return;
+      const res = await fetch(`${API_BASE}/brand-deals?userId=${userId}&creators=true`, {
+        headers: (await import("@/lib/apiClient")).authHeaders(),
+      });
       const data = await res.json();
-      if (data.success && data.profiles) {
-        set({ influencers: data.profiles });
-      } else {
-        // Fallback influencers list
-        set({ influencers: [
-          { id: "c1", userId: "user_influencer_1", name: "studywithjasmeet", username: "studywithjasmeet", category: "Creator / Stylist" },
-          { id: "c2", userId: "user_influencer_2", name: "fitwithyashika_", username: "fitwithyashika_", category: "Influencer / Fitness" }
-        ]});
+      if (data.success && data.creators?.length) {
+        set({ influencers: data.creators });
       }
     } catch (e) {
       console.warn("Could not fetch influencers list.", e);
-      // Fallback
-      set({ influencers: [
-        { id: "c1", userId: "user_influencer_1", name: "studywithjasmeet", username: "studywithjasmeet", category: "Creator / Stylist" },
-        { id: "c2", userId: "user_influencer_2", name: "fitwithyashika_", username: "fitwithyashika_", category: "Influencer / Fitness" }
-      ]});
     }
   },
 
   proposeBrandDeal: async (payload) => {
     try {
+      const userId = get().currentUser?.id;
+      if (!userId) return false;
       const res = await fetch(`${API_BASE}/brand-deals`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        headers: (await import("@/lib/apiClient")).authHeaders(),
+        body: JSON.stringify({ ...payload, userId, action: "propose", creatorProfileId: payload.creatorProfileId || payload.creatorId }),
       });
       const data = await res.json();
       if (data.success) {
@@ -1010,17 +1047,26 @@ export const useStore = create<StoreState>((set, get) => ({
 
   respondToBrandDeal: async (dealId, status) => {
     try {
+      const userId = get().currentUser?.id;
+      const profileId = get().activeProfile?.id;
+      if (!userId || !profileId) return false;
+      const respondAction =
+        status === "ACCEPTED"
+          ? "accept"
+          : status === "DECLINED"
+            ? "decline"
+            : status === "COMPLETED"
+              ? "complete"
+              : "confirm";
       const res = await fetch(`${API_BASE}/brand-deals`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId, status })
+        method: "POST",
+        headers: (await import("@/lib/apiClient")).authHeaders(),
+        body: JSON.stringify({ userId, profileId, dealId, action: "respond", respondAction }),
       });
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("success");
-        const userId = get().currentUser?.id;
-        const maisonId = get().activeMaisonId;
-        get().fetchBrandDeals({ creatorId: userId, maisonId });
+        get().fetchBrandDeals({ creatorId: userId, maisonId: get().activeMaisonId || undefined });
         return true;
       }
       return false;
@@ -1198,6 +1244,7 @@ export const useStore = create<StoreState>((set, get) => ({
           activeMaisonId: data.user.maisonId,
           authToken: data.token || null,
         });
+        get().syncProfileIdentity();
         await get().fetchProfiles(data.user.id);
         get().syncProfileIdentity();
         return {
@@ -1222,6 +1269,14 @@ export const useStore = create<StoreState>((set, get) => ({
         body: JSON.stringify(payload)
       });
       const data = await res.json();
+      if (data.success && data.requiresOtp) {
+        return {
+          success: true,
+          requiresOtp: true,
+          userId: data.userId,
+          devOtp: data.devOtp,
+        };
+      }
       if (data.success) {
         get().triggerHaptic("success");
         set({
@@ -1229,6 +1284,14 @@ export const useStore = create<StoreState>((set, get) => ({
           activeMaisonId: data.user.maisonId,
           authToken: data.token || null,
         });
+        const { upsertSavedAccount } = await import("@/lib/multiAccountSession");
+        await upsertSavedAccount({
+          userId: data.user.id,
+          email: data.user.email || "",
+          username: data.user.username || data.user.email || "",
+          token: data.token || "",
+        });
+        get().syncProfileIdentity();
         await get().fetchProfiles(data.user.id);
         get().syncProfileIdentity();
         await refreshSettingsEnforcement();
@@ -1238,6 +1301,72 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch (e: any) {
       console.warn("Login fetch failed:", e);
       return { success: false, error: e.message || "Failed to connect to AURA database node." };
+    }
+  },
+
+  switchSavedAccount: async (userId: string) => {
+    try {
+      const { loadSavedAccounts } = await import("@/lib/multiAccountSession");
+      const accounts = await loadSavedAccounts();
+      const account = accounts.find((a) => a.userId === userId);
+      if (!account?.token) {
+        return { success: false, error: "Account session expired. Sign in again." };
+      }
+      set({ authToken: account.token });
+      const res = await fetch(`${API_BASE}/profile?userId=${encodeURIComponent(userId)}`, {
+        headers: { Authorization: `Bearer ${account.token}` },
+      });
+      const data = await res.json();
+      if (!data.success || !data.profile) {
+        return { success: false, error: "Could not restore account session." };
+      }
+      const profile = data.profile;
+      const user = {
+        id: userId,
+        name: profile.profileName || profile.name || account.username,
+        email: account.email,
+        username: profile.username || account.username,
+        maisonId: profile.maisonId || profile.username,
+        avatar: profile.logo,
+      };
+      set({ currentUser: user, activeMaisonId: user.maisonId });
+      get().syncProfileIdentity();
+      await get().fetchProfiles(userId);
+      get().syncProfileIdentity();
+      await refreshSettingsEnforcement();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message || "Account switch failed." };
+    }
+  },
+
+  authCompleteLoginWithOtp: async (userId, otpCode) => {
+    try {
+      const { completeLoginWithOtp } = await import("@/lib/twoFactorApi");
+      const data = await completeLoginWithOtp(userId, otpCode);
+      if (data.success && data.user) {
+        get().triggerHaptic("success");
+        set({
+          currentUser: data.user,
+          activeMaisonId: data.user.maisonId,
+          authToken: data.token || null,
+        });
+        const { upsertSavedAccount } = await import("@/lib/multiAccountSession");
+        await upsertSavedAccount({
+          userId: data.user.id,
+          email: data.user.email || "",
+          username: data.user.username || data.user.email || "",
+          token: data.token || "",
+        });
+        get().syncProfileIdentity();
+        await get().fetchProfiles(data.user.id);
+        get().syncProfileIdentity();
+        await refreshSettingsEnforcement();
+        return { success: true };
+      }
+      return { success: false, error: data.error || "Verification failed." };
+    } catch (e: any) {
+      return { success: false, error: e.message || "Failed to verify login code." };
     }
   },
 
@@ -1257,6 +1386,7 @@ export const useStore = create<StoreState>((set, get) => ({
           activeMaisonId: data.user.maisonId,
           authToken: data.token || null,
         });
+        get().syncProfileIdentity();
         await get().fetchProfiles(data.user.id);
         get().syncProfileIdentity();
         await refreshSettingsEnforcement();
@@ -1272,7 +1402,7 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const res = await fetch(`${API_BASE}/profile/update`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -1290,18 +1420,39 @@ export const useStore = create<StoreState>((set, get) => ({
 
   authOnboard: async (payload) => {
     try {
+      let token = get().authToken;
+      if (!token) {
+        const bundle = await loadAuthBundle(AsyncStorage);
+        if (bundle?.authToken) {
+          token = bundle.authToken;
+          set({ authToken: token });
+        }
+      }
+      if (!token) {
+        return {
+          success: false,
+          error: "Session expired. Please sign in again.",
+        };
+      }
+
       const res = await fetch(`${API_BASE}/auth/onboard`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.success) {
         get().triggerHaptic("success");
         set({ currentUser: data.user, activeMaisonId: data.user.maisonId });
+        await get().fetchProfiles(data.user.id);
+        get().syncProfileIdentity();
         return { success: true, user: data.user, profile: data.profile };
       }
-      return { success: false, error: data.message || data.error };
+      const errMsg =
+        data.error === "UNAUTHORIZED" || res.status === 401
+          ? "Valid session token required. Please sign in again."
+          : data.message || data.error;
+      return { success: false, error: errMsg };
     } catch (e: any) {
       console.warn("Onboarding fetch failed:", e);
       return { success: false, error: e.message || "Failed to reach onboarding database gateway." };
@@ -1310,7 +1461,9 @@ export const useStore = create<StoreState>((set, get) => ({
 
   fetchProfiles: async (userId) => {
     try {
-      const res = await fetch(`${API_BASE}/profile/list?userId=${userId}`);
+      const res = await fetch(`${API_BASE}/profile/list?userId=${userId}`, {
+        headers: authHeaders(),
+      });
       const data = await res.json();
       if (data.success) {
         const profiles = (data.profiles || []).map(hydrateProfileFromApi);
@@ -1373,7 +1526,7 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const res = await fetch(`${API_BASE}/profile/switch`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ userId: user.id, profileId })
       });
       const data = await res.json();
@@ -1422,12 +1575,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const data = await res.json();
       if (!data.success || !Array.isArray(data.stories)) return;
 
-      const slides = data.stories.map((s: { id: string; url: string; caption?: string; isVideo?: boolean }) => ({
-        id: s.id,
-        url: s.url,
-        caption: s.caption,
-        isVideo: s.isVideo,
-      }));
+      const slides = data.stories.map((s: Record<string, unknown>) => mapApiStoryToSlide(s));
 
       set((state) => {
         const others = state.instaStories.filter((s) => !s.isYourStory);
@@ -1440,10 +1588,36 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  fetchNotifications: async (profileId) => {
+  loadStoryRings: async (userId) => {
+    try {
+      const res = await fetch(
+        `${API_BASE}/feed/stories?userId=${encodeURIComponent(userId)}&limit=40`,
+        { headers: authHeaders() }
+      );
+      const data = await res.json();
+      if (!data.success || !Array.isArray(data.stories)) return;
+
+      const profileId = get().activeProfile?.id || null;
+      const rings = groupStoriesIntoRings(data.stories, profileId).filter((g) => !g.isYourStory);
+
+      set((state) => {
+        const yourStory =
+          state.instaStories.find((s) => s.isYourStory) ||
+          buildYourStoryNode(state.activeProfile, state.currentUser, []);
+        return { instaStories: [yourStory, ...rings] };
+      });
+      get().syncProfileIdentity();
+    } catch (e) {
+      console.warn("Could not load story rings from feed.", e);
+    }
+  },
+
+  fetchNotifications: async (profileId, type = "ALL") => {
     set({ loadingNotifications: true });
     try {
-      const res = await fetch(`${API_BASE}/notifications?profileId=${profileId}`);
+      const qs = new URLSearchParams({ profileId });
+      if (type && type !== "ALL") qs.set("type", type);
+      const res = await fetch(`${API_BASE}/notifications?${qs.toString()}`);
       const data = await res.json();
       if (data.success) {
         set({ notifications: data.notifications });
@@ -1647,8 +1821,11 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   detectLocation: async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500); // 1.5s timeout
     try {
-      const res = await fetch("https://ipapi.co/json/");
+      const res = await fetch("https://ipapi.co/json/", { signal: controller.signal });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (data.country_code && CURRENCY_MAP[data.country_code]) {
         set({
@@ -1658,7 +1835,8 @@ export const useStore = create<StoreState>((set, get) => ({
         console.log(`[Store] Geo-Detected Country: ${data.country_code}, Currency: ${CURRENCY_MAP[data.country_code].code}`);
       }
     } catch (error) {
-      console.warn("[Store] Geo-Detection Sync Failure. Defaulting to India Node (INR).");
+      clearTimeout(timeoutId);
+      console.log("[Store] Geo-Detection Sync Failure. Defaulting to India Node (INR).");
     }
   },
 
@@ -1721,6 +1899,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (get().loadingFeedItems) return;
     const trimmed = query.trim();
     if (trimmed.length < 2) {
+      set({ activeSearchQuery: "", searchTiles: [] });
       await get().fetchFeedItems("", "For You", true);
       return;
     }
@@ -1733,10 +1912,16 @@ export const useStore = create<StoreState>((set, get) => ({
       const res = await fetch(url);
       const data = await res.json();
       if (data.success && data.results) {
-        set({ feedItems: data.results, reelsSponsoredAd: null });
+        set({
+          feedItems: data.results,
+          searchTiles: data.tiles || [],
+          activeSearchQuery: trimmed,
+          reelsSponsoredAd: null,
+        });
       }
     } catch (e) {
       console.warn("Search failed, falling back to feed filter.", e);
+      set({ searchTiles: [], activeSearchQuery: trimmed });
       await get().fetchFeedItems(trimmed, "For You", true);
     } finally {
       set({ loadingFeedItems: false });

@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { normalizeUsername } from "@/lib/postNavigation";
+import { normalizeUsername } from "@/lib/usernameUtils";
 import {
   fetchRemoteSocialGraph,
   mergeSocialGraphs,

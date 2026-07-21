@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Text, type TextProps, type TextStyle } from "react-native";
 
-const HASHTAG_COLOR = "#00f5ff";
+const HASHTAG_COLOR = "#0095f6";
 const MENTION_COLOR = "#ff9500";
 
 type Segment =
@@ -43,6 +43,8 @@ interface CaptionTextProps extends TextProps {
   onMentionPress?: (username: string) => void;
 }
 
+import { StyleSheet } from "react-native";
+
 export function CaptionText({
   caption,
   style,
@@ -56,8 +58,12 @@ export function CaptionText({
 
   if (!caption) return null;
 
+  const flatStyle = StyleSheet.flatten(style) || {};
+  const textColor = flatStyle.color || "#fff";
+  const parentStyle = { ...flatStyle, color: undefined };
+
   return (
-    <Text style={style} {...rest}>
+    <Text style={parentStyle} {...rest}>
       {segments.map((seg, i) => {
         if (seg.kind === "hashtag") {
           return (
@@ -89,7 +95,11 @@ export function CaptionText({
             </Text>
           );
         }
-        return <Text key={`${i}-t`}>{seg.value}</Text>;
+        return (
+          <Text key={`${i}-${seg.value}`} style={{ color: textColor }}>
+            {seg.value}
+          </Text>
+        );
       })}
     </Text>
   );

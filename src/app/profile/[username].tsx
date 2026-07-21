@@ -23,8 +23,12 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import { API_HOST } from "@/constants/api";
 import { openExternalUrl } from "@/lib/openExternalUrl";
+import * as ImagePicker from "expo-image-picker";
+import * as Clipboard from "expo-clipboard";
+import { uploadMediaFromUri } from "@/lib/uploadMedia";
 import { formatCompactNumber } from "@/constants/format";
 import { ProfileGridEmpty } from "@/components/ProfileGridEmpty";
+import { getThumbnailAsync } from "expo-video-thumbnails";
 import {
   fetchProfileNetwork,
   fetchProfilePosts,
@@ -33,16 +37,64 @@ import {
   type NetworkProfile,
   type ProfilePost,
 } from "@/lib/profileApi";
+import { authHeaders } from "@/lib/apiClient";
 import { useProfileGridViewer } from "@/lib/profileGridNavigation";
 import { ProfileGridViewer } from "@/components/profile/ProfileGridViewer";
 import { useSocialGraph } from "@/hooks/useSocialGraph";
 import { isUserBlocked, unblockUser } from "@/lib/socialGraph";
+import { fetchProductCollabs, type ProductCollabProduct } from "@/lib/productCollabApi";
 
 const { width } = Dimensions.get("window");
 const GRID_ITEM_SIZE = (width - 2) / 3;
 
+function ProfileGridVideoThumbnail({ videoUrl }: { videoUrl: string }) {
+  const [thumbUri, setThumbUri] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    getThumbnailAsync(videoUrl, { time: 1000 })
+      .then((res) => {
+        if (active) {
+          setThumbUri(res.uri);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.warn("Grid thumbnail gen failed:", err);
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [videoUrl]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#080415", justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="small" color="#00f5ff" />
+      </View>
+    );
+  }
+
+  if (!thumbUri) {
+    return (
+      <LinearGradient
+        colors={["#7b2cbf", "#3c096c", "#10002b"]}
+        style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+      >
+        <Lucide name="videocam" size={24} color="#00f5ff" />
+      </LinearGradient>
+    );
+  }
+
+  return <Image source={{ uri: thumbUri }} style={{ width: "100%", height: "100%", resizeMode: "cover" }} />;
+}
+
 export default function ViewProfileScreen() {
-  const { username, name, avatar } = useLocalSearchParams<{ username: string; name?: string; avatar?: string }>();
+  const { username, name, avatar: rawAvatar } = useLocalSearchParams<{ username: string; name?: string; avatar?: string }>();
+  const avatar = (rawAvatar && !rawAvatar.includes("unsplash.com")) ? rawAvatar : null;
   const insets = useSafeAreaInsets();
   const {
     triggerHaptic,
@@ -60,6 +112,7 @@ export default function ViewProfileScreen() {
   const [activeGridTab, setActiveGridTab] = useState<"posts" | "reels" | "products" | "collabs">("posts");
   const [followLoading, setFollowLoading] = useState(false);
   const [profilePosts, setProfilePosts] = useState<ProfilePost[]>([]);
+  const [productCollabProducts, setProductCollabProducts] = useState<ProductCollabProduct[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const { viewer: gridViewer, openGridItem, closeViewer: closeGridViewer } = useProfileGridViewer();
   const { graph: socialGraph, version: socialGraphVersion, blockAccount, refresh: refreshSocialGraph } = useSocialGraph();
@@ -135,6 +188,11 @@ export default function ViewProfileScreen() {
   const [promptValue, setPromptValue] = useState("");
   const [promptOnSubmit, setPromptOnSubmit] = useState<((val: string) => void) | null>(null);
 
+  // Avatar Overlay States
+  const [showAvatarOverlay, setShowAvatarOverlay] = useState(false);
+  const [showEditAvatarMenu, setShowEditAvatarMenu] = useState(false);
+  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
+
   const [prevUsername, setPrevUsername] = useState<string | null>(null);
   if (username !== prevUsername) {
     setPrevUsername(username);
@@ -146,6 +204,8 @@ export default function ViewProfileScreen() {
     setShowNetworkModal(false);
     setShowMessageSheet(false);
     setShowContactSheet(false);
+    setShowAvatarOverlay(false);
+    setShowEditAvatarMenu(false);
     setActiveGridTab("posts");
     setFollowLoading(false);
     setLoadingPosts(false);
@@ -269,6 +329,104 @@ export default function ViewProfileScreen() {
     );
   };
 
+  const handleUpdateAvatar = async (uri: string | null) => {
+    try {
+      setIsUpdatingAvatar(true);
+      
+      let logoUrl = null;
+      if (uri) {
+        logoUrl = await uploadMediaFromUri(uri, "avatar");
+      }
+
+      const res = await fetch(`${API_HOST}/api/mobile/profile`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          maisonId: profile.username || "rare_raven",
+          oldMaisonId: profile.username,
+          profileName: profile.profileName,
+          category: profile.category,
+          bioText: profile.bioText,
+          websiteLink: profile.websiteLink,
+          logo: logoUrl,
+          tags: tags,
+        })
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        useStore.setState((state) => {
+          const updatedProfile = state.activeProfile ? { 
+            ...state.activeProfile, 
+            logo: logoUrl
+          } : null;
+          return {
+            activeProfile: updatedProfile,
+            userProfiles: state.userProfiles.map(p => p.id === state.activeProfile?.id ? { 
+              ...p, 
+              logo: logoUrl
+            } : p)
+          };
+        });
+        triggerHaptic("success");
+      } else {
+        Alert.alert("Update Failed", "Could not update avatar.");
+      }
+    } catch (e) {
+      console.warn("Avatar update failed:", e);
+      Alert.alert("Update Failed", "Check your connection and try again.");
+    } finally {
+      setIsUpdatingAvatar(false);
+      setShowAvatarOverlay(false);
+      setShowEditAvatarMenu(false);
+    }
+  };
+
+  const handlePickAvatar = async (fromCamera = false) => {
+    triggerHaptic("light");
+    let perm;
+    if (fromCamera) {
+      perm = await ImagePicker.requestCameraPermissionsAsync();
+    } else {
+      perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    }
+    
+    if (!perm.granted) {
+      Alert.alert("Permission needed", `Allow ${fromCamera ? "camera" : "photo"} access to set avatar.`);
+      return;
+    }
+    
+    let result;
+    if (fromCamera) {
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+    } else {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+    }
+    
+    if (!result.canceled && result.assets[0]?.uri) {
+      handleUpdateAvatar(result.assets[0].uri);
+    }
+  };
+  
+  const handleDeleteAvatar = () => {
+    Alert.alert("Delete Avatar", "Are you sure you want to remove your profile picture?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => handleUpdateAvatar(null) }
+    ]);
+  };
+
   useEffect(() => {
     if (username) {
       // 🚀 Reset all local visual states instantly to prevent stale component reuse data leaks
@@ -280,6 +438,8 @@ export default function ViewProfileScreen() {
       setShowNetworkModal(false);
       setShowMessageSheet(false);
       setShowContactSheet(false);
+      setShowAvatarOverlay(false);
+      setShowEditAvatarMenu(false);
 
       fetchViewProfile(username, activeProfile?.id);
     }
@@ -300,7 +460,7 @@ export default function ViewProfileScreen() {
     profileId: "temp_id",
     username: username,
     profileName: name || username,
-    logo: avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400",
+    logo: avatar || null,
     bioText: "Loading Bio...",
     websiteLink: "",
     category: "CREATOR",
@@ -331,6 +491,9 @@ export default function ViewProfileScreen() {
     !!socialGraph &&
     isUserBlocked(profile.profileId, socialGraph, profile.username);
   const showPrivateOverlay = isPrivate && !isFollowing && !isOwnProfile && !isBlockedProfile;
+  const canOpenNetworkLists =
+    isOwnProfile ||
+    (profile as { showFollowersList?: boolean }).showFollowersList !== false;
   const followedBy = (profile as { followedBy?: { username: string; name: string; logo: string | null }[] })?.followedBy || [];
   const followedByOthersCount = (profile as { followedByOthersCount?: number })?.followedByOthersCount || 0;
 
@@ -366,6 +529,19 @@ export default function ViewProfileScreen() {
       .then(setProfilePosts)
       .finally(() => setLoadingPosts(false));
   }, [profile?.profileId, profile?.username, showPrivateOverlay, isCorrectProfile]);
+
+  useEffect(() => {
+    if (!isCorrectProfile || !profile?.profileId || profile.profileId === "temp_id" || profile.profileId.startsWith("mock_") || showPrivateOverlay) {
+      setProductCollabProducts((prev) => (prev.length > 0 ? [] : prev));
+      return;
+    }
+    fetchProductCollabs({
+      profileId: profile.profileId,
+      status: "ACCEPTED",
+    })
+      .then(setProductCollabProducts)
+      .catch(() => setProductCollabProducts([]));
+  }, [profile?.profileId, showPrivateOverlay, isCorrectProfile]);
 
   // Handle follow/unfollow toggle
   const handleFollowToggle = async () => {
@@ -420,14 +596,20 @@ export default function ViewProfileScreen() {
       }
       const uName = userVal?.profileName || userVal?.name || "Patron";
       
+      const targetType = profile?.profileType === "PERSONAL" || profile?.profileType === "CREATOR" ? "PRIVATE" : "MAISON";
       const res = await fetch(`${API_HOST}/api/mobile/chat/initiate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          ...authHeaders(),
+          "Content-Type": "application/json" 
+        },
         body: JSON.stringify({
           userId: uId,
           userName: uName,
           maisonId: profile?.username || username,
           maisonName: profile?.profileName || username,
+          peerProfileId: profile?.profileId || profile?.id,
+          type: targetType,
           initialMessage: "Hey there! 👋"
         })
       });
@@ -591,15 +773,23 @@ export default function ViewProfileScreen() {
                     alignItems: "center",
                     justifyContent: "center",
                   }}>
-                    <View style={{
-                      width: 76,
-                      height: 76,
-                      borderRadius: 38,
-                      overflow: "hidden",
-                      backgroundColor: "#080415",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}>
+                    <TouchableOpacity
+                      onLongPress={() => {
+                        triggerHaptic("heavy");
+                        setShowAvatarOverlay(true);
+                        setShowEditAvatarMenu(false);
+                      }}
+                      activeOpacity={0.8}
+                      style={{
+                        width: 76,
+                        height: 76,
+                        borderRadius: 38,
+                        overflow: "hidden",
+                        backgroundColor: "#080415",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
                       {profile.logo ? (
                         <Image
                           source={{ uri: profile.logo }}
@@ -610,7 +800,7 @@ export default function ViewProfileScreen() {
                           {profile.profileName?.[0]?.toUpperCase() || "?"}
                         </Text>
                       )}
-                    </View>
+                    </TouchableOpacity>
                   </View>
                 </LinearGradient>
               </View>
@@ -621,19 +811,35 @@ export default function ViewProfileScreen() {
                   <Text style={styles.statNumber}>{formatCompactNumber(profile.postsCount || 0)}</Text>
                   <Text style={styles.statLabel}>posts</Text>
                 </View>
-                <TouchableOpacity style={styles.statItem} onPress={() => {
-                  triggerHaptic("light");
-                  setNetworkTab("followers");
-                  setShowNetworkModal(true);
-                }}>
+                <TouchableOpacity
+                  style={styles.statItem}
+                  disabled={!canOpenNetworkLists}
+                  onPress={() => {
+                    if (!canOpenNetworkLists) {
+                      Alert.alert("Lists hidden", "This account hides followers and following lists.");
+                      return;
+                    }
+                    triggerHaptic("light");
+                    setNetworkTab("followers");
+                    setShowNetworkModal(true);
+                  }}
+                >
                   <Text style={styles.statNumber}>{formatCompactNumber(profile.followersCount || 0)}</Text>
                   <Text style={styles.statLabel}>followers</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.statItem} onPress={() => {
-                  triggerHaptic("light");
-                  setNetworkTab("following");
-                  setShowNetworkModal(true);
-                }}>
+                <TouchableOpacity
+                  style={styles.statItem}
+                  disabled={!canOpenNetworkLists}
+                  onPress={() => {
+                    if (!canOpenNetworkLists) {
+                      Alert.alert("Lists hidden", "This account hides followers and following lists.");
+                      return;
+                    }
+                    triggerHaptic("light");
+                    setNetworkTab("following");
+                    setShowNetworkModal(true);
+                  }}
+                >
                   <Text style={styles.statNumber}>{formatCompactNumber(profile.followingCount || 0)}</Text>
                   <Text style={styles.statLabel}>following</Text>
                 </TouchableOpacity>
@@ -966,7 +1172,11 @@ export default function ViewProfileScreen() {
                           openGridItem("reels", post.id);
                         }}
                       >
-                        <Image source={{ uri: post.thumbnail || post.url }} style={styles.gridPostImage} />
+                        {/\.(mp4|mov|m4v|webm|m3u8)(\?|$)/i.test(post.thumbnail || post.url || "") ? (
+                          <ProfileGridVideoThumbnail videoUrl={post.thumbnail || post.url} />
+                        ) : (
+                          <Image source={{ uri: post.thumbnail || post.url }} style={styles.gridPostImage} />
+                        )}
                         <View style={styles.gridVideoBadge}>
                           <Lucide name="play" size={11} color="#ffffff" />
                         </View>
@@ -1003,12 +1213,12 @@ export default function ViewProfileScreen() {
                 )}
 
                 {activeGridTab === "collabs" && (
-                  viewingProducts.length > 0 ? (
-                    viewingProducts.map((product: any) => {
+                  productCollabProducts.length > 0 ? (
+                    productCollabProducts.map((product) => {
                       const imageUrl = product.images?.[0] || "";
                       return (
                         <TouchableOpacity
-                          key={product.id}
+                          key={product.collabId || product.id}
                           style={styles.gridImageContainer}
                           onPress={() => {
                             triggerHaptic("medium");
@@ -1017,7 +1227,9 @@ export default function ViewProfileScreen() {
                         >
                           <Image source={{ uri: imageUrl }} style={styles.gridPostImage} />
                           <View style={styles.gridAffiliateBadge}>
-                            <Text style={styles.gridAffiliateText}>10% Commission</Text>
+                            <Text style={styles.gridAffiliateText}>
+                              {product.commissionRate ?? 10}% Commission
+                            </Text>
                           </View>
                         </TouchableOpacity>
                       );
@@ -1143,7 +1355,7 @@ export default function ViewProfileScreen() {
           <View style={styles.chatModalContainer}>
             <View style={styles.chatHeader}>
               <View style={styles.chatHeaderLeft}>
-                <Image source={{ uri: profile.logo || "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100" }} style={styles.chatHeaderAvatar} />
+                <Image source={{ uri: profile.logo || "https://auragram.com/logo.png" }} style={styles.chatHeaderAvatar} />
                 <View>
                   <Text style={styles.chatHeaderTitle}>{profile.profileName}</Text>
                   <Text style={styles.chatHeaderSubtitle}>Active now • curator-node</Text>
@@ -1340,7 +1552,7 @@ export default function ViewProfileScreen() {
             profileId: profile.profileId,
           }}
           posts={profilePosts}
-          products={viewingProducts}
+          products={gridViewer.tab === "collabs" ? productCollabProducts : viewingProducts}
           isOwnProfile={isOwnProfile}
           onPostDeleted={(postId) => {
             setProfilePosts((prev) => {
@@ -1352,6 +1564,138 @@ export default function ViewProfileScreen() {
           }}
         />
       ) : null}
+
+      {/* Avatar Long-Press Overlay */}
+      <Modal visible={showAvatarOverlay} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: "rgba(240, 240, 240, 0.95)", justifyContent: "center", alignItems: "center" }}>
+          <TouchableOpacity 
+             style={StyleSheet.absoluteFill} 
+             activeOpacity={1} 
+             onPress={() => { setShowAvatarOverlay(false); setShowEditAvatarMenu(false); }} 
+          />
+          
+          <View style={{ alignItems: "center", zIndex: 10 }}>
+            <View style={{ position: "relative" }}>
+              {profile.logo ? (
+                <Image source={{ uri: profile.logo }} style={{ width: 220, height: 220, borderRadius: 110, backgroundColor: "#fff" }} />
+              ) : (
+                 <View style={{ width: 220, height: 220, borderRadius: 110, backgroundColor: "#080415", alignItems: "center", justifyContent: "center" }}>
+                   <Text style={{ fontSize: 80, color: "#fff", fontWeight: "600" }}>{profile.profileName?.[0]?.toUpperCase() || "?"}</Text>
+                 </View>
+              )}
+              
+              {isOwnProfile && !showEditAvatarMenu && (
+                <TouchableOpacity 
+                   onPress={() => {
+                     triggerHaptic("medium");
+                     setShowEditAvatarMenu(true);
+                   }}
+                   disabled={isUpdatingAvatar}
+                   style={{
+                     position: "absolute",
+                     bottom: 8,
+                     right: 20,
+                     backgroundColor: "#fff",
+                     width: 44,
+                     height: 44,
+                     borderRadius: 22,
+                     alignItems: "center",
+                     justifyContent: "center",
+                     shadowColor: "#000",
+                     shadowOffset: { width: 0, height: 4 },
+                     shadowOpacity: 0.1,
+                     shadowRadius: 8,
+                   }}>
+                   {isUpdatingAvatar ? (
+                     <ActivityIndicator size="small" color="#000" />
+                   ) : (
+                     <Lucide name="pencil" size={20} color="#000" />
+                   )}
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            {/* Bottom buttons when menu is NOT shown */}
+            {!showEditAvatarMenu && (
+              <View style={{ flexDirection: "row", marginTop: 80, gap: 24 }}>
+                <View style={{ alignItems: "center" }}>
+                  <TouchableOpacity onPress={handleShareProfile} style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }}>
+                     <Lucide name="person-outline" size={28} color="#000" />
+                  </TouchableOpacity>
+                  <Text style={{ marginTop: 12, color: "#000", fontWeight: "600", fontSize: 13 }}>Share</Text>
+                </View>
+                <View style={{ alignItems: "center" }}>
+                  <TouchableOpacity 
+                    onPress={async () => { 
+                      triggerHaptic("light");
+                      await Clipboard.setStringAsync(`https://aura.app/${profile?.username || username}`);
+                      Alert.alert("Link Copied", "Profile link copied to clipboard.");
+                    }} 
+                    style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }}>
+                     <Lucide name="link-outline" size={28} color="#000" />
+                  </TouchableOpacity>
+                  <Text style={{ marginTop: 12, color: "#000", fontWeight: "600", fontSize: 13 }}>Copy link</Text>
+                </View>
+                <View style={{ alignItems: "center" }}>
+                  <TouchableOpacity 
+                    onPress={() => {
+                      triggerHaptic("light");
+                      Alert.alert("QR Code", "QR code rendering goes here.");
+                    }}
+                    style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }}>
+                     <Lucide name="qr-code-outline" size={28} color="#000" />
+                  </TouchableOpacity>
+                  <Text style={{ marginTop: 12, color: "#000", fontWeight: "600", fontSize: 13 }}>QR code</Text>
+                </View>
+                {isOwnProfile && (
+                  <View style={{ alignItems: "center" }}>
+                    <TouchableOpacity onPress={() => { triggerHaptic("medium"); setShowEditAvatarMenu(true); }} disabled={isUpdatingAvatar} style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }}>
+                       {isUpdatingAvatar ? (
+                         <ActivityIndicator size="small" color="#000" />
+                       ) : (
+                         <Lucide name="happy-outline" size={28} color="#000" />
+                       )}
+                    </TouchableOpacity>
+                    <Text style={{ marginTop: 12, color: "#000", fontWeight: "600", fontSize: 13 }}>Edit avatar</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Edit Menu when shown */}
+            {showEditAvatarMenu && isOwnProfile && (
+              <View style={{ 
+                marginTop: 20,
+                backgroundColor: "rgba(240, 240, 240, 0.95)", 
+                borderRadius: 20,
+                width: 300,
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.1,
+                shadowRadius: 24,
+                overflow: "hidden"
+              }}>
+                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={() => handlePickAvatar(false)} style={{ padding: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
+                   <Text style={{ fontSize: 16, fontWeight: "500", color: "#000" }}>Choose from library</Text>
+                   <Lucide name="image-outline" size={20} color="#000" />
+                 </TouchableOpacity>
+                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={() => { triggerHaptic("light"); Alert.alert("Facebook Import", "Integration not yet configured."); setShowAvatarOverlay(false); }} style={{ padding: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
+                   <Text style={{ fontSize: 16, fontWeight: "500", color: "#000" }}>Import from Facebook</Text>
+                   <Lucide name="logo-facebook" size={20} color="#000" />
+                 </TouchableOpacity>
+                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={() => handlePickAvatar(true)} style={{ padding: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
+                   <Text style={{ fontSize: 16, fontWeight: "500", color: "#000" }}>Take photo</Text>
+                   <Lucide name="camera-outline" size={20} color="#000" />
+                 </TouchableOpacity>
+                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={handleDeleteAvatar} style={{ padding: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                   <Text style={{ fontSize: 16, fontWeight: "500", color: "#ff3b30" }}>Delete</Text>
+                   <Lucide name="trash-outline" size={20} color="#ff3b30" />
+                 </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
 
     </View>
   );

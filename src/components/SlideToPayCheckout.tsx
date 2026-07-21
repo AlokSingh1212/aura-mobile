@@ -8,11 +8,13 @@ import {
   Dimensions,
   PanResponder,
   ActivityIndicator,
-  TouchableWithoutFeedback
+  TouchableWithoutFeedback,
+  Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { useStore } from "@/store/useStore";
 
 const { width, height } = Dimensions.get("window");
 
@@ -40,9 +42,15 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
   product,
   onSuccess
 }) => {
-  const [status, setStatus] = useState<"IDLE" | "PROCESSING" | "SUCCESS">("IDLE");
+  const [status, setStatus] = useState<"IDLE" | "PROCESSING" | "SUCCESS" | "ERROR">("IDLE");
+  const [errorMsg, setErrorMsg] = useState<string>("");
   const slideX = useRef(new Animated.Value(0)).current;
   const slideProgress = useRef(0);
+
+  // Pull real payment actions from store
+  const initiateCheckout = useStore((s) => s.initiateCheckout);
+  const verifyPayment = useStore((s) => s.verifyPayment);
+  const currentUser = useStore((s) => s.currentUser);
 
   // Bottom sheet slide-up animation
   const sheetY = useRef(new Animated.Value(height)).current;
@@ -51,6 +59,7 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
   useEffect(() => {
     if (visible) {
       setStatus("IDLE");
+      setErrorMsg("");
       slideX.setValue(0);
       slideProgress.current = 0;
       
@@ -70,11 +79,11 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
     }
   }, [visible]);
 
-  // Set up PanResponder for drag guestures
+  // Set up PanResponder for drag gestures
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => status === "IDLE",
+      onMoveShouldSetPanResponder: () => status === "IDLE",
       onPanResponderMove: (_, gestureState) => {
         // Constrain movement inside the track
         let newX = gestureState.dx;
@@ -86,7 +95,7 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
       },
       onPanResponderRelease: () => {
         if (slideProgress.current >= END_THRESHOLD - 10) {
-          // Slide completed successfully
+          // Slide completed — trigger real payment
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           handleSlideSuccess();
         } else {
@@ -103,7 +112,12 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
     })
   ).current;
 
-  const handleSlideSuccess = () => {
+  const handleSlideSuccess = async () => {
+    if (!currentUser?.id) {
+      Alert.alert("Sign in required", "Please sign in to complete your purchase.");
+      return;
+    }
+
     setStatus("PROCESSING");
     Animated.timing(slideX, {
       toValue: END_THRESHOLD,
@@ -111,15 +125,63 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
       useNativeDriver: true
     }).start();
 
-    // Simulate double-entry ledger secure settling
-    setTimeout(() => {
-      setStatus("SUCCESS");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      // Step 1: Create a real Razorpay order on the server
+      const orderRes = await initiateCheckout({
+        userId: currentUser.id,
+        cartItems: [
+          {
+            artifactId: product.id,
+            quantity: 1,
+            price: product.price,
+          },
+        ],
+      });
 
-      setTimeout(() => {
-        dismissSheet(onSuccess);
-      }, 1500);
-    }, 2000);
+      if (!orderRes?.success) {
+        setStatus("ERROR");
+        setErrorMsg(orderRes?.error || "Could not create order. Please try again.");
+        // Snap thumb back
+        Animated.spring(slideX, { toValue: 0, friction: 5, useNativeDriver: true }).start();
+        slideProgress.current = 0;
+        return;
+      }
+
+      // Step 2: Verify payment (simulated gateway for quick-buy surface;
+      // full Razorpay SDK flow is in the dedicated checkout screen).
+      // Server only accepts sim IDs when ALLOW_SIMULATED_PAYMENTS=true (dev/staging).
+      const verifyRes = await verifyPayment({
+        razorpayOrderId: orderRes.razorpayOrderId,
+        razorpayPaymentId: `pay_sim_${Date.now().toString(36)}`,
+        razorpaySignature: `sig_sim_${Date.now().toString(36)}`,
+      });
+
+      if (verifyRes?.success) {
+        setStatus("SUCCESS");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setTimeout(() => {
+          dismissSheet(onSuccess);
+        }, 1500);
+      } else {
+        setStatus("ERROR");
+        setErrorMsg(verifyRes?.error || "Payment verification failed. Please retry.");
+        Animated.spring(slideX, { toValue: 0, friction: 5, useNativeDriver: true }).start();
+        slideProgress.current = 0;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Network error. Please try again.";
+      setStatus("ERROR");
+      setErrorMsg(msg);
+      Animated.spring(slideX, { toValue: 0, friction: 5, useNativeDriver: true }).start();
+      slideProgress.current = 0;
+    }
+  };
+
+  const handleRetry = () => {
+    setStatus("IDLE");
+    setErrorMsg("");
+    slideX.setValue(0);
+    slideProgress.current = 0;
   };
 
   const dismissSheet = (callback?: () => void) => {
@@ -143,15 +205,20 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
   if (!visible || !product) return null;
 
   const images = product.images || [
-    "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400"
+    "https://auragram.com/logo.png"
   ];
+
+  // Compute GST + shipping inline to match server-side totals
+  const shipping = 1500;
+  const taxAmount = Math.round(product.price * 0.18 * 100) / 100;
+  const total = Math.round((product.price + taxAmount + shipping) * 100) / 100;
 
   return (
     <Modal
       transparent
       visible={visible}
       animationType="none"
-      onRequestClose={() => dismissSheet()}
+      onRequestClose={() => status === "IDLE" && dismissSheet()}
     >
       <View style={styles.root}>
         {/* Background Overlay */}
@@ -165,7 +232,7 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
           <View style={styles.dragBar} />
 
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Order Checkout</Text>
+            <Text style={styles.headerTitle}>Quick Checkout</Text>
             <TouchableWithoutFeedback onPress={() => status === "IDLE" && dismissSheet()}>
               <Ionicons name="close" size={24} color="#8E8E93" />
             </TouchableWithoutFeedback>
@@ -181,7 +248,7 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
                   <Text style={styles.productVariant}>
                     Size: {product.selectedSize || "M"}  •  Color: {product.selectedColor || "Obsidian"}
                   </Text>
-                  <Text style={styles.price}>${product.price.toFixed(2)}</Text>
+                  <Text style={styles.price}>₹{product.price.toLocaleString("en-IN")}</Text>
                 </View>
               </View>
 
@@ -189,7 +256,7 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
               <View style={styles.securityBox}>
                 <Ionicons name="shield-checkmark-outline" size={20} color="#34C759" />
                 <Text style={styles.securityText}>
-                  Escrow settlement secured. Funds will be held until delivery is verified.
+                  Payment secured via Razorpay. Escrow held until delivery confirmed.
                 </Text>
               </View>
 
@@ -197,21 +264,25 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
               <View style={styles.priceSummary}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Subtotal</Text>
-                  <Text style={styles.summaryValue}>${product.price.toFixed(2)}</Text>
+                  <Text style={styles.summaryValue}>₹{product.price.toLocaleString("en-IN")}</Text>
                 </View>
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Fulfillment Fee</Text>
-                  <Text style={styles.summaryValue}>FREE</Text>
+                  <Text style={styles.summaryLabel}>GST (18%)</Text>
+                  <Text style={styles.summaryValue}>₹{taxAmount.toLocaleString("en-IN")}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Shipping</Text>
+                  <Text style={styles.summaryValue}>₹{shipping.toLocaleString("en-IN")}</Text>
                 </View>
                 <View style={[styles.summaryRow, styles.totalRow]}>
                   <Text style={styles.totalLabel}>Total</Text>
-                  <Text style={styles.totalValue}>${product.price.toFixed(2)}</Text>
+                  <Text style={styles.totalValue}>₹{total.toLocaleString("en-IN")}</Text>
                 </View>
               </View>
 
               {/* Slide to Pay button track */}
               <View style={styles.sliderTrack}>
-                <Text style={styles.sliderPlaceholder}>Slide to Confirm Payment</Text>
+                <Text style={styles.sliderPlaceholder}>Slide to Confirm Payment →</Text>
                 <Animated.View
                   {...panResponder.panHandlers}
                   style={[
@@ -228,8 +299,8 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
           {status === "PROCESSING" && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#FFFFFF" />
-              <Text style={styles.loadingText}>Securing double-entry ledger settlement...</Text>
-              <Text style={styles.loadingSubtext}>Writing escrow balance transfer logs.</Text>
+              <Text style={styles.loadingText}>Processing payment…</Text>
+              <Text style={styles.loadingSubtext}>Creating order and confirming with Razorpay.</Text>
             </View>
           )}
 
@@ -238,8 +309,23 @@ export const SlideToPayCheckout: React.FC<SlideToPayCheckoutProps> = ({
               <View style={styles.successIconBox}>
                 <Ionicons name="checkmark-circle" size={80} color="#34C759" />
               </View>
-              <Text style={styles.successText}>Transaction Completed</Text>
-              <Text style={styles.loadingSubtext}>Chain of custody hash locked.</Text>
+              <Text style={styles.successText}>Order Confirmed!</Text>
+              <Text style={styles.loadingSubtext}>Your payment was verified. Order is being prepared.</Text>
+            </View>
+          )}
+
+          {status === "ERROR" && (
+            <View style={styles.loadingContainer}>
+              <Ionicons name="alert-circle" size={64} color="#FF3B30" />
+              <Text style={[styles.loadingText, { color: "#FF3B30", marginTop: 16 }]}>Payment Failed</Text>
+              <Text style={[styles.loadingSubtext, { marginTop: 6, paddingHorizontal: 24, textAlign: "center" }]}>
+                {errorMsg}
+              </Text>
+              <TouchableWithoutFeedback onPress={handleRetry}>
+                <View style={styles.retryBtn}>
+                  <Text style={styles.retryBtnText}>Try Again</Text>
+                </View>
+              </TouchableWithoutFeedback>
             </View>
           )}
         </Animated.View>
@@ -348,7 +434,7 @@ const styles = StyleSheet.create({
     lineHeight: 16
   },
   priceSummary: {
-    marginVertical: 24,
+    marginVertical: 20,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.04)"
@@ -444,5 +530,19 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     marginTop: 10
+  },
+  retryBtn: {
+    marginTop: 24,
+    backgroundColor: "#2C2C2E",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)"
+  },
+  retryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600"
   }
 });

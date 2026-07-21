@@ -5,15 +5,16 @@ import {
   ScrollView,
   Text,
   ActivityIndicator,
-  SafeAreaView,
   TouchableOpacity,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
-import { THREADS_THEME as T } from "@/constants/threadsTheme";
+import { THREADS_THEME as T, STORY_ACCENT, STORY_GRADIENT } from "@/constants/threadsTheme";
 import { ThreadPostCard } from "@/components/threads/ThreadPostCard";
-import { ThreadsComposeModal } from "@/components/threads/ThreadsComposeModal";
+import { ThreadsComposeModal, type ThreadComposePayload } from "@/components/threads/ThreadsComposeModal";
+import { ThreadsScreenShell, useThreadsInsets } from "@/components/threads/ThreadsScreenShell";
 import {
   createThread,
   fetchThreadDetail,
@@ -28,6 +29,7 @@ export default function ThreadDetailScreen() {
   const triggerHaptic = useStore((s) => s.triggerHaptic);
   const currentUser = useStore((s) => s.currentUser);
   const activeProfile = useStore((s) => s.activeProfile);
+  const { bottom } = useThreadsInsets();
 
   const [thread, setThread] = useState<ThreadPostDto | null>(null);
   const [chain, setChain] = useState<ThreadPostDto[]>([]);
@@ -110,14 +112,16 @@ export default function ThreadDetailScreen() {
     setComposeVisible(true);
   };
 
-  const handleReplySubmit = async (text: string) => {
+  const handleReplySubmit = async (payload: ThreadComposePayload) => {
     if (!userId || !parentId) return;
     triggerHaptic("success");
     const res = await createThread({
       userId,
       profileId,
-      content: text,
+      content: payload.content,
       parentId,
+      mediaUrls: payload.mediaUrls,
+      productId: payload.productId,
     });
     if (res.success && res.post) {
       setChain((prev) => [...prev, res.post!]);
@@ -138,7 +142,7 @@ export default function ThreadDetailScreen() {
   const displayPosts = chain.length > 0 ? chain : thread ? [thread] : [];
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <ThreadsScreenShell style={styles.root}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -150,45 +154,64 @@ export default function ThreadDetailScreen() {
           <Lucide name="chevron-back" size={24} color={T.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Thread</Text>
-        <View style={{ width: 44 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
-      {loading ? (
-        <View style={styles.loader}>
-          <ActivityIndicator color={T.primary} />
-        </View>
-      ) : !thread ? (
-        <View style={styles.loader}>
-          <Text style={styles.notFound}>Thread not found</Text>
-        </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.scroll}>
-          {displayPosts.map((item, idx) => (
-            <ThreadPostCard
-              key={item.id}
-              item={item}
-              showThreadLine={idx < displayPosts.length - 1}
-              isLastInChain={idx === displayPosts.length - 1}
-              onLike={handleLike}
-              onRepost={handleRepost}
-              onReply={(tid) => openReply(tid, item.author.username)}
-              triggerHaptic={triggerHaptic}
-            />
-          ))}
-        </ScrollView>
-      )}
+      <View style={styles.body}>
+        {loading ? (
+          <View style={styles.loader}>
+            <ActivityIndicator color={STORY_ACCENT} />
+          </View>
+        ) : !thread ? (
+          <View style={styles.loader}>
+            <Text style={styles.notFound}>Thread not found</Text>
+          </View>
+        ) : (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={{ paddingBottom: 16, backgroundColor: T.bg }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {displayPosts.map((item, idx) => (
+              <ThreadPostCard
+                key={item.id}
+                item={item}
+                showThreadLine={idx < displayPosts.length - 1}
+                isLastInChain={idx === displayPosts.length - 1}
+                onLike={handleLike}
+                onRepost={handleRepost}
+                onReply={(tid) => openReply(tid, item.author.username)}
+                triggerHaptic={triggerHaptic}
+              />
+            ))}
+          </ScrollView>
+        )}
+      </View>
 
       {thread ? (
-        <TouchableOpacity
-          style={styles.replyBar}
-          onPress={() => {
-            const last = chain[chain.length - 1] || thread;
-            openReply(last.id, last.author.username);
-          }}
-        >
-          <Text style={styles.replyPlaceholder}>Reply to @{thread.author.username}…</Text>
-          <Lucide name="arrow-up-circle" size={28} color={T.primary} />
-        </TouchableOpacity>
+        <View style={[styles.replyBarWrap, { paddingBottom: bottom }]}>
+          <TouchableOpacity
+            style={styles.replyBar}
+            activeOpacity={0.85}
+            onPress={() => {
+              const last = chain[chain.length - 1] || thread;
+              openReply(last.id, last.author.username);
+            }}
+          >
+            <Text style={styles.replyPlaceholder} numberOfLines={1}>
+              Reply to @{thread.author.username}…
+            </Text>
+            <LinearGradient
+              colors={[...STORY_GRADIENT.colors]}
+              start={STORY_GRADIENT.start}
+              end={STORY_GRADIENT.end}
+              style={styles.replySendBtn}
+            >
+              <Lucide name="arrow-up" size={18} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       ) : null}
 
       <ThreadsComposeModal
@@ -199,14 +222,14 @@ export default function ThreadDetailScreen() {
         username={activeProfile?.username}
         replyTo={replyToUsername}
         placeholder="Add to the thread…"
+        allowProductTag={false}
       />
-    </SafeAreaView>
+    </ThreadsScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
+  root: {
     backgroundColor: T.bg,
   },
   header: {
@@ -214,7 +237,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderBottomWidth: 1,
     borderBottomColor: T.borderSubtle,
   },
@@ -224,10 +247,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerSpacer: {
+    width: 44,
+  },
   headerTitle: {
     color: T.text,
     fontSize: 16,
     fontWeight: "700",
+  },
+  body: {
+    flex: 1,
+  },
+  scroll: {
+    flex: 1,
+    backgroundColor: T.bg,
   },
   loader: {
     flex: 1,
@@ -237,22 +270,30 @@ const styles = StyleSheet.create({
   notFound: {
     color: T.textMuted,
   },
-  scroll: {
-    paddingBottom: 80,
+  replyBarWrap: {
+    borderTopWidth: 1,
+    borderTopColor: T.borderSubtle,
+    backgroundColor: T.surface,
   },
   replyBar: {
     flexDirection: "row",
     alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: T.borderSubtle,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: T.surface,
+    paddingTop: 12,
+    paddingBottom: 12,
     gap: 12,
+    minHeight: 52,
   },
   replyPlaceholder: {
     flex: 1,
     color: T.textMuted,
     fontSize: 14,
+  },
+  replySendBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

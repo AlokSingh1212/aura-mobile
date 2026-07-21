@@ -8,7 +8,7 @@ import Constants from "expo-constants";
 
 const extra = Constants.expoConfig?.extra as { apiHost?: string } | undefined;
 
-const DEV_LAN_HOST = "https://ai-marketplace-delta-five.vercel.app";
+const DEV_LAN_HOST = "http://localhost:3000";
 
 function resolveApiHost(): string {
   if (process.env.EXPO_PUBLIC_API_HOST) {

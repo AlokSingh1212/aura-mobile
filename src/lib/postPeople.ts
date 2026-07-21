@@ -62,12 +62,12 @@ export function collectPostPeople(input: {
   });
 
   const collabList: CollabPartner[] = [];
-  if (input.collab && input.collab.status !== "declined") {
+  if (input.collab && input.collab.status === "accepted") {
     collabList.push(input.collab);
   }
   if (Array.isArray(input.collabs)) {
     for (const c of input.collabs) {
-      if (c.status !== "declined" && !collabList.some((x) => x.profileId === c.profileId)) {
+      if (c.status === "accepted" && !collabList.some((x) => x.profileId === c.profileId)) {
         collabList.push(c);
       }
     }

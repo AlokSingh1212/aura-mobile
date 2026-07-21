@@ -19,6 +19,7 @@ export interface PublishProductPayload {
   selectedColors: string[];
   stockPerVariant: number;
   media: ProductMediaItem[];
+  returnPolicy?: "RETURN" | "EXCHANGE";
 }
 
 export interface PublishProductResult {
@@ -28,7 +29,7 @@ export interface PublishProductResult {
 }
 
 function isVideoUri(uri: string): boolean {
-  return /\.(mp4|mov|m4v|webm)(\?|$)/i.test(uri) || uri.includes("video");
+  return /\.(mp4|mov|m4v|webm|m3u8)(\?|$)/i.test(uri) || uri.includes("video");
 }
 
 export async function uploadProductMedia(
@@ -88,5 +89,6 @@ export async function buildProductCreatePayload(
       colors: input.selectedColors,
     },
     variants,
+    returnPolicy: input.returnPolicy === "EXCHANGE" ? "EXCHANGE" : "RETURN",
   };
 }

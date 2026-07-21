@@ -35,7 +35,9 @@ export default function SettingsLayout() {
       <Stack.Screen name="store/payouts" />
       <Stack.Screen name="store/customers" />
       <Stack.Screen name="store/promotions" />
+      <Stack.Screen name="store/partnerships" />
       <Stack.Screen name="store/policies" />
+      <Stack.Screen name="payouts/index" />
       <Stack.Screen name="about" />
       <Stack.Screen name="data" />
       <Stack.Screen name="delete-account" />

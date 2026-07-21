@@ -9,10 +9,10 @@ WebBrowser.maybeCompleteAuthSession();
 export function useGoogleOAuth() {
   const hasConfig = isGoogleOAuthConfigured();
   const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || (hasConfig ? undefined : "dummy-id"),
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || (hasConfig ? undefined : "dummy-id"),
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || (hasConfig ? undefined : "dummy-id"),
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || (hasConfig ? undefined : "dummy-id"),
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || "dummy-expo-id",
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || "dummy-ios-id",
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || "dummy-android-id",
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "dummy-web-id",
     redirectUri: makeRedirectUri({ scheme: "auragrammobile" }),
   });
 

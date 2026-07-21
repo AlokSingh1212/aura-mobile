@@ -6,11 +6,12 @@ import {
   TouchableOpacity,
   Image,
   Share,
-  Platform,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import Lucide from "@expo/vector-icons/Ionicons";
-import { THREADS_THEME as T } from "@/constants/threadsTheme";
+import { STORY_GRADIENT, STORY_ACCENT, THREADS_THEME as T } from "@/constants/threadsTheme";
+import { StoryGradientRing } from "@/components/threads/StoryGradientRing";
 import type { ThreadPostDto } from "@/lib/threadsApi";
 
 type Props = {
@@ -26,15 +27,43 @@ type Props = {
 
 function Avatar({ author }: { author: ThreadPostDto["author"] }) {
   const initial = (author.username || author.name || "?").charAt(0).toUpperCase();
-  if (author.avatarUrl) {
-    return <Image source={{ uri: author.avatarUrl }} style={styles.avatar} />;
-  }
   return (
-    <View style={styles.avatarFallback}>
-      <Text style={styles.avatarText}>{initial}</Text>
-    </View>
+    <StoryGradientRing size={40} ringWidth={2}>
+      {author.avatarUrl ? (
+        <Image source={{ uri: author.avatarUrl }} style={styles.avatarImg} />
+      ) : (
+        <View style={styles.avatarFallback}>
+          <Text style={styles.avatarText}>{initial}</Text>
+        </View>
+      )}
+    </StoryGradientRing>
   );
 }
+
+function renderThreadContent(content: string, style: any = styles.content, numberOfLines?: number) {
+  const parts = content.split(/(@[\w.]+|#[\w\u00C0-\u024F\u0900-\u097F]+)/g);
+  return (
+    <Text style={style} numberOfLines={numberOfLines}>
+      {parts.map((part, i) => {
+        if (part.startsWith("@")) {
+          return (
+            <Text key={i} style={styles.mention}>
+              {part}
+            </Text>
+          );
+        } else if (part.startsWith("#")) {
+          return (
+            <Text key={i} style={styles.hashtag}>
+              {part}
+            </Text>
+          );
+        }
+        return part;
+      })}
+    </Text>
+  );
+}
+
 
 export function ThreadPostCard({
   item,
@@ -105,9 +134,14 @@ export function ThreadPostCard({
           <TouchableOpacity style={styles.nameRow} onPress={openProfile}>
             <Text style={styles.username}>@{item.author.username}</Text>
             {(item.author.isElite || item.author.isVerified) && (
-              <View style={styles.badge}>
-                <Lucide name="shield-checkmark" size={10} color={T.bg} />
-              </View>
+              <LinearGradient
+                colors={[...STORY_GRADIENT.colors]}
+                start={STORY_GRADIENT.start}
+                end={STORY_GRADIENT.end}
+                style={styles.badge}
+              >
+                <Lucide name="shield-checkmark" size={10} color="#fff" />
+              </LinearGradient>
             )}
           </TouchableOpacity>
           <View style={styles.metaRight}>
@@ -122,14 +156,12 @@ export function ThreadPostCard({
           </View>
         ) : null}
 
-        {item.content ? <Text style={styles.content}>{item.content}</Text> : null}
+        {item.content ? renderThreadContent(item.content, styles.content) : null}
 
         {item.repostOf ? (
           <View style={styles.embedded}>
             <Text style={styles.embeddedUser}>@{item.repostOf.author.username}</Text>
-            <Text style={styles.embeddedContent} numberOfLines={4}>
-              {item.repostOf.content}
-            </Text>
+            {renderThreadContent(item.repostOf.content, styles.embeddedContent, 4)}
           </View>
         ) : null}
 
@@ -162,7 +194,14 @@ export function ThreadPostCard({
               </Text>
             </View>
             <View style={styles.acquireBtn}>
-              <Text style={styles.acquireText}>SHOP</Text>
+              <LinearGradient
+                colors={[...STORY_GRADIENT.colors]}
+                start={STORY_GRADIENT.start}
+                end={STORY_GRADIENT.end}
+                style={styles.acquireGradient}
+              >
+                <Text style={styles.acquireText}>SHOP</Text>
+              </LinearGradient>
             </View>
           </TouchableOpacity>
         )}
@@ -182,7 +221,7 @@ export function ThreadPostCard({
             <Lucide
               name="repeat-outline"
               size={18}
-              color={item.reposted ? T.primary : T.textSecondary}
+              color={item.reposted ? STORY_ACCENT : T.textSecondary}
             />
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
@@ -214,28 +253,24 @@ const styles = StyleSheet.create({
     backgroundColor: T.bg,
   },
   leftCol: {
-    width: 46,
+    width: 48,
     alignItems: "center",
   },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: T.border,
+  avatarImg: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
   },
   avatarFallback: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: T.surface,
-    borderWidth: 1,
-    borderColor: T.border,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarText: {
-    color: T.primary,
+    color: STORY_ACCENT,
     fontSize: 14,
     fontWeight: "700",
   },
@@ -297,10 +332,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   badge: {
-    width: 13,
-    height: 13,
-    borderRadius: 6.5,
-    backgroundColor: T.primary,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -327,6 +361,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 8,
+  },
+  mention: {
+    color: T.mention,
+    fontWeight: "600",
+  },
+  hashtag: {
+    color: "#0095f6",
+    fontWeight: "600",
   },
   embedded: {
     borderWidth: 1,
@@ -384,20 +426,22 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   productPrice: {
-    color: T.primary,
+    color: STORY_ACCENT,
     fontSize: 11,
     marginTop: 2,
+    fontWeight: "600",
   },
   acquireBtn: {
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  acquireGradient: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    backgroundColor: T.primaryMuted,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: T.border,
   },
   acquireText: {
-    color: T.primary,
+    color: "#fff",
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 0.8,

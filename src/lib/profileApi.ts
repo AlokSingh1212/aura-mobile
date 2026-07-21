@@ -384,3 +384,40 @@ export async function fetchProductById(id: string): Promise<any | null> {
   }
   return null;
 }
+
+export async function fetchTaggedPosts(
+  profileId: string,
+  viewerProfileId?: string | null,
+): Promise<ProfilePost[]> {
+  const params = new URLSearchParams({ profileId });
+  if (viewerProfileId) params.set("viewerProfileId", viewerProfileId);
+  const res = await fetch(`${API_HOST}/api/mobile/profile/tagged-posts?${params.toString()}`);
+  const data = await res.json();
+  if (data.success && Array.isArray(data.posts)) {
+    return data.posts.map((p: any) => ({
+      id: p.id,
+      url: p.url,
+      thumbnail: p.thumbnail,
+      isVideo: !!p.isVideo,
+      caption: p.caption,
+      createdAt: p.createdAt,
+    }));
+  }
+  return [];
+}
+
+export async function fetchProfileQr(
+  username: string,
+): Promise<{ qrImageUrl: string; profileUrl: string; username: string } | null> {
+  const params = new URLSearchParams({ username });
+  const res = await fetch(`${API_HOST}/api/mobile/profile/qr?${params.toString()}`);
+  const data = await res.json();
+  if (data.success) {
+    return {
+      qrImageUrl: data.qrImageUrl,
+      profileUrl: data.profileUrl,
+      username: data.username,
+    };
+  }
+  return null;
+}

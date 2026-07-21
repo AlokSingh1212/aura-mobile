@@ -20,6 +20,8 @@ import {
 } from "@/components/create/NewPostDetailsForm";
 import { PostGalleryStep } from "@/components/create/PostGalleryStep";
 import { PostEditStep } from "@/components/create/PostEditStep";
+import { buildPostPublishExtras } from "@/lib/postPublishPayload";
+import { uploadStoryStickerAssets } from "@/lib/uploadStoryStickers";
 import { defaultPostEditState, type PostEditState } from "@/lib/postEditState";
 import type { BrandStoreOption } from "@/components/profile/AddProductSheet";
 
@@ -91,21 +93,40 @@ export default function PostComposerScreen() {
     resetExportJob();
     try {
       triggerHaptic("medium");
+      const uploadedStickers = await uploadStoryStickerAssets(editState.stickerLayers);
+      const editWithUploaded = { ...editState, stickerLayers: uploadedStickers };
+      const extras = buildPostPublishExtras(editWithUploaded);
+      const mergedPhotoTags = [
+        ...extras.photoTags,
+        ...details.photoTags.filter(
+          (t) => !extras.photoTags.some((p) => p.profileId === t.profileId)
+        ),
+      ];
+
       const uploaded = await uploadCarouselImages(localUris);
       const result = await uploadAndPublish(uploaded[0], "post", {
         userId,
         profileId,
         profileName,
         caption,
-        productId: details.productId || productFromEdit?.productId || null,
-        location: details.verifiedLocation?.label,
-        latitude: details.verifiedLocation?.lat,
-        longitude: details.verifiedLocation?.lon,
+        productId: details.productId || productFromEdit?.productId || extras.productStickers[0]?.productId || null,
+        location: details.verifiedLocation?.label || extras.location,
+        latitude: details.verifiedLocation?.lat ?? extras.latitude,
+        longitude: details.verifiedLocation?.lon ?? extras.longitude,
         aiLabel: details.aiLabel,
-        photoTags: details.photoTags,
-        collab: details.collabPartner,
-        productStickers: editState.productStickers,
-        music: editState.audioLabel || details.audio || undefined,
+        photoTags: mergedPhotoTags,
+        collabs: details.collabPartners,
+        productStickers: extras.productStickers,
+        music: editState.audioLabel || details.audio || extras.musicTrack?.title || undefined,
+        musicTrack: extras.musicTrack,
+        storyLayers: extras.storyLayers,
+        partnership: extras.partnership.paidPartnershipLabel || extras.partnership.partnershipAdCode
+          ? {
+              paidLabel: extras.partnership.paidPartnershipLabel,
+              adCodeEnabled: extras.partnership.partnershipAdCode,
+              adCode: extras.partnership.partnershipAdCodeValue,
+            }
+          : null,
         filterId: editState.filterId !== "normal" ? editState.filterId : undefined,
         mediaUrls: uploaded.length > 1 ? uploaded : undefined,
       });
@@ -155,6 +176,9 @@ export default function PostComposerScreen() {
         editState={editState}
         brandStores={brandStores}
         userId={userId}
+        profileId={profileId}
+        profileAvatar={activeProfile?.logo}
+        profileUsername={activeProfile?.username}
         onBack={() => setStep("gallery")}
         onNext={() => setStep("details")}
         onEditChange={setEditState}

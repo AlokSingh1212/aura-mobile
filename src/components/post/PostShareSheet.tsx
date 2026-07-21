@@ -170,7 +170,7 @@ export function PostShareSheet({
                         source={{
                           uri:
                             contact.avatar ||
-                            "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150",
+                            "https://auragram.com/logo.png",
                         }}
                         style={styles.contactAvatar}
                       />
@@ -215,7 +215,7 @@ export function PostShareSheet({
                 if (!post) return;
                 addInstaStorySlide({
                   id: `ys_${Date.now()}`,
-                  url: post.url || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400",
+                  url: post.url || "https://auragram.com/logo.png",
                   caption: post.caption || "Obsidian Gold curation added to AURA Story coordinates.",
                   isVideo: false,
                   artifact: null,

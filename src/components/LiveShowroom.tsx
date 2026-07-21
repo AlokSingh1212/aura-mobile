@@ -17,7 +17,7 @@ import { Image } from "expo-image";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useStore } from "@/store/useStore";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { SafeVideoPlayer } from "@/components/SafeVideoPlayer";
 import * as Clipboard from "expo-clipboard";
 import { API_HOST } from "@/constants/api";
 import { authHeaders } from "@/lib/apiClient";
@@ -50,21 +50,14 @@ interface FloatingHeart {
 }
 
 
-const HlsStreamPlayer = ({ playbackUrl }: { playbackUrl: string }) => {
-  const player = useVideoPlayer(playbackUrl, (p) => {
-    p.loop = true;
-    p.play();
-  });
-
-  return (
-    <VideoView
-      player={player}
-      style={StyleSheet.absoluteFillObject}
-      contentFit="cover"
-      nativeControls={false}
-    />
-  );
-};
+const HlsStreamPlayer = ({ playbackUrl }: { playbackUrl: string }) => (
+  <SafeVideoPlayer
+    source={playbackUrl}
+    playing
+    style={StyleSheet.absoluteFillObject}
+    contentFit="cover"
+  />
+);
 
 export interface LiveShowroomProps {
   visible: boolean;
@@ -88,7 +81,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
   sessionId,
   skipLobby = false,
 }) => {
-  const { triggerHaptic, products, currentUser, activeProfile } = useStore();
+  const { triggerHaptic, products, currentUser, activeProfile, activeMaisonId } = useStore();
 
   // Mode states
   const [activeLiveMode, setActiveLiveMode] = useState<"lobby" | "viewer" | "broadcaster">(
@@ -539,20 +532,42 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
       }
     }
 
-    const revenue = Math.floor(finalHearts * 120 + finalViewers * 45);
-
     setSettlementData({
       duration: `${mm}:${ss}`,
       viewers: finalViewers,
       hearts: finalHearts,
-      revenue: `₹${revenue.toLocaleString()}`,
-      keys: Math.max(0, Math.floor(finalHearts / 50)),
+      revenue: "Fetching…",
+      keys: 0,
     });
 
     destroyWebRTCEngine();
     setActiveSessionId(null);
     setActiveLiveMode("lobby");
     setShowLiveSettlement(true);
+
+    // Fetch real payout data for this Maison
+    try {
+      const targetMaisonId = activeMaisonId || currentUser?.maisonId;
+      if (targetMaisonId) {
+        const res = await fetch(
+          `${API_HOST}/api/mobile/earnings?maisonId=${targetMaisonId}&userId=${currentUser?.id}`
+        );
+        const data = await res.json();
+        if (data.success && data.maisonPayouts) {
+          const settled = data.maisonPayouts.settled || 0;
+          const escrow = data.maisonPayouts.escrowLocked || 0;
+          setSettlementData((prev: any) => ({
+            ...prev,
+            revenue: `₹${(settled + escrow).toLocaleString("en-IN")}`,
+            keys: data.maisonPayouts.entries?.length ?? 0
+          }));
+        } else {
+          setSettlementData((prev: any) => ({ ...prev, revenue: "₹0" }));
+        }
+      }
+    } catch {
+      setSettlementData((prev: any) => ({ ...prev, revenue: "Unavailable" }));
+    }
   };
 
   const handleGoLive = () => {
@@ -699,7 +714,7 @@ export const LiveShowroom: React.FC<LiveShowroomProps> = ({
                   <>
                     <Image
                       source={{
-                        uri: pinnedProduct?.images?.[0] || "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400",
+                        uri: pinnedProduct?.images?.[0] || "https://auragram.com/logo.png",
                       }}
                       style={styles.backgroundImage}
                       blurRadius={1}

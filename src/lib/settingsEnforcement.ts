@@ -1,5 +1,5 @@
-import type { EcosystemSettings } from "@/lib/ecosystemSettings";
-import { DEFAULT_ECOSYSTEM_SETTINGS } from "@/lib/ecosystemSettings";
+import type { EcosystemSettings } from "@/lib/ecosystemSettingsModel";
+import { DEFAULT_ECOSYSTEM_SETTINGS } from "@/lib/ecosystemSettingsModel";
 
 export type NotificationCategory =
   | "orderUpdates"
@@ -308,6 +308,14 @@ export function isDailyLimitReached(extraMinutes = 0) {
   const today = new Date().toISOString().slice(0, 10);
   if (sessionDayKey !== today) return false;
   return sessionMinutesToday + extraMinutes >= getDailyLimitMinutes();
+}
+
+export function isBreakRemindersEnabled() {
+  return s().time.breakReminders === true;
+}
+
+export function isBiometricLockEnabled() {
+  return s().security.biometricEnabled === true;
 }
 
 export function mapFeedItemToNotificationCategory(item: any): NotificationCategory | null {

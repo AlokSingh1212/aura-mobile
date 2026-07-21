@@ -3,7 +3,9 @@ import { authHeaders } from "@/lib/apiClient";
 import { composeReelAdvanced } from "@/lib/composeMedia";
 import { runExportJob } from "@/lib/exportJob";
 import { uploadMediaFromUri } from "@/lib/uploadMedia";
+import { assertUploadNetworkAllowed, savePublishedMediaToGallery } from "@/lib/settingsRuntime";
 import type { ClipSegment } from "@/lib/createDraft";
+import { getThumbnailAsync } from "expo-video-thumbnails";
 
 export type PublishKind = "story" | "post" | "reel";
 
@@ -33,31 +35,85 @@ export interface PublishOptions {
     logo?: string | null;
     status?: string;
   } | null;
+  collabs?: {
+    profileId: string;
+    username: string;
+    name: string;
+    logo?: string | null;
+    status?: string;
+  }[];
   music?: string;
   alsoPostToGrid?: boolean;
   audioTrack?: ReelAudioTrack | null;
+  /** Start a new Add Yours template chain on this story */
+  addYoursPrompt?: string;
+  /** Participate in an existing Add Yours template */
+  templateId?: string;
   /** Server ffmpeg filter bake (reel) */
   filterId?: string;
   /** Multi-clip reel timeline */
   clips?: ClipSegment[];
   /** Carousel post URLs (already uploaded) */
   mediaUrls?: string[];
+  thumbnailUrl?: string;
+  /** Story editor layers (interactive metadata) */
+  storyLayers?: unknown[];
+  musicTrack?: {
+    id: string;
+    title: string;
+    artist?: string;
+    url?: string;
+    cover?: string;
+  } | null;
+  partnership?: {
+    paidLabel: boolean;
+    adCodeEnabled: boolean;
+    adCode?: string | null;
+  } | null;
+  /** Original reel/content id when publishing a remix */
+  remixSourceId?: string;
+  /** ISO timestamp — publish to feed at this time (server holds until cron) */
+  scheduledPublishAt?: string | null;
+  /** Explicit hashtag tags (without #) */
+  hashtags?: string[];
 }
 
 export interface PublishResult {
   publicUrl: string;
   contentId?: string;
   mediaUrls?: string[];
+  scheduled?: boolean;
+  scheduledPublishAt?: string;
+  addYours?: {
+    templateId: string;
+    promptText?: string;
+    participationCount?: number;
+    countLabel?: string;
+  };
+  storyLayers?: unknown[];
 }
 
 function isVideoUrl(url: string): boolean {
-  return /\.(mp4|mov|m4v|webm)(\?|$)/i.test(url) || url.includes("video");
+  return /\.(mp4|mov|m4v|webm|m3u8)(\?|$)/i.test(url) || url.includes("video");
+}
+
+async function generateAndUploadThumbnail(videoLocalUri: string): Promise<string | undefined> {
+  try {
+    const { uri } = await getThumbnailAsync(videoLocalUri, {
+      time: 1000,
+    });
+    const uploadedUrl = await uploadMediaFromUri(uri, "post");
+    return uploadedUrl;
+  } catch (err) {
+    console.warn("Failed to generate video thumbnail on client:", err);
+    return undefined;
+  }
 }
 
 async function postToFeedApi(
   publicUrl: string,
   opts: PublishOptions & { storyOnly: boolean; isVideo?: boolean }
-): Promise<string | undefined> {
+): Promise<{ id?: string; scheduled?: boolean; scheduledPublishAt?: string; addYours?: PublishResult["addYours"] }> {
   const caption =
     opts.caption?.trim() ||
     `✨ ${opts.profileName || "Your"} on AURA`;
@@ -80,17 +136,29 @@ async function postToFeedApi(
       productId: opts.productId || null,
       type: feedType,
       url: publicUrl,
-      thumbnail: carousel ? JSON.stringify(carousel) : publicUrl,
+      thumbnail: opts.thumbnailUrl || (carousel ? JSON.stringify(carousel) : publicUrl),
       caption,
       location: opts.location || undefined,
       latitude: opts.latitude,
       longitude: opts.longitude,
       aiLabel: !!opts.aiLabel,
       photoTags: opts.photoTags || [],
-      collab: opts.collab || null,
+      collab: opts.collabs?.[0] || opts.collab || null,
+      collabs: (opts.collabs || (opts.collab ? [opts.collab] : [])).map((c) => ({
+        ...c,
+        status: c.status || "pending",
+      })),
       productStickers: opts.productStickers || [],
       music: opts.storyOnly ? "STORY_ONLY" : opts.music || undefined,
+      storyLayers: opts.storyLayers || [],
+      musicTrack: opts.musicTrack || undefined,
+      partnership: opts.partnership || undefined,
+      addYoursPrompt: opts.addYoursPrompt || undefined,
+      templateId: opts.templateId || undefined,
+      remixSourceId: opts.remixSourceId || undefined,
       mediaUrls: carousel,
+      scheduledPublishAt: opts.scheduledPublishAt || undefined,
+      tags: opts.hashtags || [],
     }),
   });
 
@@ -101,7 +169,12 @@ async function postToFeedApi(
   if (!data.success) {
     throw new Error(data.error || "Could not publish to server.");
   }
-  return data.id as string | undefined;
+  return {
+    id: data.id as string | undefined,
+    scheduled: !!data.scheduled,
+    scheduledPublishAt: data.scheduledPublishAt as string | undefined,
+    addYours: data.addYours as PublishResult["addYours"] | undefined,
+  };
 }
 
 async function uploadClips(clips: ClipSegment[]): Promise<{ id: string; url: string; inMs: number; outMs: number }[]> {
@@ -119,11 +192,28 @@ export async function uploadAndPublish(
   kind: PublishKind,
   opts: PublishOptions
 ): Promise<PublishResult> {
+  await assertUploadNetworkAllowed();
+  let thumbnailUrl: string | undefined;
+
   return runExportJob<PublishResult>([
     {
       label: "Uploading media…",
       progress: 15,
       run: async () => {
+        const isVideo = kind === "reel" || isVideoUrl(localUri);
+        if (opts.thumbnailUrl) {
+          try {
+            thumbnailUrl = await uploadMediaFromUri(opts.thumbnailUrl, "post");
+          } catch (err) {
+            console.warn("Failed to upload custom gallery cover:", err);
+          }
+        } else if (isVideo) {
+          try {
+            thumbnailUrl = await generateAndUploadThumbnail(localUri);
+          } catch (err) {
+            console.warn("Failed to generate video thumbnail:", err);
+          }
+        }
         if (kind === "post" && opts.mediaUrls?.length) {
           return opts.mediaUrls[0];
         }
@@ -151,27 +241,37 @@ export async function uploadAndPublish(
           if (!needsCompose && prev.length === 1) {
             return { url: prev[0].url, mediaUrls: opts.mediaUrls };
           }
-          const composed = await composeReelAdvanced({
-            uploadedClipUrls: prev,
-            audioUrl: opts.audioTrack?.url,
-            audioStartMs: opts.audioTrack?.startMs ?? 0,
-            audioVolume: opts.audioTrack?.volume ?? 1,
-            filterId: opts.filterId,
-            trackId: opts.audioTrack?.trackId,
-          });
-          return { url: composed.url, mediaUrls: opts.mediaUrls };
+          try {
+            const composed = await composeReelAdvanced({
+              uploadedClipUrls: prev,
+              audioUrl: opts.audioTrack?.url,
+              audioStartMs: opts.audioTrack?.startMs ?? 0,
+              audioVolume: opts.audioTrack?.volume ?? 1,
+              filterId: opts.filterId,
+              trackId: opts.audioTrack?.trackId,
+            });
+            return { url: composed.url, mediaUrls: opts.mediaUrls };
+          } catch (err) {
+            console.error("Multi-clip compose failed, falling back to first clip:", err);
+            return { url: prev[0]?.url || localUri, mediaUrls: opts.mediaUrls };
+          }
         }
 
         if (needsCompose) {
-          const composed = await composeReelAdvanced({
-            videoUrl,
-            audioUrl: opts.audioTrack?.url,
-            audioStartMs: opts.audioTrack?.startMs ?? 0,
-            audioVolume: opts.audioTrack?.volume ?? 1,
-            filterId: opts.filterId,
-            trackId: opts.audioTrack?.trackId,
-          });
-          return { url: composed.url, mediaUrls: opts.mediaUrls };
+          try {
+            const composed = await composeReelAdvanced({
+              videoUrl,
+              audioUrl: opts.audioTrack?.url,
+              audioStartMs: opts.audioTrack?.startMs ?? 0,
+              audioVolume: opts.audioTrack?.volume ?? 1,
+              filterId: opts.filterId,
+              trackId: opts.audioTrack?.trackId,
+            });
+            return { url: composed.url, mediaUrls: opts.mediaUrls };
+          } catch (err) {
+            console.error("Single-clip compose failed, falling back to raw video:", err);
+            return { url: videoUrl, mediaUrls: opts.mediaUrls };
+          }
         }
 
         return { url: String(prev), mediaUrls: opts.mediaUrls };
@@ -186,20 +286,45 @@ export async function uploadAndPublish(
         const carousel = payload.mediaUrls;
         const isVideo = kind === "reel" || isVideoUrl(url);
         let contentId: string | undefined;
+        let addYours: PublishResult["addYours"];
 
         if (kind === "story") {
-          contentId = await postToFeedApi(url, { ...opts, storyOnly: true, isVideo: false });
+          const storyPost = await postToFeedApi(url, { ...opts, storyOnly: true, isVideo: false, thumbnailUrl });
+          contentId = storyPost.id;
+          addYours = storyPost.addYours;
           if (opts.alsoPostToGrid) {
-            await postToFeedApi(url, { ...opts, storyOnly: false, isVideo: false });
+            await postToFeedApi(url, { ...opts, storyOnly: false, isVideo: false, thumbnailUrl });
           }
         } else {
-          contentId = await postToFeedApi(url, { ...opts, storyOnly: false, isVideo, mediaUrls: carousel });
+          const post = await postToFeedApi(url, {
+            ...opts,
+            storyOnly: false,
+            isVideo,
+            mediaUrls: carousel,
+            thumbnailUrl,
+          });
+          contentId = post.id;
+          if (post.scheduled) {
+            return {
+              publicUrl: url,
+              contentId: post.id,
+              mediaUrls: carousel,
+              scheduled: true,
+              scheduledPublishAt: post.scheduledPublishAt,
+              addYours: post.addYours,
+              storyLayers: opts.storyLayers,
+            };
+          }
         }
 
-        return { publicUrl: url, contentId, mediaUrls: carousel };
+        return { publicUrl: url, contentId, mediaUrls: carousel, addYours, storyLayers: opts.storyLayers };
       },
     },
-  ]);
+  ]).then(async (result) => {
+    const saveKind = kind === "reel" ? "reel" : kind === "story" ? "story" : "photo";
+    await savePublishedMediaToGallery(localUri, saveKind).catch(() => {});
+    return result;
+  });
 }
 
 /** Upload multiple local images for carousel post */

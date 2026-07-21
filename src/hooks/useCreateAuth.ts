@@ -36,10 +36,13 @@ export function syncAfterPublish(
       url: publicUrl,
       caption,
       isVideo,
+      addYours: result.addYours,
+      storyLayers: result.storyLayers,
     });
     store.fetchFeedItems("", "For You", true);
     if (store.currentUser?.id) {
       store.loadUserStories(store.currentUser.id);
+      store.loadStoryRings(store.currentUser.id);
     }
     return;
   }

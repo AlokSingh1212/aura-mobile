@@ -98,7 +98,7 @@ export default function WmsPickerScreen() {
         stock: 12,
         description: "Bespoke coordinates tailored for the winter solstice",
         category: "Fashion",
-        image: "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&q=80&w=600"
+        image: ""
       },
       {
         title: "Techno Calfskin Travel Bag",
@@ -106,7 +106,7 @@ export default function WmsPickerScreen() {
         stock: 6,
         description: "Fused liquid fiber weaves with calfskin textures",
         category: "Fashion",
-        image: "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&q=80&w=600"
+        image: ""
       }
     ];
     setCsvContent(JSON.stringify(simulated, null, 2));

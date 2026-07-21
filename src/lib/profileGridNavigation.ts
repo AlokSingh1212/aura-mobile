@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-export type ProfileGridTab = "posts" | "reels" | "products" | "collabs";
+export type ProfileGridTab = "posts" | "reels" | "tagged" | "products" | "collabs";
 
 export interface ProfileGridViewerState {
   visible: boolean;

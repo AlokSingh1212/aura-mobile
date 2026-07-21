@@ -21,10 +21,12 @@ import { useStore } from "@/store/useStore";
 export default function OtpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ userId?: string; devOtp?: string }>();
+  const params = useLocalSearchParams<{ userId?: string; devOtp?: string; mode?: string }>();
   const triggerHaptic = useStore((s) => s.triggerHaptic);
+  const authCompleteLoginWithOtp = useStore((s) => s.authCompleteLoginWithOtp);
   const currentUser = useStore((s) => s.currentUser);
 
+  const isLogin2fa = params.mode === "2fa";
   const userId = params.userId || currentUser?.id;
   const [code, setCode] = useState(params.devOtp ? String(params.devOtp) : "");
   const [isLoading, setIsLoading] = useState(false);
@@ -32,7 +34,7 @@ export default function OtpScreen() {
 
   const handleVerify = async () => {
     if (!userId) {
-      Alert.alert("Session expired", "Please sign up again.");
+      Alert.alert("Session expired", "Please sign in again.");
       router.replace("/login");
       return;
     }
@@ -44,6 +46,17 @@ export default function OtpScreen() {
     setIsLoading(true);
     triggerHaptic("medium");
     try {
+      if (isLogin2fa) {
+        const res = await authCompleteLoginWithOtp(userId, code);
+        if (res.success) {
+          triggerHaptic("success");
+          router.replace("/");
+        } else {
+          Alert.alert("Verification failed", res.error || "Invalid code.");
+        }
+        return;
+      }
+
       const res = await fetch(`${API_BASE}/auth/verify-otp`, {
         method: "POST",
         headers: authHeaders(),
@@ -71,9 +84,12 @@ export default function OtpScreen() {
     if (!userId) return;
     setIsResending(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/send-otp`, {
+      const endpoint = isLogin2fa
+        ? `${API_BASE}/auth/login/resend-otp`
+        : `${API_BASE}/auth/send-otp`;
+      const res = await fetch(endpoint, {
         method: "POST",
-        headers: authHeaders(),
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ userId }),
       });
       const data = await res.json();
@@ -104,9 +120,11 @@ export default function OtpScreen() {
         <Lucide name="arrow-back" size={24} color="#111" />
       </TouchableOpacity>
 
-      <Text style={styles.title}>Verify your email</Text>
+      <Text style={styles.title}>{isLogin2fa ? "Two-factor login" : "Verify your email"}</Text>
       <Text style={styles.subtitle}>
-        Enter the 6-digit code we sent to your email address.
+        {isLogin2fa
+          ? "Enter the 6-digit code sent to your email to finish signing in."
+          : "Enter the 6-digit code we sent to your email address."}
       </Text>
 
       <TextInput
@@ -128,7 +146,7 @@ export default function OtpScreen() {
         {isLoading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.primaryBtnText}>Verify & continue</Text>
+          <Text style={styles.primaryBtnText}>{isLogin2fa ? "Sign in" : "Verify & continue"}</Text>
         )}
       </TouchableOpacity>
 
@@ -136,9 +154,11 @@ export default function OtpScreen() {
         <Text style={styles.linkText}>{isResending ? "Sending..." : "Resend code"}</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.linkBtn} onPress={handleSkip}>
-        <Text style={styles.skipText}>Skip for now</Text>
-      </TouchableOpacity>
+      {!isLogin2fa ? (
+        <TouchableOpacity style={styles.linkBtn} onPress={handleSkip}>
+          <Text style={styles.skipText}>Skip for now</Text>
+        </TouchableOpacity>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }

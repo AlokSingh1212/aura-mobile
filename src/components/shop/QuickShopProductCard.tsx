@@ -9,6 +9,10 @@ import {
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
 import { formatINR, getDiscountPercent, getOriginalPrice } from "@/lib/shopPricing";
+import {
+  VerifiedMaisonBadge,
+  isProductFromVerifiedMaison,
+} from "@/components/shop/VerifiedMaisonBadge";
 
 type Props = {
   product: any;
@@ -42,6 +46,7 @@ export function QuickShopProductCard({
     "";
   const savings = mrp > price ? Math.round(mrp - price) : 0;
   const highlightPrice = discount >= 15 || savings >= 50;
+  const verifiedMaison = isProductFromVerifiedMaison(product);
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.92}>
@@ -109,9 +114,12 @@ export function QuickShopProductCard({
         </Text>
       )}
 
-      <Text style={styles.title} numberOfLines={2}>
-        {product?.title || "Product"}
-      </Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title} numberOfLines={2}>
+          {product?.title || "Product"}
+        </Text>
+        {verifiedMaison ? <VerifiedMaisonBadge size={12} /> : null}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -184,5 +192,12 @@ const styles = StyleSheet.create({
   },
   mrp: { fontSize: 11, color: "#9E9E9E", textDecorationLine: "line-through" },
   off: { fontSize: 11, color: "#1565C0", fontWeight: "600", marginTop: 2 },
-  title: { fontSize: 12, color: "#424242", marginTop: 4, lineHeight: 16, minHeight: 32 },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 4,
+    marginTop: 4,
+    minHeight: 32,
+  },
+  title: { flex: 1, fontSize: 12, color: "#424242", lineHeight: 16 },
 });

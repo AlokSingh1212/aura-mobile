@@ -25,6 +25,7 @@ import { CheckoutSuccess } from "@/components/CheckoutSuccess";
 import { ShopProductDetail } from "@/components/shop/ShopProductDetail";
 import { buildDefaultShippingAddress } from "@/lib/shopAddress";
 import { loadPrimaryShippingAddress, savePrimaryShippingAddress } from "@/lib/shippingAddressStore";
+import { requestProductCollabApi, fetchProductCollabForArtifact } from "@/lib/productCollabApi";
 import {
   getCategoryRelatedProducts,
   getCategorySectionMeta,
@@ -170,6 +171,9 @@ export default function ProductDetailScreen() {
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [rateSheetVisible, setRateSheetVisible] = useState(false);
   const [showBankOffers, setShowBankOffers] = useState(true);
+  const [collabAffiliateCode, setCollabAffiliateCode] = useState<string | null>(null);
+  const [collabPending, setCollabPending] = useState(false);
+  const [collabCommissionRate, setCollabCommissionRate] = useState<number | null>(null);
 
   useEffect(() => {
     loadEcosystemSettings().then((s) => setShowBankOffers(s.shop.showBankOffers));
@@ -300,6 +304,43 @@ export default function ProductDetailScreen() {
 
   const cachedProduct = products.find((p) => p.id === id);
   const product = fetchedProduct || cachedProduct;
+
+  useEffect(() => {
+    if (!currentUser?.id || !activeProfile?.id || !product?.id) {
+      setCollabAffiliateCode(null);
+      setCollabPending(false);
+      setCollabCommissionRate(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const accepted = await fetchProductCollabForArtifact({
+        userId: currentUser.id,
+        profileId: activeProfile.id,
+        artifactId: String(product.id),
+        status: "ACCEPTED",
+      });
+      if (cancelled) return;
+      if (accepted?.affiliateCode) {
+        setCollabAffiliateCode(accepted.affiliateCode);
+        setCollabCommissionRate(accepted.commissionRate ?? null);
+        setCollabPending(false);
+        return;
+      }
+      setCollabAffiliateCode(null);
+      setCollabCommissionRate(null);
+      const pending = await fetchProductCollabForArtifact({
+        userId: currentUser.id,
+        profileId: activeProfile.id,
+        artifactId: String(product.id),
+        status: "PENDING",
+      });
+      if (!cancelled) setCollabPending(!!pending);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, activeProfile?.id, product?.id]);
 
   if (loadingProduct && !product) {
     return (
@@ -599,6 +640,7 @@ export default function ProductDetailScreen() {
       ...product,
       selectedColor: opts?.color,
       selectedSize: opts?.size,
+      affiliateCode: collabAffiliateCode,
     });
     triggerHaptic("heavy");
   };
@@ -608,6 +650,7 @@ export default function ProductDetailScreen() {
     const q = new URLSearchParams({ productId: String(product.id) });
     if (opts?.color) q.set("color", opts.color);
     if (opts?.size) q.set("size", opts.size);
+    if (collabAffiliateCode) q.set("affiliateCode", collabAffiliateCode);
     router.push(`/shop/checkout?${q.toString()}` as any);
   };
 
@@ -619,6 +662,7 @@ export default function ProductDetailScreen() {
     });
     if (opts?.color) q.set("color", opts.color);
     if (opts?.size) q.set("size", opts.size);
+    if (collabAffiliateCode) q.set("affiliateCode", collabAffiliateCode);
     router.push(`/shop/checkout?${q.toString()}` as any);
   };
 
@@ -628,8 +672,66 @@ export default function ProductDetailScreen() {
     setCouponError("");
   };
 
+  const isOwnBrandProduct =
+    !!activeMaisonId &&
+    (product.maisonId === activeMaisonId || product.maison?.id === activeMaisonId);
+  const canRequestProductCollab =
+    !!currentUser?.id &&
+    !!activeProfile?.id &&
+    !isOwnBrandProduct &&
+    activeProfile.type !== "BUSINESS" &&
+    !collabAffiliateCode &&
+    !collabPending;
+
+  const handleRequestProductCollab = async () => {
+    if (!currentUser?.id || !activeProfile?.id) return;
+    triggerHaptic("medium");
+    Alert.alert(
+      "Request product collab?",
+      "The brand will review your request. Commission is credited to your wallet automatically after the return window once the order is delivered.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Send request",
+          onPress: async () => {
+            const data = await requestProductCollabApi({
+              userId: currentUser.id,
+              profileId: activeProfile.id,
+              artifactId: String(product.id),
+            });
+            if (data.success) {
+              triggerHaptic("success");
+              setCollabPending(true);
+              Alert.alert("Request sent", "The brand will notify you when they respond.");
+            } else {
+              Alert.alert("Could not send", data.error || "Try again later.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <>
+      {canRequestProductCollab ? (
+        <TouchableOpacity style={styles.productCollabBar} onPress={handleRequestProductCollab}>
+          <Lucide name="link-outline" size={18} color="#00f5ff" />
+          <Text style={styles.productCollabBarText}>Request product collab · earn commission</Text>
+        </TouchableOpacity>
+      ) : collabAffiliateCode ? (
+        <View style={styles.productCollabBar}>
+          <Lucide name="checkmark-circle-outline" size={18} color="#00f5ff" />
+          <Text style={styles.productCollabBarText}>
+            Product collab active · {collabCommissionRate ?? 10}% commission on sales
+          </Text>
+        </View>
+      ) : collabPending ? (
+        <View style={styles.productCollabBar}>
+          <Lucide name="time-outline" size={18} color="#00f5ff" />
+          <Text style={styles.productCollabBarText}>Product collab request pending</Text>
+        </View>
+      ) : null}
       <ShopProductDetail
         product={product}
         similarProducts={similarProducts}
@@ -921,7 +1023,7 @@ export default function ProductDetailScreen() {
                     />
                     <TouchableOpacity
                       style={[styles.couponBtn, isCheckingCoupon && styles.couponBtnDisabled, { backgroundColor: colors.text }]}
-                      onPress={handleApplyCoupon}
+                      onPress={() => handleApplyCoupon()}
                       disabled={isCheckingCoupon}
                       activeOpacity={0.8}
                     >
@@ -2454,5 +2556,21 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     textAlign: "center",
-  }
+  },
+  productCollabBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "rgba(0,245,255,0.1)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,245,255,0.2)",
+  },
+  productCollabBarText: {
+    color: "#00f5ff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
 });

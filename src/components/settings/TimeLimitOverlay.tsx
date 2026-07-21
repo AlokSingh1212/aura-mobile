@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import {
   getDailyLimitMinutes,
+  isBreakRemindersEnabled,
   isDailyLimitEnabled,
   isDailyLimitReached,
   setSessionUsageMinutes,
@@ -13,11 +14,14 @@ import { t as translate } from "@/lib/settingsI18n";
 import { IG } from "@/theme/settingsTheme";
 
 const USAGE_KEY = "@aura/daily_usage_v1";
+const BREAK_KEY = "@aura/break_reminder_v1";
 const TICK_MS = 60_000;
+const BREAK_INTERVAL_MIN = 30;
 
 export function TimeLimitOverlay() {
   const t = translate;
   const [visible, setVisible] = useState(false);
+  const [breakVisible, setBreakVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -38,7 +42,7 @@ export function TimeLimitOverlay() {
     boot();
 
     timerRef.current = setInterval(async () => {
-      if (!isDailyLimitEnabled()) return;
+      if (!isDailyLimitEnabled() && !isBreakRemindersEnabled()) return;
       const today = new Date().toISOString().slice(0, 10);
       try {
         const raw = await AsyncStorage.getItem(USAGE_KEY);
@@ -47,7 +51,22 @@ export function TimeLimitOverlay() {
         const next = base + 1;
         await AsyncStorage.setItem(USAGE_KEY, JSON.stringify({ day: today, minutes: next }));
         setSessionUsageMinutes(next, today);
-        if (isDailyLimitReached()) setVisible(true);
+        if (isDailyLimitReached()) {
+          setVisible(true);
+          return;
+        }
+
+        if (isBreakRemindersEnabled() && next > 0 && next % BREAK_INTERVAL_MIN === 0) {
+          const breakRaw = await AsyncStorage.getItem(BREAK_KEY);
+          const breakParsed = breakRaw ? JSON.parse(breakRaw) : { day: today, lastAt: 0 };
+          if (breakParsed.day !== today || breakParsed.lastAt !== next) {
+            await AsyncStorage.setItem(
+              BREAK_KEY,
+              JSON.stringify({ day: today, lastAt: next })
+            );
+            setBreakVisible(true);
+          }
+        }
       } catch {
         /* ignore */
       }
@@ -77,6 +96,29 @@ export function TimeLimitOverlay() {
     await updateSettingsSection("time", { limitEnabled: false });
     setVisible(false);
   };
+
+  if (!visible && !breakVisible) return null;
+
+  if (breakVisible && !visible) {
+    return (
+      <Modal visible transparent animationType="fade">
+        <View style={styles.backdrop}>
+          <View style={styles.card}>
+            <Text style={styles.title}>Time for a break</Text>
+            <Text style={styles.body}>
+              You&apos;ve been on AURA for a while. Stretch, hydrate, or step away for a few minutes.
+            </Text>
+            <TouchableOpacity style={styles.primary} onPress={() => setBreakVisible(false)}>
+              <Text style={styles.primaryText}>Continue</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push("/settings/time" as any)}>
+              <Text style={styles.link}>Break reminder settings</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
 
   if (!visible) return null;
 

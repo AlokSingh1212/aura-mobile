@@ -1,0 +1,9 @@
+*.apk
+*.aab
+android/
+ios/
+node_modules/
+.expo/
+dist/
+scratch/
+*.log

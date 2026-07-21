@@ -41,8 +41,8 @@ export function PostAuthorLine({
   const linkDecoration = isLight ? "rgba(0,0,0,0.28)" : "rgba(255,255,255,0.35)";
   const defaultNameColor = isLight ? "#111111" : "#fff";
   const activeCollabs = collabs.length
-    ? collabs.filter((c) => c.status !== "declined")
-    : collab && collab.status !== "declined"
+    ? collabs.filter((c) => c.status === "accepted")
+    : collab && collab.status === "accepted"
       ? [collab]
       : [];
 
@@ -159,8 +159,8 @@ export function PostAuthorAvatars({
   onPress,
 }: PostAuthorAvatarsProps) {
   const activeCollabs = collabs.length
-    ? collabs.filter((c) => c.status !== "declined")
-    : collab && collab.status !== "declined"
+    ? collabs.filter((c) => c.status === "accepted")
+    : collab && collab.status === "accepted"
       ? [collab]
       : [];
   const visibleCollabs = activeCollabs.slice(0, 2);

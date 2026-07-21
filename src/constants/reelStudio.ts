@@ -32,6 +32,12 @@ export const REEL_LENGTHS = [15, 30, 60, 90] as const;
 export type ReelLength = (typeof REEL_LENGTHS)[number];
 export const MAX_REEL_TOTAL_SEC = 90;
 
+export const REEL_PLAYBACK_SPEEDS = [0.5, 1, 2] as const;
+export type ReelPlaybackSpeed = (typeof REEL_PLAYBACK_SPEEDS)[number];
+
+export const REEL_COUNTDOWN_SECONDS = [0, 3, 5, 10] as const;
+export type ReelCountdownSeconds = (typeof REEL_COUNTDOWN_SECONDS)[number];
+
 export type PrompterSettings = {
   text: string;
   fontSize: number;

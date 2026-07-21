@@ -53,7 +53,7 @@ export async function fetchAudioCatalog(opts?: {
       const playable = data.tracks.filter(
         (t: AudioTrack) =>
           typeof t.url === "string" &&
-          (t.url.includes("soundhelix.com") || t.url.endsWith(".mp3"))
+          (t.url.includes("soundhelix.com") || t.url.includes("aisastra.com") || t.url.endsWith(".mp3") || t.url.endsWith(".m4a") || t.url.endsWith(".wav"))
       );
       const tracks = playable.length > 0 ? playable : data.tracks.slice(0, 10);
       if (!opts?.q && !opts?.category) {

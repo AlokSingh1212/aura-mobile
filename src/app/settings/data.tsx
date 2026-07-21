@@ -10,7 +10,7 @@ import {
   Platform,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import {
   IgSettingsScreen,
   IgSectionTitle,

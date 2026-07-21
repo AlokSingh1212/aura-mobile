@@ -1,15 +1,94 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+export type TaggedProduct = {
+  productId: string;
+  title: string;
+  image: string;
+  price?: number;
+};
+
 export type CreateKind = "reel" | "post" | "story";
+
+export type StickerLayerType =
+  | "text"
+  | "emoji"
+  | "mention"
+  | "location"
+  | "hashtag"
+  | "poll"
+  | "question"
+  | "add_yours"
+  | "music"
+  | "link"
+  | "countdown"
+  | "partnership"
+  | "notify"
+  | "draw"
+  | "gif"
+  | "photo"
+  | "product"
+  | "emoji_slider"
+  | "frame"
+  | "cutout"
+  | "avatar";
+
+export type DrawStroke = {
+  points: { x: number; y: number }[];
+  color: string;
+  width: number;
+};
+
+export type StickerMeta = {
+  username?: string;
+  profileId?: string;
+  avatar?: string;
+  name?: string;
+  locationName?: string;
+  locationLat?: number;
+  locationLon?: number;
+  pollOptions?: [string, string];
+  question?: string;
+  addYoursPrompt?: string;
+  musicTitle?: string;
+  musicTrackId?: string;
+  musicArtist?: string;
+  musicUrl?: string;
+  musicCover?: string;
+  linkUrl?: string;
+  countdownLabel?: string;
+  countdownEndsAt?: string;
+  partnershipPaid?: boolean;
+  partnershipAdCode?: boolean;
+  partnershipAdCodeValue?: string;
+  fontId?: string;
+  textAlign?: "left" | "center" | "right";
+  highlight?: boolean;
+  drawStrokes?: DrawStroke[];
+  /** Local file:// or remote https:// for overlay stickers */
+  imageUri?: string;
+  gifId?: string;
+  gifPreviewUrl?: string;
+  productId?: string;
+  productImage?: string;
+  productPrice?: number;
+  /** Multi-product shoppable tag (YouTube Shorts / IG style) */
+  products?: TaggedProduct[];
+  earnsCommission?: boolean;
+  emoji?: string;
+  sliderValue?: number;
+  frameUris?: string[];
+  rotation?: number;
+};
 
 export type StickerLayer = {
   id: string;
-  type: "text" | "emoji" | "mention";
+  type: StickerLayerType;
   text: string;
   x: number;
   y: number;
   scale: number;
   color?: string;
+  meta?: StickerMeta;
 };
 
 export type ClipSegment = {
@@ -17,6 +96,8 @@ export type ClipSegment = {
   uri: string;
   inMs: number;
   outMs: number;
+  /** Clip playback / recording speed metadata (0.5, 1, 2) */
+  playbackRate?: number;
 };
 
 export type AudioTrackMeta = {

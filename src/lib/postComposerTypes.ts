@@ -31,7 +31,22 @@ export interface VerifiedLocation {
 }
 
 export const MAX_PHOTO_TAGS = 5;
-export const MAX_COLLAB_PARTNERS = 1;
+export const MAX_COLLAB_PARTNERS = 5;
+
+/** Collab partners visible on posts (accepted only — Instagram parity). */
+export function getAcceptedCollabPartners(
+  collab?: CollabPartner | null,
+  collabs: CollabPartner[] = []
+): CollabPartner[] {
+  const merged: CollabPartner[] = [];
+  const push = (c: CollabPartner | null | undefined) => {
+    if (!c || c.status !== "accepted") return;
+    if (!merged.some((x) => x.profileId === c.profileId)) merged.push(c);
+  };
+  push(collab ?? null);
+  for (const c of collabs) push(c);
+  return merged.slice(0, MAX_COLLAB_PARTNERS);
+}
 
 export async function reverseGeocodeLocation(lat: number, lon: number): Promise<VerifiedLocation | null> {
   const { API_HOST } = await import("@/constants/api");
@@ -103,5 +118,6 @@ export function readPostMetadata(meta: unknown): {
     for (const c of m.collabs) pushCollab(c);
   }
 
-  return { photoTags, collab: collabs[0] ?? null, collabs };
+  const accepted = getAcceptedCollabPartners(collabs[0] ?? null, collabs);
+  return { photoTags, collab: accepted[0] ?? null, collabs: accepted };
 }

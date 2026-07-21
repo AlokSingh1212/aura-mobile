@@ -53,7 +53,7 @@ export const ProductPreviewSheet: React.FC<ProductPreviewSheetProps> = ({
   
   const images = product.images && product.images.length > 0 
     ? product.images 
-    : ["https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400"];
+    : ["https://auragram.com/logo.png"];
 
   useEffect(() => {
     if (!visible || !product?.id) return;

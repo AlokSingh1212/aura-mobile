@@ -1,5 +1,8 @@
 /** Live-edit state for a single post image (Instagram-style composer). */
 
+import type { DrawStroke, StickerLayer } from "@/lib/createDraft";
+import type { PartnershipSettings } from "@/components/stories/editor/StoryPartnershipSheet";
+
 export type AdjustKey =
   | "lux"
   | "brightness"
@@ -71,9 +74,15 @@ export interface PostEditState {
   filterId: string;
   adjustments: ImageAdjustments;
   textLayers: TextLayer[];
+  stickerLayers: StickerLayer[];
+  drawStrokes: DrawStroke[];
   productStickers: ProductSticker[];
   audioTrackId: string;
   audioLabel: string;
+  audioUrl?: string;
+  audioArtist?: string;
+  audioCover?: string;
+  partnership: PartnershipSettings;
 }
 
 export function defaultPostEditState(): PostEditState {
@@ -81,9 +90,16 @@ export function defaultPostEditState(): PostEditState {
     filterId: "normal",
     adjustments: defaultAdjustments(),
     textLayers: [],
+    stickerLayers: [],
+    drawStrokes: [],
     productStickers: [],
     audioTrackId: "",
     audioLabel: "",
+    partnership: {
+      paidPartnershipLabel: false,
+      partnershipAdCode: false,
+      partnershipAdCodeValue: null,
+    },
   };
 }
 

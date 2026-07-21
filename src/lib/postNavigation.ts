@@ -1,22 +1,22 @@
 import { router } from "expo-router";
-import { useStore } from "@/store/useStore";
+import { normalizeUsername } from "@/lib/usernameUtils";
 import { readPostMetadata } from "@/lib/postComposerTypes";
 import { readRepostOf, resolveReshareSourceId } from "@/lib/postRepost";
 import type { RepostOfRef } from "@/lib/postRepost";
 
-export function normalizeUsername(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/^@/, "")
-    .replace(/\s+/g, "_")
-    .replace(/['']/g, "");
+export { normalizeUsername } from "@/lib/usernameUtils";
+
+function getStoreState() {
+  // Lazy require breaks useStore -> cloudSync -> socialGraph -> postNavigation cycle.
+  const { useStore } = require("@/store/useStore") as typeof import("@/store/useStore");
+  return useStore.getState();
 }
 
 export function openProfile(raw: string) {
   const username = normalizeUsername(raw);
   if (!username) return;
 
-  const { activeProfile, activeMaisonId, triggerHaptic } = useStore.getState();
+  const { activeProfile, activeMaisonId, triggerHaptic } = getStoreState();
   triggerHaptic?.("medium");
 
   const isOwn =
@@ -33,13 +33,13 @@ export function openProfile(raw: string) {
 export function openHashtag(tag: string) {
   const clean = tag.replace(/^#/, "").toLowerCase().trim();
   if (!clean) return;
-  useStore.getState().triggerHaptic?.("light");
-  router.push({ pathname: "/shop", params: { search: clean } } as any);
+  getStoreState().triggerHaptic?.("light");
+  router.push({ pathname: "/shop/all-products", params: { q: clean } } as any);
 }
 
 export function openProduct(productId: string) {
   if (!productId) return;
-  useStore.getState().triggerHaptic?.("light");
+  getStoreState().triggerHaptic?.("light");
   router.push(`/product/${productId}` as any);
 }
 
@@ -80,6 +80,13 @@ export function resolveFeedPostMeta(item: any) {
     photoTags: legacy.photoTags,
     collab: legacy.collab,
     collabs: legacy.collabs,
+    storyLayers:
+      item?.storyLayers ??
+      item?.content?.storyLayers ??
+      (item?.metadata && typeof item.metadata === "object"
+        ? (item.metadata as { storyLayers?: unknown }).storyLayers
+        : undefined) ??
+      [],
     caption: item?.caption || content.caption || "",
     repostOf,
     isRepost: !!item?.isRepost || !!content.isRepost || !!repostOf,

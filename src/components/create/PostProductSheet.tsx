@@ -22,6 +22,7 @@ interface PostProductSheetProps {
   selected: ProductSticker[];
   onClose: () => void;
   onChange: (stickers: ProductSticker[]) => void;
+  onDone?: () => void;
 }
 
 export function PostProductSheet({
@@ -31,6 +32,7 @@ export function PostProductSheet({
   selected,
   onClose,
   onChange,
+  onDone,
 }: PostProductSheetProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductSticker[]>([]);
@@ -79,10 +81,12 @@ export function PostProductSheet({
       visible={visible}
       title="Products"
       onClose={onClose}
-      onDone={onClose}
+      onDone={onDone ?? onClose}
       height="65%"
     >
-      <Text style={styles.hint}>Tap products to show as small boxes at the bottom of your post.</Text>
+      <Text style={styles.hint}>
+        Select products, then tap Done. Drag the tag anywhere on your photo or video.
+      </Text>
 
       {selected.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectedRow}>

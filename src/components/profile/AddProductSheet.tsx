@@ -77,6 +77,7 @@ export function AddProductSheet({
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [stockPerVariant, setStockPerVariant] = useState("10");
+  const [returnPolicy, setReturnPolicy] = useState<"RETURN" | "EXCHANGE">("RETURN");
   const [loading, setLoading] = useState(false);
 
   const selectedStore = useMemo(
@@ -114,6 +115,7 @@ export function AddProductSheet({
     setSelectedSizes([]);
     setSelectedColors([]);
     setStockPerVariant("10");
+    setReturnPolicy("RETURN");
   }, [visible, defaultStoreId, brandStores, showStorePicker, prefillVideoUri, prefillImageUris]);
 
   const handleClose = () => {
@@ -182,6 +184,7 @@ export function AddProductSheet({
         selectedColors,
         stockPerVariant: parseInt(stockPerVariant, 10) || 10,
         media,
+        returnPolicy,
       });
 
       const result = await createProduct(payload);
@@ -195,7 +198,7 @@ export function AddProductSheet({
           `"${title.trim()}" is live in ${selectedStore.name}.`
         );
       } else {
-        Alert.alert("Could not list product", result.error || "Try again.");
+        Alert.alert("Could not list product", (result as any).error || "Try again.");
       }
     } catch (e) {
       Alert.alert(
@@ -520,6 +523,34 @@ export function AddProductSheet({
                       />
                     </View>
 
+                    <View style={styles.fieldBlock}>
+                      <Text style={styles.fieldLabel}>After-sale policy *</Text>
+                      <Text style={styles.fieldHint}>
+                        Fixed 7-day window for your store. Choose return refund or exchange per product.
+                      </Text>
+                      <View style={styles.chipWrap}>
+                        {(["RETURN", "EXCHANGE"] as const).map((policy) => (
+                          <TouchableOpacity
+                            key={policy}
+                            style={[styles.chip, returnPolicy === policy && styles.chipActive]}
+                            onPress={() => {
+                              triggerHaptic("light");
+                              setReturnPolicy(policy);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.chipText,
+                                returnPolicy === policy && styles.chipTextActive,
+                              ]}
+                            >
+                              {policy === "RETURN" ? "7-day return" : "7-day exchange"}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+
                     {resolvedForm.fields.map(renderField)}
 
                     {resolvedForm.sizeOptions && (
@@ -759,6 +790,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textTransform: "uppercase",
     letterSpacing: 0.4,
+  },
+  fieldHint: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 10,
   },
   input: {
     backgroundColor: "rgba(255,255,255,0.06)",

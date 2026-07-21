@@ -45,3 +45,4 @@ app-example
 # scratch files
 scratch/
 
+*.apk

@@ -6,6 +6,8 @@ import { buildAdjustmentOverlays } from "@/lib/imageAdjustments";
 import type { PhotoTag } from "@/lib/postComposerTypes";
 import { MediaPeopleOverlay } from "@/components/post/MediaPeopleOverlay";
 import { ProductThumbnailStrip } from "@/components/post/PostProductOverlay";
+import { StoryDrawStrokesLayer, StoryStickerLayerView } from "@/components/stories/editor/StoryStickerLayerView";
+import { POST_CANVAS_W } from "@/components/create/postEditorConstants";
 
 interface PostMediaPreviewProps {
   uri: string;
@@ -22,12 +24,19 @@ export function PostMediaPreview({
   aspectRatio = 4 / 5,
   fill = false,
 }: PostMediaPreviewProps) {
+  const [layoutW, setLayoutW] = React.useState(0);
+  const scale = layoutW > 0 ? layoutW / POST_CANVAS_W : 0.35;
   const filterOverlay =
     FILTER_PRESETS.find((f) => f.id === edit.filterId)?.overlayColor || "transparent";
   const adjustLayers = buildAdjustmentOverlays(edit.adjustments);
+  const hasMusicSticker = edit.stickerLayers.some((s) => s.type === "music");
+  const hasProductSticker = edit.stickerLayers.some((s) => s.type === "product");
 
   return (
-    <View style={[styles.wrap, fill && styles.wrapFill, !fill && { aspectRatio }]}>
+    <View
+      style={[styles.wrap, fill && styles.wrapFill, !fill && { aspectRatio }]}
+      onLayout={(e) => setLayoutW(e.nativeEvent.layout.width)}
+    >
       <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit={fill ? "cover" : "contain"} />
 
       {adjustLayers.map((layer, i) => (
@@ -45,11 +54,22 @@ export function PostMediaPreview({
         <TextLayerView key={layer.id} layer={layer} />
       ))}
 
+      <StoryDrawStrokesLayer strokes={edit.drawStrokes} scale={scale} />
+      {edit.stickerLayers.map((s) => (
+        <View
+          key={s.id}
+          style={{ position: "absolute", left: s.x * scale, top: s.y * scale }}
+          pointerEvents="none"
+        >
+          <StoryStickerLayerView sticker={{ ...s, x: 0, y: 0 }} scale={scale} />
+        </View>
+      ))}
+
       <MediaPeopleOverlay photoTags={photoTags} bottom={edit.productStickers.length ? 56 : 10} left={10} />
 
-      <ProductThumbnailStrip products={edit.productStickers} bottom={6} />
+      <ProductThumbnailStrip products={hasProductSticker ? [] : edit.productStickers} bottom={6} />
 
-      {edit.audioLabel ? (
+      {edit.audioLabel && !hasMusicSticker ? (
         <View style={styles.audioPill}>
           <Text style={styles.audioText} numberOfLines={1}>
             ♪ {edit.audioLabel}

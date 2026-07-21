@@ -103,7 +103,7 @@ export const PeekPreviewModal: React.FC<PeekPreviewModalProps> = ({
             {/* Header: Profile Metadata */}
             <View style={styles.header}>
               <Image 
-                source={{ uri: data.maisonAvatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=100" }} 
+                source={{ uri: data.maisonAvatar || "https://auragram.com/logo.png" }} 
                 style={styles.avatar}
               />
               <View style={styles.headerInfo}>

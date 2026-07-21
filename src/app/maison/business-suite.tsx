@@ -349,8 +349,8 @@ export default function BusinessSuiteScreen() {
             maxCpc: 0.50,
             creativeTitle: campTitle || campName,
             creativeDescription: campDesc || "Curated showcase collection.",
-            mediaUrl: campMedia || "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600",
-            thumbnail: campMedia || "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600",
+            mediaUrl: campMedia || "https://auragram.com/logo.png",
+            thumbnail: campMedia || "https://auragram.com/logo.png",
             ctaType: campObjective === "PRODUCT_SALES" ? "SHOP_NOW" : "LEARN_MORE",
             ctaText: campObjective === "PRODUCT_SALES" ? "Shop now" : "Learn more",
             targetUrl: campObjective === "WEBSITE_TRAFFIC" ? "https://www.insty.club" : undefined,
@@ -780,7 +780,7 @@ export default function BusinessSuiteScreen() {
               <TextInput style={styles.input} value={campDesc} onChangeText={setCampDesc} placeholder="10% off raw canvas bags." placeholderTextColor="#555" />
 
               <Text style={styles.inputLabel}>Media URL (Video/Image Link)</Text>
-              <TextInput style={styles.input} value={campMedia} onChangeText={setCampMedia} placeholder="https://images.unsplash.com/photo-..." placeholderTextColor="#555" />
+              <TextInput style={styles.input} value={campMedia} onChangeText={setCampMedia} placeholder="https://auragram.com/logo.png..." placeholderTextColor="#555" />
 
               {campObjective === "PRODUCT_SALES" && (
                 <>

@@ -6,14 +6,15 @@ import {
   RefreshControl,
   Text,
   ActivityIndicator,
-  SafeAreaView,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useStore } from "@/store/useStore";
-import { THREADS_THEME as T } from "@/constants/threadsTheme";
+import { THREADS_THEME as T, STORY_ACCENT } from "@/constants/threadsTheme";
 import { ThreadsHeader } from "@/components/threads/ThreadsHeader";
 import { ThreadPostCard } from "@/components/threads/ThreadPostCard";
-import { ThreadsComposeModal } from "@/components/threads/ThreadsComposeModal";
+import { ThreadsComposeModal, type ThreadComposePayload } from "@/components/threads/ThreadsComposeModal";
+import { ThreadsComposeBar } from "@/components/threads/ThreadsComposeBar";
+import { ThreadsScreenShell, useThreadsInsets } from "@/components/threads/ThreadsScreenShell";
 import {
   createThread,
   fetchThreadsFeed,
@@ -29,6 +30,7 @@ export default function ThreadsHubScreen() {
   const triggerHaptic = useStore((s) => s.triggerHaptic);
   const currentUser = useStore((s) => s.currentUser);
   const activeProfile = useStore((s) => s.activeProfile);
+  const { bottom } = useThreadsInsets();
 
   const [tab, setTab] = useState<Tab>("forYou");
   const [threads, setThreads] = useState<ThreadPostDto[]>([]);
@@ -42,6 +44,7 @@ export default function ThreadsHubScreen() {
   const userId = currentUser?.id ? String(currentUser.id) : "";
   const profileId = activeProfile?.id ? String(activeProfile.id) : undefined;
   const username = activeProfile?.username || currentUser?.username;
+  const avatarUrl = activeProfile?.logo || null;
 
   const loadFeed = useCallback(
     async (opts?: { refresh?: boolean; nextPage?: boolean }) => {
@@ -148,10 +151,16 @@ export default function ThreadsHubScreen() {
     router.push(`/threads/${threadId}` as any);
   };
 
-  const handleCompose = async (text: string) => {
+  const handleCompose = async (payload: ThreadComposePayload) => {
     if (!userId) return;
     triggerHaptic("success");
-    const res = await createThread({ userId, profileId, content: text });
+    const res = await createThread({
+      userId,
+      profileId,
+      content: payload.content,
+      mediaUrls: payload.mediaUrls,
+      productId: payload.productId,
+    });
     if (res.success && res.post) {
       setThreads((prev) => [res.post!, ...prev]);
     }
@@ -173,25 +182,38 @@ export default function ThreadsHubScreen() {
     );
   };
 
+  const listHeader = (
+    <ThreadsComposeBar
+      avatarUrl={avatarUrl}
+      username={username}
+      onPress={() => {
+        triggerHaptic("light");
+        setComposeVisible(true);
+      }}
+    />
+  );
+
   return (
-    <SafeAreaView style={styles.safe}>
+    <ThreadsScreenShell style={styles.root}>
       <ThreadsHeader
         tab={tab}
         onTabChange={setTab}
         onBack={() => router.back()}
         onCompose={() => setComposeVisible(true)}
         triggerHaptic={triggerHaptic}
-        username={username}
       />
 
       {loading && threads.length === 0 ? (
         <View style={styles.loader}>
-          <ActivityIndicator color={T.primary} />
+          <ActivityIndicator color={STORY_ACCENT} />
         </View>
       ) : (
         <FlatList
+          style={styles.list}
           data={threads}
           keyExtractor={(item) => item.id}
+          ListHeaderComponent={listHeader}
+          removeClippedSubviews={false}
           renderItem={({ item }) => (
             <ThreadPostCard
               item={item}
@@ -206,7 +228,9 @@ export default function ThreadsHubScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => loadFeed({ refresh: true })}
-              tintColor={T.primary}
+              tintColor={STORY_ACCENT}
+              colors={[STORY_ACCENT]}
+              progressBackgroundColor={T.bg}
             />
           }
           onEndReached={() => {
@@ -216,11 +240,15 @@ export default function ThreadsHubScreen() {
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={
             loadingMore ? (
-              <ActivityIndicator color={T.primary} style={{ marginVertical: 16 }} />
+              <ActivityIndicator color={STORY_ACCENT} style={{ marginVertical: 16 }} />
             ) : null
           }
           ItemSeparatorComponent={() => <View style={styles.divider} />}
-          contentContainerStyle={threads.length === 0 ? styles.emptyList : undefined}
+          contentContainerStyle={[
+            threads.length === 0 ? styles.emptyList : undefined,
+            { paddingBottom: bottom + 16 },
+          ]}
+          keyboardShouldPersistTaps="handled"
         />
       )}
 
@@ -230,15 +258,18 @@ export default function ThreadsHubScreen() {
         visible={composeVisible}
         onClose={() => setComposeVisible(false)}
         onSubmit={handleCompose}
-        avatarUrl={activeProfile?.logo || null}
+        avatarUrl={avatarUrl}
         username={username}
       />
-    </SafeAreaView>
+    </ThreadsScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
+  root: {
+    backgroundColor: T.bg,
+  },
+  list: {
     flex: 1,
     backgroundColor: T.bg,
   },
@@ -257,7 +288,6 @@ const styles = StyleSheet.create({
   },
   emptyList: {
     flexGrow: 1,
-    justifyContent: "center",
   },
   emptyTitle: {
     color: T.text,

@@ -24,6 +24,7 @@ export interface ReshareTarget {
   repostOf?: {
     postId: string;
     authorUsername: string;
+    authorName: string;
     mediaType?: "post" | "reel" | "product";
   } | null;
 }

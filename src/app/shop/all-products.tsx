@@ -52,6 +52,7 @@ export default function AllProductsScreen() {
     category?: string;
     productId?: string;
     mode?: string;
+    q?: string;
   }>();
   const {
     products,
@@ -74,7 +75,7 @@ export default function AllProductsScreen() {
   const bootstrapped = useRef(false);
   const chipFromProductApplied = useRef(false);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(params.q ? String(params.q) : "");
   const [selectedChip, setSelectedChip] = useState("all");
   const [promoDismissed, setPromoDismissed] = useState(false);
   const [deliveryDismissed, setDeliveryDismissed] = useState(false);

@@ -17,6 +17,10 @@ import {
   getTripleCardSize,
 } from "@/constants/categoriesLayout";
 import { useStore } from "@/store/useStore";
+import {
+  VerifiedMaisonBadge,
+  isProductFromVerifiedMaison,
+} from "@/components/shop/VerifiedMaisonBadge";
 
 type Props = {
   cardSize?: number;
@@ -141,6 +145,7 @@ export function ProductLaunchGrid({ products, cardSize: cardSizeProp, onViewAll 
             const { product, index } = slot;
             const image = product.images?.[0];
             const cta = ctaForIndex(index);
+            const verifiedMaison = isProductFromVerifiedMaison(product);
             return (
               <TouchableOpacity
                 key={product.id}
@@ -179,9 +184,12 @@ export function ProductLaunchGrid({ products, cardSize: cardSizeProp, onViewAll 
                     <Text style={styles.badgeText}>{cta}</Text>
                   </View>
                 </View>
-                <Text style={styles.productName} numberOfLines={2}>
-                  {product.title}
-                </Text>
+                <View style={styles.productNameRow}>
+                  <Text style={styles.productName} numberOfLines={2}>
+                    {product.title}
+                  </Text>
+                  {verifiedMaison ? <VerifiedMaisonBadge size={12} /> : null}
+                </View>
               </TouchableOpacity>
             );
           })}
@@ -242,8 +250,16 @@ const styles = StyleSheet.create({
     fontSize: CATEGORIES_LAYOUT.badgeTextSize,
     fontWeight: "700",
   },
-  productName: {
+  productNameRow: {
     marginTop: 8,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    gap: 3,
+    paddingHorizontal: 2,
+  },
+  productName: {
+    flex: 1,
     fontSize: CATEGORIES_LAYOUT.productNameSize,
     fontWeight: "500",
     color: "#212121",

@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { formatCompactNumber } from "@/constants/format";
+import { useA11yProps } from "@/hooks/useA11yProps";
 
 interface PostActionRowProps {
   isLiked: boolean;
@@ -26,6 +27,7 @@ function ActionWithCount({
   onPress,
   iconColor,
   countColor,
+  label,
 }: {
   icon: React.ComponentProps<typeof Lucide>["name"];
   activeIcon: React.ComponentProps<typeof Lucide>["name"];
@@ -34,9 +36,16 @@ function ActionWithCount({
   onPress: () => void;
   iconColor: string;
   countColor: string;
+  label: string;
 }) {
+  const { a11yProps } = useA11yProps();
   return (
-    <TouchableOpacity style={styles.action} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity
+      style={styles.action}
+      onPress={onPress}
+      activeOpacity={0.75}
+      {...a11yProps(`${label}, ${formatCompactNumber(count)}`, { role: "button" })}
+    >
       <Lucide name={active ? activeIcon : icon} size={24} color={active && icon === "heart" ? "#FF3B30" : iconColor} />
       <Text style={[styles.count, { color: countColor }]}>{formatCompactNumber(count)}</Text>
     </TouchableOpacity>
@@ -57,6 +66,7 @@ export function PostActionRow({
   onSave,
   theme = "light",
 }: PostActionRowProps) {
+  const { a11yProps } = useA11yProps();
   const isDark = theme === "dark";
   const iconColor = isDark ? "#fff" : "#111111";
   const countColor = isDark ? "#fff" : "#111111";
@@ -72,6 +82,7 @@ export function PostActionRow({
           onPress={onLike}
           iconColor={iconColor}
           countColor={countColor}
+          label={isLiked ? "Unlike" : "Like"}
         />
         <ActionWithCount
           icon="chatbubble-outline"
@@ -81,6 +92,7 @@ export function PostActionRow({
           onPress={onComment}
           iconColor={iconColor}
           countColor={countColor}
+          label="Comment"
         />
         <ActionWithCount
           icon="paper-plane-outline"
@@ -90,6 +102,7 @@ export function PostActionRow({
           onPress={onShare}
           iconColor={iconColor}
           countColor={countColor}
+          label="Share"
         />
         {onReshare ? (
           <ActionWithCount
@@ -100,10 +113,15 @@ export function PostActionRow({
             onPress={onReshare}
             iconColor={iconColor}
             countColor={countColor}
+            label="Repost"
           />
         ) : null}
       </View>
-      <TouchableOpacity onPress={onSave} activeOpacity={0.75}>
+      <TouchableOpacity
+        onPress={onSave}
+        activeOpacity={0.75}
+        {...a11yProps(isSaved ? "Unsave post" : "Save post", { role: "button" })}
+      >
         <Lucide
           name={isSaved ? "bookmark" : "bookmark-outline"}
           size={23}

@@ -22,7 +22,7 @@ import {
 } from "@/lib/captionAutocomplete";
 import { searchHashtags, searchProfiles } from "@/lib/postComposerSearch";
 
-const HASHTAG_COLOR = "#00f5ff";
+const HASHTAG_COLOR = "#0095f6";
 const MENTION_COLOR = "#ff9500";
 
 const ANDROID_TEXT = Platform.OS === "android"

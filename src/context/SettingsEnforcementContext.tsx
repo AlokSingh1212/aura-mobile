@@ -18,6 +18,7 @@ import {
 } from "@/lib/settingsEnforcement";
 import { setActiveLanguage, t as translate } from "@/lib/settingsI18n";
 import { TimeLimitOverlay } from "@/components/settings/TimeLimitOverlay";
+import { BiometricLockGate } from "@/components/settings/BiometricLockGate";
 
 type Ctx = {
   settings: EcosystemSettings | null;
@@ -88,6 +89,7 @@ export function SettingsEnforcementProvider({ children }: { children: React.Reac
   return (
     <SettingsEnforcementContext.Provider value={value}>
       {children}
+      <BiometricLockGate />
       <TimeLimitOverlay />
     </SettingsEnforcementContext.Provider>
   );

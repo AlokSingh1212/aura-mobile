@@ -176,6 +176,18 @@ export default function LoginScreen() {
     triggerHaptic("medium");
     try {
       const res = await authLogIn({ usernameOrEmail: loginId, password: loginPassword });
+      if (res.success && res.requiresOtp && res.userId) {
+        triggerHaptic("success");
+        router.push({
+          pathname: "/otp",
+          params: {
+            userId: res.userId,
+            mode: "2fa",
+            devOtp: res.devOtp ? String(res.devOtp) : undefined,
+          },
+        } as any);
+        return;
+      }
       if (res.success) {
         triggerHaptic("success");
         router.replace("/");

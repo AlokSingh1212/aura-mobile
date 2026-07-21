@@ -52,6 +52,25 @@ export default function CreatorSettingsScreen() {
         last
       />
 
+      <IgSectionTitle>Brand partnerships</IgSectionTitle>
+      <IgToggle
+        label="Accept brand partnership offers"
+        hint="Get notified when brands send official collab contracts"
+        value={data.acceptBrandPartnerships !== false}
+        onValueChange={(v) => patch({ acceptBrandPartnerships: v })}
+      />
+      <IgRow
+        label="Partnership inbox"
+        sublabel="Review, accept, and complete deals"
+        onPress={() => router.push("/sponsorships" as any)}
+      />
+      <IgRow
+        label="Bank payout setup"
+        sublabel="KYC & account for commissions & deals"
+        onPress={() => router.push("/settings/payouts" as any)}
+        last
+      />
+
       <IgSectionTitle>Affiliate earnings</IgSectionTitle>
       <IgRow
         label="View earnings"

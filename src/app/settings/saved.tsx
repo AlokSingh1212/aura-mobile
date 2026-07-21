@@ -154,7 +154,12 @@ export default function SavedSettingsScreen() {
           )}
 
           {!wishlist.length && !posts.length && (
-            <Text style={styles.empty}>Save posts, reels and products to view them here.</Text>
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyTitle}>Nothing saved yet</Text>
+              <Text style={styles.emptySub}>
+                Save posts, reels and products to view them here.
+              </Text>
+            </View>
           )}
         </>
       )}
@@ -190,5 +195,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 14, fontWeight: "600", color: IG.text },
   sub: { fontSize: 12, color: IG.textSecondary, marginTop: 2 },
   action: { color: IG.accent, fontWeight: "700" },
-  empty: { color: IG.textSecondary, textAlign: "center", padding: 40 },
+  emptyContainer: { padding: 40, alignItems: "center" },
+  emptyTitle: { fontSize: 17, fontWeight: "700", color: IG.text },
+  emptySub: { fontSize: 14, color: IG.textSecondary, textAlign: "center", marginTop: 8 },
 });

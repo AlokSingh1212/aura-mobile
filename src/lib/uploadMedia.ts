@@ -1,6 +1,7 @@
-import { readAsStringAsync, getInfoAsync, uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
+import { uploadAsync, FileSystemUploadType, getInfoAsync } from "expo-file-system/legacy";
 import { API_HOST } from "@/constants/api";
 import { authHeaders } from "@/lib/apiClient";
+import { assertUploadNetworkAllowed } from "@/lib/settingsRuntime";
 
 function isRemoteUrl(uri: string): boolean {
   return (
@@ -10,26 +11,7 @@ function isRemoteUrl(uri: string): boolean {
   );
 }
 
-/** Read a local device URI as base64 (works with Expo Go + gallery paths). */
-export async function readLocalImageBase64(localUri: string): Promise<string> {
-  const trimmed = localUri?.trim();
-  if (!trimmed) {
-    throw new Error("No image selected.");
-  }
-
-  const info = await getInfoAsync(trimmed);
-  if (!info.exists) {
-    throw new Error("Could not read the selected photo. Try choosing the photo again.");
-  }
-
-  const base64 = await readAsStringAsync(trimmed, { encoding: "base64" });
-  if (!base64) {
-    throw new Error("Selected photo has no readable image data.");
-  }
-  return base64;
-}
-
-/** Upload a gallery/camera URI directly to Vercel Blob using binary streaming. */
+/** Upload a gallery/camera URI directly to Cloudflare R2 using presigned URLs. Bypasses Vercel's 4.5MB payload limit. */
 export async function uploadMediaFromUri(
   localUri: string,
   purpose: "avatar" | "story" | "post" | "reel" = "post"
@@ -42,12 +24,18 @@ export async function uploadMediaFromUri(
     return trimmed;
   }
 
+  await assertUploadNetworkAllowed();
+  const info = await getInfoAsync(trimmed);
+  if (!info.exists) {
+    throw new Error("Could not read the selected media file. Try choosing the file again.");
+  }
+
   const isVideo = purpose === "reel" || /\.(mp4|mov|m4v)$/i.test(trimmed);
   const contentType = isVideo ? "video/mp4" : "image/jpeg";
   const ext = isVideo ? "mp4" : "jpg";
   const fileName = `aura-${purpose}-${Date.now()}.${ext}`;
 
-  // 1. Get direct client token from Next.js server
+  // 1. Get presigned upload URL from Next.js server
   const tokenRes = await fetch(`${API_HOST}/api/mobile/media/upload/token`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
@@ -63,19 +51,18 @@ export async function uploadMediaFromUri(
   }
 
   const { clientToken, uploadUrl, publicUrl } = tokenData;
-
   const isR2 = clientToken === "r2-presigned-put";
 
   const headers: Record<string, string> = {
     "Content-Type": contentType,
   };
-  
+
   if (!isR2) {
     headers["Authorization"] = `Bearer ${clientToken}`;
     headers["x-api-version"] = "12";
   }
 
-  // 2. Upload file directly to destination container
+  // 2. Stream upload directly to destination bucket (e.g. Cloudflare R2) using native thread
   const uploadResult = await uploadAsync(uploadUrl, trimmed, {
     httpMethod: "PUT",
     uploadType: FileSystemUploadType.BINARY_CONTENT,
@@ -96,9 +83,8 @@ export async function uploadMediaFromUri(
       return resData.url;
     }
   } catch {
-    /* fallback if JSON parsing fails but request succeeded */
+    /* fallback */
   }
 
   return publicUrl || uploadUrl;
-
 }

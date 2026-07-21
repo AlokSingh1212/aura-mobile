@@ -90,7 +90,7 @@ export default function CartScreen() {
   const [activeRazorpayOrder, setActiveRazorpayOrder] = useState<any | null>(null);
   const [successVisible, setSuccessVisible] = useState(false);
   const [successDetails, setSuccessDetails] = useState({
-    orderNumber: "ORD-2026-0001",
+    orderNumber: `ORD-${Date.now().toString().slice(-6)}`,
     amount: 0,
     itemCount: 0,
     orderId: ""
@@ -129,7 +129,7 @@ export default function CartScreen() {
         clearCart();
       } catch (e) {}
       setSuccessDetails({
-        orderNumber: params.orderNumber || "ORD-2026",
+        orderNumber: params.orderNumber || `ORD-${Date.now().toString().slice(-6)}`,
         amount: Number(params.amount) || 0,
         itemCount: 1,
         orderId: params.orderId || ""
@@ -269,7 +269,7 @@ export default function CartScreen() {
         if (verifyRes.success) {
           clearCart();
           setSuccessDetails({
-            orderNumber: verifyRes.orderNumber || "ORD-COD-2026",
+            orderNumber: verifyRes.orderNumber || `ORD-COD-${Date.now().toString().slice(-6)}`,
             amount: verifyRes.amount || calculateTotal(),
             itemCount: cart.length,
             orderId: verifyRes.orderId || res.orderId || ""
@@ -287,7 +287,7 @@ export default function CartScreen() {
       if (isRazorpayNativeAvailable) {
         const options = {
           description: 'AURAGRAM Luxury Fashion Checkout',
-          image: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=200',
+          image: 'https://auragram.com/logo.png',
           currency: 'INR',
           key: res.key,
           amount: res.amount,
@@ -312,7 +312,7 @@ export default function CartScreen() {
 
           if (verifyRes.success) {
             setSuccessDetails({
-              orderNumber: verifyRes.orderNumber || "ORD-NATIVE-2026",
+              orderNumber: verifyRes.orderNumber || `ORD-NTV-${Date.now().toString().slice(-6)}`,
               amount: verifyRes.amount || calculateTotal(),
               itemCount: cart.length,
               orderId: verifyRes.orderId || res.orderId || ""
@@ -357,7 +357,7 @@ export default function CartScreen() {
       if (verifyRes.success) {
         setPaymentSimVisible(false);
         setSuccessDetails({
-          orderNumber: verifyRes.orderNumber || "ORD-SIM-2026",
+          orderNumber: verifyRes.orderNumber || `ORD-SIM-${Date.now().toString().slice(-6)}`,
           amount: verifyRes.amount || calculateTotal(),
           itemCount: cart.length,
           orderId: verifyRes.orderId || activeRazorpayOrder.orderId || ""
@@ -406,7 +406,7 @@ export default function CartScreen() {
   };
 
   const renderCartItem = ({ item }: { item: any }) => {
-    const imageUrl = item.images?.[0] || "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600";
+    const imageUrl = item.img || item.images?.[0] || "";
     return (
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Image source={{ uri: imageUrl }} style={styles.image} />

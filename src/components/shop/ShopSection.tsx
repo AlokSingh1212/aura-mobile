@@ -2,12 +2,16 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { CATEGORIES_LAYOUT } from "@/constants/categoriesLayout";
 
-type Props = {
+type HeadingProps = {
+  title: string;
+};
+
+type SectionProps = {
   title: string;
   children: React.ReactNode;
 };
 
-export function ShopSectionHeading({ title }: Props) {
+export function ShopSectionHeading({ title }: HeadingProps) {
   return (
     <Text style={styles.heading}>{title}</Text>
   );
@@ -22,7 +26,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export function ShopSection({ title, children }: Props) {
+export function ShopSection({ title, children }: SectionProps) {
   return (
     <View style={sectionStyles.wrap}>
       <ShopSectionHeading title={title} />

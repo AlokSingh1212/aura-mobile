@@ -33,7 +33,7 @@ export interface NewPostDetails {
   audio: string;
   audioTrackId: string;
   photoTags: PhotoTag[];
-  collabPartner: CollabPartner | null;
+  collabPartners: CollabPartner[];
   verifiedLocation: VerifiedLocation | null;
   aiLabel: boolean;
   productId: string;
@@ -48,7 +48,7 @@ export const defaultPostDetails = (): NewPostDetails => ({
   audio: "",
   audioTrackId: "",
   photoTags: [],
-  collabPartner: null,
+  collabPartners: [],
   verifiedLocation: null,
   aiLabel: false,
   productId: "",
@@ -127,11 +127,17 @@ export function NewPostDetailsForm({
   const tagCollabLabel = (() => {
     const parts: string[] = [];
     if (details.photoTags.length) parts.push(`${details.photoTags.length} in photo`);
-    if (details.collabPartner) parts.push(`collab @${details.collabPartner.username}`);
+    if (details.collabPartners.length) {
+      parts.push(
+        details.collabPartners.length === 1
+          ? `collab @${details.collabPartners[0].username}`
+          : `${details.collabPartners.length} collabs`
+      );
+    }
     return parts.length ? parts.join(" · ") : "Tag people & collab";
   })();
 
-  const tagCollabActive = details.photoTags.length > 0 || !!details.collabPartner;
+  const tagCollabActive = details.photoTags.length > 0 || details.collabPartners.length > 0;
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
@@ -254,7 +260,7 @@ export function NewPostDetailsForm({
                 hitSlop={8}
               >
                 <Text style={styles.collabLink}>
-                  {details.collabPartner ? "Edit collab partner" : "Invite collab partner"}
+                  {details.collabPartners.length ? "Edit collab partners" : "Invite collab partners"}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -438,10 +444,10 @@ export function NewPostDetailsForm({
       <TagPeopleSheet
         visible={showTagSheet}
         photoTags={details.photoTags}
-        collabPartner={details.collabPartner}
+        collabPartners={details.collabPartners}
         onClose={() => setShowTagSheet(false)}
         onPhotoTagsChange={(photoTags) => patch({ photoTags })}
-        onCollabChange={(collabPartner) => patch({ collabPartner })}
+        onCollabChange={(collabPartners) => patch({ collabPartners })}
       />
 
       <LocationPickerSheet

@@ -11,6 +11,7 @@ import {
 import { useSettingsSection } from "@/hooks/useSettingsSection";
 import { useStore } from "@/store/useStore";
 import { API_HOST } from "@/constants/api";
+import { authHeaders } from "@/lib/apiClient";
 
 export default function PrivacySettingsScreen() {
   const { data, patch } = useSettingsSection("privacy");
@@ -22,7 +23,7 @@ export default function PrivacySettingsScreen() {
     try {
       await fetch(`${API_HOST}/api/mobile/profile/update`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           userId: currentUser.id,
           profileId: activeProfile?.id,
@@ -31,6 +32,23 @@ export default function PrivacySettingsScreen() {
       });
     } catch {
       Alert.alert("Sync issue", "Privacy saved on device. Server sync will retry when online.");
+    }
+  };
+
+  const syncFollowersListVisibility = async (showFollowersList: boolean) => {
+    if (!currentUser?.id) return;
+    try {
+      await fetch(`${API_HOST}/api/mobile/profile/update`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          userId: currentUser.id,
+          profileId: activeProfile?.id,
+          showFollowersList,
+        }),
+      });
+    } catch {
+      /* device copy is authoritative until online */
     }
   };
 
@@ -59,7 +77,11 @@ export default function PrivacySettingsScreen() {
       <IgToggle
         label="Show followers and following lists"
         value={data.showFollowersList}
-        onValueChange={(v) => patch({ showFollowersList: v })}
+        onValueChange={async (v) => {
+          triggerHaptic("light");
+          await patch({ showFollowersList: v });
+          await syncFollowersListVisibility(v);
+        }}
         last
       />
 

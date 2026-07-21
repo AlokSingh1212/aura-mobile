@@ -19,6 +19,7 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
 import { MAX_PHOTO_TAGS, type PhotoTag } from "@/lib/postComposerTypes";
 import { searchProfiles } from "@/lib/postComposerSearch";
+import { validateCanTagTarget } from "@/lib/settingsRuntime";
 import {
   detectFacesInPhoto,
   enrollFaceTagRecognition,
@@ -123,20 +124,39 @@ export function FaceTagEditor({
       setLoadingSearch(true);
       try {
         const profiles = await searchProfiles(query);
-        setResults(
-          profiles.map((p) => ({
-            id: p.id,
-            title: p.name,
-            subtitle: `@${p.username}`,
-            imageUri: p.logo,
-          }))
-        );
+        const mapped = profiles.map((p) => ({
+          id: p.id,
+          title: p.name,
+          subtitle: `@${p.username}`,
+          imageUri: p.logo,
+        }));
+
+        // Inject own profile if it matches the query and isn't already included
+        const myUsername = activeProfile?.username || currentUser?.username || "";
+        const myName = activeProfile?.name || currentUser?.name || "";
+        const myProfileId = activeProfile?.id || currentUser?.id || "";
+
+        const queryLower = query.toLowerCase().replace(/^@/, "");
+        const matchesMe =
+          myUsername.toLowerCase().includes(queryLower) ||
+          myName.toLowerCase().includes(queryLower);
+
+        if (matchesMe && myProfileId && !mapped.some((m) => m.id === myProfileId)) {
+          mapped.unshift({
+            id: myProfileId,
+            title: myName || myUsername,
+            subtitle: `@${myUsername}`,
+            imageUri: activeProfile?.logo || currentUser?.avatar || null,
+          });
+        }
+
+        setResults(mapped);
       } finally {
         setLoadingSearch(false);
       }
     }, 280);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, activeProfile, currentUser]);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -164,7 +184,7 @@ export function FaceTagEditor({
     triggerHaptic("light");
   };
 
-  const applyTag = (item: { id: string; title: string; subtitle: string; imageUri: string | null }) => {
+  const applyTag = async (item: { id: string; title: string; subtitle: string; imageUri: string | null }) => {
     if (photoTags.length >= MAX_PHOTO_TAGS) {
       Alert.alert("Limit reached", `Up to ${MAX_PHOTO_TAGS} people in one photo.`);
       return;
@@ -172,6 +192,16 @@ export function FaceTagEditor({
     const username = item.subtitle.replace(/^@/, "");
     if (photoTags.some((p) => p.profileId === item.id)) {
       Alert.alert("Already tagged", `${item.title} is already in this photo.`);
+      return;
+    }
+
+    const permission = await validateCanTagTarget({
+      targetProfileId: item.id,
+      targetUsername: username,
+      taggerProfileId: activeProfile?.id,
+    });
+    if (!permission.allowed) {
+      Alert.alert("Can't tag", permission.reason || `@${username} does not allow tags from you.`);
       return;
     }
 

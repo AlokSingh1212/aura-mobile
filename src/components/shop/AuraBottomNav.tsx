@@ -56,8 +56,10 @@ export function AuraBottomNav({ activeTab, homeTabHandlers }: Props) {
 
   const goHome = () => {
     triggerHaptic("light");
-    if (isHomeRoute && homeTabHandlers?.onHome) {
-      homeTabHandlers.onHome();
+    if (isHomeRoute) {
+      if (homeTabHandlers?.onHome) {
+        homeTabHandlers.onHome();
+      }
       return;
     }
     router.replace("/");
@@ -65,8 +67,10 @@ export function AuraBottomNav({ activeTab, homeTabHandlers }: Props) {
 
   const goReels = () => {
     triggerHaptic("light");
-    if (isHomeRoute && homeTabHandlers?.onReels) {
-      homeTabHandlers.onReels();
+    if (isHomeRoute) {
+      if (homeTabHandlers?.onReels) {
+        homeTabHandlers.onReels();
+      }
       return;
     }
     router.replace({ pathname: "/", params: { activeTab: "reels" } } as any);
@@ -74,6 +78,7 @@ export function AuraBottomNav({ activeTab, homeTabHandlers }: Props) {
 
   const goInbox = () => {
     triggerHaptic("light");
+    if (pathname.startsWith("/messages")) return;
     if (isHomeRoute && homeTabHandlers?.onInbox) {
       homeTabHandlers.onInbox();
       return;

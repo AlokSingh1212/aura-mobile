@@ -70,6 +70,7 @@ export const initDatabase = () => {
       CREATE TABLE IF NOT EXISTS conversations (
         id TEXT PRIMARY KEY,
         name TEXT,
+        username TEXT,
         lastMessage TEXT,
         avatar TEXT,
         category TEXT,
@@ -77,6 +78,13 @@ export const initDatabase = () => {
         unread INTEGER
       );
     `);
+
+    // Schema migration: Add username column to older databases
+    try {
+      db.execSync("ALTER TABLE conversations ADD COLUMN username TEXT;");
+    } catch (_) {
+      // Column already exists
+    }
 
     // 6. Sync pointer tracker table
     db.execSync(`
@@ -317,11 +325,12 @@ export const cacheConversations = (conversations: any[]) => {
     for (const c of conversations) {
       db.runSync(`
         INSERT OR REPLACE INTO conversations 
-        (id, name, lastMessage, avatar, category, updatedAt, unread)
-        VALUES (?, ?, ?, ?, ?, ?, ?);
+        (id, name, username, lastMessage, avatar, category, updatedAt, unread)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
       `,
         c.id,
         c.name || "Chat Room",
+        c.username || "",
         c.lastMessage || c.message || "",
         c.avatar || "",
         c.category || "Primary",
@@ -367,6 +376,7 @@ export const getLocalConversations = (): any[] => {
       return {
         id: row.id,
         name: row.name,
+        username: row.username || "",
         lastMessage: row.lastMessage,
         message: row.lastMessage, // compatibility fallback
         avatar: row.avatar,
@@ -379,6 +389,20 @@ export const getLocalConversations = (): any[] => {
   } catch (err) {
     console.error("Failed to read local SQLite conversations:", err);
     return [];
+  }
+};
+
+export const updateConversationCategory = (convoId: string, category: string) => {
+  if (!db) return;
+  try {
+    db.runSync(
+      "UPDATE conversations SET category = ? WHERE id = ?;",
+      category,
+      convoId
+    );
+    console.log(`[localDb] Updated conversation ${convoId} category to ${category}`);
+  } catch (err) {
+    console.error(`Failed to update local SQLite conversation category for ${convoId}:`, err);
   }
 };
 

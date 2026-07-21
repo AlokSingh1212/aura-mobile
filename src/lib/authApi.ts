@@ -25,8 +25,20 @@ export type AuthMeResponse = {
 };
 
 export async function validateAuthSession(): Promise<AuthMeResponse> {
-  const res = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
-  return res.json();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 1500); // 1.5s background timeout
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, { 
+      headers: authHeaders(),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    console.warn("[AuthAPI] validateAuthSession timeout or network failure:", err);
+    return { success: false, error: "CONNECTION_TIMEOUT" };
+  }
 }
 
 export async function deactivateAccount(userId: string) {

@@ -297,7 +297,9 @@ function ProfileProductPage({ product, isCollab }: { product: any; isCollab?: bo
       <View style={styles.productBody}>
         {isCollab && (
           <View style={styles.collabBadge}>
-            <Text style={styles.collabBadgeText}>Affiliate · 10% Commission</Text>
+            <Text style={styles.collabBadgeText}>
+              Affiliate · {product.commissionRate ?? 10}% Commission
+            </Text>
           </View>
         )}
         <Text style={styles.productTitle}>{title}</Text>
@@ -307,7 +309,7 @@ function ProfileProductPage({ product, isCollab }: { product: any; isCollab?: bo
           style={styles.addToCartBtn}
           onPress={() => {
             triggerHaptic("success");
-            addToCart({ ...product, id: product.id, title, price, images: product.images || [imageUrl] });
+            addToCart({ ...product, id: product.id, title, price, images: product.images || [imageUrl], affiliateCode: product.affiliateCode });
           }}
         >
           <Text style={styles.addToCartText}>Add to bag</Text>
@@ -355,11 +357,13 @@ export function ProfileGridViewer({
   const items = useMemo(() => {
     if (tab === "posts") return photoPosts;
     if (tab === "reels") return reelPosts;
+    if (tab === "tagged") return visiblePosts;
     return products;
-  }, [tab, photoPosts, reelPosts, products]);
+  }, [tab, photoPosts, reelPosts, visiblePosts, products]);
 
   const isReelMode = tab === "reels";
   const isProductMode = tab === "products" || tab === "collabs";
+  const isTaggedMode = tab === "tagged";
   const pageHeight = height - insets.top - 52;
 
   const reelItems = useMemo(
@@ -396,7 +400,7 @@ export function ProfileGridViewer({
     if (!visible || isProductMode) return;
     const ids = listData.map((item) => item.id).filter(Boolean);
     engagement.hydratePostsEngagement(ids);
-  }, [visible, listData, isProductMode, engagement.hydratePostsEngagement]);
+  }, [visible, listData, isProductMode, isTaggedMode, engagement.hydratePostsEngagement]);
 
   useEffect(() => {
     if (!visible || isProductMode) return;

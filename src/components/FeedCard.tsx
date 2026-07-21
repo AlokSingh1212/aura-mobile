@@ -11,12 +11,12 @@ import {
 } from "react-native";
 import { fetchPostComments, addPostComment } from "@/lib/profileApi";
 import { Image } from "expo-image";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { SafeVideoPlayer } from "@/components/SafeVideoPlayer";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { formatCompactNumber } from "@/constants/format";
-import { getCachedVideo } from "@/utils/videoCache";
 import { PeekPreviewModal } from "./PeekPreviewModal";
 import { CaptionText } from "@/components/CaptionText";
 import { PostMetaRotator } from "@/components/post/PostMetaRotator";
@@ -30,10 +30,13 @@ import {
 } from "@/lib/postNavigation";
 import { usePostPeopleSheet } from "@/hooks/usePostPeopleSheet";
 import {
-  ProductThumbnailStrip,
   ShopNowBar,
   resolvePostProducts,
 } from "@/components/post/PostProductOverlay";
+import { PositionedProductTags } from "@/components/commerce/PositionedProductTags";
+import { STORY_CANVAS_W, STORY_CANVAS_H } from "@/lib/storyLayers";
+import { isReelVideoUrl } from "@/lib/reelMedia";
+import { edgeIntentClassifier } from "@/lib/edgeIntentClassifier";
 
 const { height, width } = Dimensions.get("window");
 
@@ -60,51 +63,10 @@ export interface FeedCardProps {
   sharesCount?: number;
   repostsCount?: number;
   onCtaPress?: (ctaType: string, metadata: any) => void;
+  setFeedMuted?: (muted: boolean) => void;
 }
 
-interface ActiveVideoPlayerProps {
-  videoSource: string;
-  feedMuted: boolean;
-  isPlayed: boolean;
-  isScreenFocused: boolean;
-}
-
-function ActiveVideoPlayer({ videoSource, feedMuted, isPlayed, isScreenFocused }: ActiveVideoPlayerProps) {
-  const player = useVideoPlayer(videoSource, (p) => {
-    p.loop = true;
-    p.muted = feedMuted;
-    if (isPlayed && isScreenFocused) {
-      p.play();
-    } else {
-      p.pause();
-    }
-  });
-
-  useEffect(() => {
-    player.muted = feedMuted;
-  }, [feedMuted, player]);
-
-  useEffect(() => {
-    if (isPlayed && isScreenFocused) {
-      player.play();
-    } else {
-      player.pause();
-    }
-  }, [isPlayed, isScreenFocused, player]);
-
-  return (
-    <VideoView
-      player={player}
-      style={StyleSheet.absoluteFillObject}
-      contentFit="cover"
-      nativeControls={false}
-      allowsFullscreen={false}
-      allowsPictureInPicture={false}
-    />
-  );
-}
-
-export const FeedCard: React.FC<FeedCardProps> = ({
+export const FeedCard = React.memo<FeedCardProps>(function FeedCard({
   item,
   index,
   activeReelIndex,
@@ -127,7 +89,8 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   sharesCount: sharesCountProp,
   repostsCount: repostsCountProp,
   onCtaPress,
-}) => {
+  setFeedMuted,
+}: FeedCardProps) {
   const { triggerHaptic, formatPrice, activeProfile, currentUser } = useStore();
   const isPlayed = index === activeReelIndex;
   const isLiked = likedPosts[item.id] || false;
@@ -172,6 +135,22 @@ export const FeedCard: React.FC<FeedCardProps> = ({
     }
   }, [isDetailsOpen, item.id]);
 
+  useEffect(() => {
+    if (isPlayed) {
+      const dwellStart = Date.now();
+      return () => {
+        const dwellMs = Date.now() - dwellStart;
+        edgeIntentClassifier.recordSample({
+          itemId: item.id || `item_${index}`,
+          category: item.category || item.vibe || "general",
+          dwellMs: Math.max(100, dwellMs),
+          scrollVelocityPxPerMs: dwellMs < 600 ? 3.8 : 0.3,
+          timestamp: Date.now(),
+        });
+      };
+    }
+  }, [isPlayed, item.id, index, item.category, item.vibe]);
+
   // ── Double-Tap Heart Animation ──────────────────────────
   const heartScale = useRef(new Animated.Value(0)).current;
   const heartOpacity = useRef(new Animated.Value(0)).current;
@@ -203,6 +182,18 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           useNativeDriver: true,
         }),
       ]).start(() => setShowHeart(false));
+    } else {
+      // Single-tap detected → wait 300ms to verify it is not a double tap, then toggle mute!
+      setTimeout(() => {
+        const currentNow = Date.now();
+        // If no second tap occurred within 300ms, toggle mute!
+        if (currentNow - lastTapRef.current >= 300) {
+          triggerHaptic("light");
+          if (setFeedMuted) {
+            setFeedMuted(!feedMuted);
+          }
+        }
+      }, 300);
     }
     lastTapRef.current = now;
   };
@@ -250,32 +241,19 @@ export const FeedCard: React.FC<FeedCardProps> = ({
     }
   };
 
-  const mockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4";
-  const videoUrl = item.url && (item.url.endsWith(".mp4") || item.url.includes(".m3u8")) ? item.url : mockVideoUrl;
+  const rawVideo =
+    item.url ||
+    item.content?.videoUrl ||
+    item.content?.mediaUrl ||
+    item.sponsoredMetadata?.creativeMediaUrl ||
+    "";
+  const videoUrl = isReelVideoUrl(rawVideo) ? rawVideo : "";
 
   // Optimize player resources: only initialize video player for the active or adjacent screens
   const isAdjacent = Math.abs(index - activeReelIndex) <= 1;
 
-  // Local state to hold resolved (cached or remote) video source
-  const [videoSource, setVideoSource] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    if (isAdjacent) {
-      getCachedVideo(videoUrl).then((cached) => {
-        if (active) {
-          setVideoSource(cached || videoUrl);
-        }
-      });
-    } else {
-      setVideoSource(null);
-    }
-    return () => {
-      active = false;
-    };
-  }, [isAdjacent, videoUrl]);
-
-  // Video player is now lazily managed by ActiveVideoPlayer sub-component to prevent OOM
+  // Only mount a player for the active reel and its neighbor — use stable remote URL (no cache swap).
+  const videoSource = isAdjacent ? videoUrl : null;
 
   return (
     <View style={[styles.reelContainer, { height: reelHeight, backgroundColor: "#000" }]}>
@@ -286,22 +264,23 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             activeOpacity={1}
             onPress={triggerDoubleTapLike}
             onLongPress={() => triggerHaptic("light")}
-            style={StyleSheet.absoluteFillObject}
+            style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }}
           >
             <Animated.View
-              style={[StyleSheet.absoluteFillObject, { transform: [{ scale: pinchScale }] }]}
+              style={{ width: "100%", height: "100%", transform: [{ scale: pinchScale }] }}
               onTouchStart={handleTouchStart}
               onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
             >
-              {isAdjacent && videoSource && (
-                <ActiveVideoPlayer
-                  videoSource={videoSource}
-                  feedMuted={feedMuted}
-                  isPlayed={isPlayed}
-                  isScreenFocused={isScreenFocused}
+              {isAdjacent && videoSource ? (
+                <SafeVideoPlayer
+                  source={videoSource}
+                  muted={feedMuted}
+                  playing={isPlayed && isScreenFocused}
+                  style={{ width: "100%", height: "100%" }}
+                  contentFit="cover"
                 />
-              )}
+              ) : null}
             </Animated.View>
 
             {/* ❤️ Heart Burst Overlay */}
@@ -327,6 +306,16 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                 onOverflowPress={openSheet}
               />
             )}
+
+            {postProducts.length > 0 ? (
+              <PositionedProductTags
+                storyLayers={postMeta.storyLayers}
+                fallbackProducts={postProducts}
+                canvasWidth={STORY_CANVAS_W}
+                canvasHeight={STORY_CANVAS_H}
+                onOpenProduct={openProduct}
+              />
+            ) : null}
           </TouchableOpacity>
 
           {/* DYNAMIC SHADER OVERLAYS SYNCED FROM THE CAMERA STUDIO */}
@@ -345,7 +334,10 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255,255,255,0.02)", opacity: item.touchUpApplied / 100, zIndex: 1 }]} />
           )}
 
-          <View style={styles.gradientOverlay} />
+          <LinearGradient
+            colors={["transparent", "rgba(8, 4, 21, 0.85)"]}
+            style={styles.gradientOverlay}
+          />
 
           {/* Creator Metadata Overlay (Bottom Left) */}
           <View style={[styles.metaContainer, { bottom: floatingBottomOffset }]}>
@@ -360,16 +352,6 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                   onOverflowPress={openSheet}
                 />
               </View>
-            )}
-
-            {/* Product preview strip */}
-            {postProducts && postProducts.length > 0 && (
-              <ProductThumbnailStrip
-                products={postProducts}
-                bottom={0}
-                style={{ position: "relative", marginBottom: 8, bottom: 0 }}
-                onPressProduct={(p) => openProduct(p.productId)}
-              />
             )}
 
             {/* Shop Now bar / sponsored CTA */}
@@ -535,14 +517,15 @@ export const FeedCard: React.FC<FeedCardProps> = ({
               onPress={() => { triggerHaptic("medium"); setIsDetailsOpen(false); }}
               style={localStyles.shrunkenVideoWrapper}
             >
-              {isAdjacent && videoSource && (
-                <ActiveVideoPlayer
-                  videoSource={videoSource}
-                  feedMuted={feedMuted}
-                  isPlayed={isPlayed}
-                  isScreenFocused={isScreenFocused}
+              {isAdjacent && videoSource ? (
+                <SafeVideoPlayer
+                  source={videoSource}
+                  muted={feedMuted}
+                  playing={isPlayed && isScreenFocused}
+                  style={{ width: "100%", height: "100%" }}
+                  contentFit="cover"
                 />
-              )}
+              ) : null}
               {/* Tap to expand hint overlay */}
               <View style={localStyles.expandHintOverlay}>
                 <Lucide name="expand-outline" size={16} color="#fff" />
@@ -578,9 +561,10 @@ export const FeedCard: React.FC<FeedCardProps> = ({
               showsVerticalScrollIndicator={false}
             >
               {/* Full Caption */}
-              <Text style={localStyles.panelCaption}>
-                {postMeta.caption || "No caption provided."}
-              </Text>
+              <CaptionText
+                caption={postMeta.caption || "No caption provided."}
+                style={localStyles.panelCaption}
+              />
               <Text style={localStyles.panelDate}>March 15 • See translation</Text>
 
               {/* Tagged accounts */}
@@ -687,7 +671,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
       />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   reelContainer: {
@@ -701,7 +685,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 150,
-    backgroundColor: "rgba(0,0,0,0.5)",
   },
   heartOverlay: {
     position: "absolute",

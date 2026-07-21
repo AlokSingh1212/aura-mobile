@@ -11,6 +11,7 @@ export type CheckoutLineItem = {
   maisonName?: string;
   selectedSize?: string;
   selectedColor?: string;
+  affiliateCode?: string | null;
 };
 
 export type CheckoutTotals = {

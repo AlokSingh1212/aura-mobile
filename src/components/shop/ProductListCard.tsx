@@ -11,6 +11,10 @@ import {
   getReviewCount,
 } from "@/lib/shopPricing";
 import { useStore } from "@/store/useStore";
+import {
+  VerifiedMaisonBadge,
+  isProductFromVerifiedMaison,
+} from "@/components/shop/VerifiedMaisonBadge";
 
 type Props = {
   product: any;
@@ -35,6 +39,7 @@ export function ProductListCard({
   const original = getOriginalPrice(product);
   const bankPrice = getBankOfferPrice(product);
   const brand = product.maison?.name || product.brand || "AURA";
+  const verifiedMaison = isProductFromVerifiedMaison(product);
   const reviewLabel = reviews >= 1000 ? `${Math.floor(reviews / 1000)}K+` : String(reviews);
 
   return (
@@ -76,7 +81,10 @@ export function ProductListCard({
             <Text style={styles.trendText}>{product.vibe}</Text>
           </View>
         ) : null}
-        <Text style={styles.brand}>{brand.toUpperCase()}</Text>
+        <View style={styles.brandRow}>
+          <Text style={styles.brand}>{brand.toUpperCase()}</Text>
+          {verifiedMaison ? <VerifiedMaisonBadge size={13} /> : null}
+        </View>
         <Text style={styles.title} numberOfLines={2}>
           {product.title}
         </Text>
@@ -196,6 +204,11 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: "700",
     color: "#7B1FA2",
+  },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   brand: {
     fontSize: 12,

@@ -115,6 +115,16 @@ export default function StoreManagementHub() {
         onPress={() => router.push("/settings/store/promotions" as any)}
       />
       <IgRow
+        label="Brand partnerships"
+        sublabel="Official creator deals & escrow"
+        onPress={() => router.push("/settings/store/partnerships" as any)}
+      />
+      <IgRow
+        label="Verified Maison"
+        sublabel="₹999/mo · badge + discover showcase + website link"
+        onPress={() => router.push("/settings/store/premium" as any)}
+      />
+      <IgRow
         label={t("store.policies", "Shop policies")}
         sublabel="Returns, offers and automation"
         onPress={() => router.push("/settings/store/policies" as any)}

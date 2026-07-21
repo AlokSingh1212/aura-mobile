@@ -1,15 +1,16 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { 
   StyleSheet, 
   Text, 
   View, 
   TouchableOpacity,
 } from "react-native";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { SafeVideoPlayer } from "@/components/SafeVideoPlayer";
 import { Image } from "expo-image";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { useStore } from "@/store/useStore";
 import { formatCompactNumber } from "@/constants/format";
+import { CaptionText } from "@/components/CaptionText";
 
 export interface PostCardProps {
   item: any;
@@ -32,24 +33,27 @@ interface PostVideoPlayerProps {
 }
 
 function PostVideoPlayer({ videoUrl, feedMuted }: PostVideoPlayerProps) {
-  const player = useVideoPlayer(videoUrl, (p) => {
-    p.loop = true;
-    p.muted = feedMuted;
-    p.play();
-  });
+  const [active, setActive] = React.useState(false);
 
-  useEffect(() => {
-    player.muted = feedMuted;
-  }, [feedMuted, player]);
+  React.useEffect(() => {
+    const frame = requestAnimationFrame(() => setActive(true));
+    return () => {
+      cancelAnimationFrame(frame);
+      setActive(false);
+    };
+  }, [videoUrl]);
+
+  if (!active) {
+    return <View style={[styles.photoCardImage, { backgroundColor: "#0d0a1b" }]} />;
+  }
 
   return (
-    <VideoView
-      player={player}
+    <SafeVideoPlayer
+      source={videoUrl}
+      muted={feedMuted}
+      playing
       style={styles.photoCardImage}
       contentFit="cover"
-      nativeControls={false}
-      allowsFullscreen={false}
-      allowsPictureInPicture={false}
     />
   );
 }
@@ -72,12 +76,10 @@ export const PostCard: React.FC<PostCardProps> = ({
   const isLiked = likedPosts[item.id] || false;
   const isSaved = savedPosts[item.id] || false;
 
-  const mockVideoUrl = "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-showing-off-a-dress-41801-large.mp4";
-  const videoUrl = item.url && item.url.endsWith(".mp4") ? item.url : mockVideoUrl;
+  const isVideo = item.url && /\.(mp4|mov|m4v|webm|m3u8)(\?|$)/i.test(item.url);
+  const videoUrl = item.url;
 
-  // Video player is now lazily managed by PostVideoPlayer sub-component to prevent OOM
-
-  const img = item.url || item.thumbnail || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=400";
+  const img = item.url || item.thumbnail || "https://auragram.com/logo.png";
 
   return (
     <View style={styles.photoCard}>
@@ -166,7 +168,7 @@ export const PostCard: React.FC<PostCardProps> = ({
       </Text>
       <Text style={styles.photoCardCaption}>
         <Text style={{ fontWeight: "bold" }}>{((item.profile?.name || item.user?.name || currentMaisonName || "Aura")).toLowerCase()?.replace(/\s+/g, "")} </Text>
-        {item.caption || "Atelier Masterpiece Collection."}
+        <CaptionText caption={item.caption || "Atelier Masterpiece Collection."} />
       </Text>
     </View>
   );

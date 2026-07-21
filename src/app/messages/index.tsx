@@ -11,14 +11,22 @@ export default function MessagesScreen() {
   const params = useLocalSearchParams<{ conversationId?: string }>();
   const insets = useSafeAreaInsets();
   const bottomNavHeight = getAuraBottomNavHeight(insets.bottom);
-  const { activeMaisonId, products, currentUser, authHydrated } = useStore();
+  const { activeMaisonId, products, currentUser, authHydrated, instaStories, loadStoryRings, loadUserStories } = useStore();
   const [isSeller, setIsSeller] = useState(false);
+  const [isChatActive, setIsChatActive] = useState(false);
 
   useEffect(() => {
     if (authHydrated && !currentUser?.id) {
       router.replace("/login" as any);
     }
   }, [authHydrated, currentUser?.id]);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      loadStoryRings(currentUser.id).catch(() => {});
+      loadUserStories(currentUser.id).catch(() => {});
+    }
+  }, [currentUser?.id, loadStoryRings, loadUserStories]);
 
   if (!authHydrated || !currentUser?.id) {
     return (
@@ -38,9 +46,11 @@ export default function MessagesScreen() {
         isSeller={isSeller}
         setIsSeller={setIsSeller}
         products={products}
+        activeInstaStories={instaStories}
         initialConversationId={params.conversationId || null}
+        onConversationStateChange={(active) => setIsChatActive(active)}
       />
-      <AuraBottomNav activeTab="inbox" />
+      {!isChatActive && <AuraBottomNav activeTab="inbox" />}
     </View>
   );
 }
