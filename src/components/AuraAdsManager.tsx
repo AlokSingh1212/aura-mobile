@@ -37,17 +37,17 @@ export interface MetaCampaign {
   targetVibes: string[];
 }
 
-export interface MetaAdsManagerProps {
+export interface AuraAdsManagerProps {
   onClose?: () => void;
 }
 
-export function MetaAdsManager({ onClose }: MetaAdsManagerProps) {
+export function AuraAdsManager({ onClose }: AuraAdsManagerProps) {
   const [activeTab, setActiveTab] = useState<"CAMPAIGNS" | "AD_SETS" | "CREATIVES">("CAMPAIGNS");
   const [aiModalVisible, setAiModalVisible] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Multi-Ad Account Switcher (Meta Business Manager)
+  // Multi-Ad Account Switcher (Aura Business Manager)
   const [adAccounts] = useState<AdAccount[]>([
     {
       id: "act_9918231",
@@ -169,7 +169,7 @@ export function MetaAdsManager({ onClose }: MetaAdsManagerProps) {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Meta Ads Manager</Text>
+          <Text style={styles.headerTitle}>Aura Ads Manager</Text>
           <Text style={styles.headerSubtitle}>Real-Time VCG Auction & Pacing Analytics</Text>
         </View>
         <TouchableOpacity style={styles.aiButton} onPress={() => setAiModalVisible(true)}>
