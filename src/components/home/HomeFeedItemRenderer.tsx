@@ -45,6 +45,7 @@ export type HomeFeedItemRenderContext = {
   addToCart: (product: any) => void;
   logFeedCartAdd: (feedItemId: string, productId: string) => Promise<void>;
   logEngagement: (feedItemId: string, type: "share" | "purchase" | "view" | "like" | "save" | "cart_add") => Promise<{ likeCount?: number; liked?: boolean } | null>;
+  handleLikesSheetPress?: (item: any) => void;
   setShowroomMode: (mode: "viewer" | "lobby") => void;
   setShowroomMaisonId: (id: string) => void;
   setShowroomMaisonName: (name: string) => void;
@@ -119,8 +120,18 @@ function HomeFeedItemRendererInner({ item, index, ctx }: HomeFeedItemRendererPro
     const sharesCount = ctx.shareCounts[item.id] ?? item.content?.sharesCount ?? 0;
     const repostsCount = ctx.repostCounts[item.id] ?? item.content?.repostsCount ?? item.repostsCount ?? 0;
 
-    const creatorId = item.creator?.id;
-    const isMe = creatorId && ctx.activeProfile?.id === creatorId;
+    const creatorId = item.creator?.id || item.userId || item.authorId || item.creator?.userId;
+    const creatorUsername = (item.creator?.username || item.username || item.authorUsername)?.toLowerCase();
+
+    const activeProfileId = ctx.activeProfile?.id;
+    const activeUserId = ctx.activeProfile?.userId;
+    const activeUsername = ctx.activeProfile?.username?.toLowerCase();
+
+    const isMe =
+      item.isOwnPost === true ||
+      (creatorId && (creatorId === activeProfileId || creatorId === activeUserId)) ||
+      (creatorUsername && activeUsername && creatorUsername === activeUsername);
+
     const followTimestamp = creatorId ? ctx.justFollowedProfiles[creatorId] : undefined;
     const isJustFollowed = followTimestamp !== undefined && Date.now() - followTimestamp < 5 * 60 * 1000;
     const initialFollowed = !!item.creator?.isFollowing;
@@ -146,6 +157,7 @@ function HomeFeedItemRendererInner({ item, index, ctx }: HomeFeedItemRendererPro
         isScreenFocused={ctx.isScreenFocused}
         onOpenReel={isHomeReel ? () => ctx.handleOpenFeedReel(item) : undefined}
         onLike={() => ctx.handleLikePress(item.id)}
+        onOpenLikesSheet={() => ctx.handleLikesSheetPress?.(item)}
         onComment={() => ctx.handleCommentsPress(item)}
         onShare={() => ctx.handleShare(item)}
         onReshare={() => ctx.handleReshare(item)}

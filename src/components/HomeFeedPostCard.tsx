@@ -42,6 +42,7 @@ export interface HomeFeedPostCardProps {
   sharesCount: number;
   repostsCount?: number;
   onLike: () => void;
+  onOpenLikesSheet?: () => void;
   onComment: () => void;
   onShare: () => void;
   onReshare?: () => void;
@@ -71,6 +72,7 @@ function HomeFeedPostCardInner({
   sharesCount,
   repostsCount = 0,
   onLike,
+  onOpenLikesSheet,
   onComment,
   onShare,
   onReshare,
@@ -352,6 +354,7 @@ function HomeFeedPostCardInner({
         sharesCount={sharesCount}
         repostsCount={repostsCount}
         onLike={onLike}
+        onOpenLikesCount={onOpenLikesSheet}
         onComment={onComment}
         onShare={onShare}
         onReshare={onReshare}

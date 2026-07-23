@@ -12,6 +12,7 @@ interface PostActionRowProps {
   sharesCount: number;
   repostsCount?: number;
   onLike: () => void;
+  onOpenLikesCount?: () => void;
   onComment: () => void;
   onShare: () => void;
   onReshare?: () => void;
@@ -25,6 +26,7 @@ function ActionWithCount({
   active,
   count,
   onPress,
+  onCountPress,
   iconColor,
   countColor,
   label,
@@ -34,21 +36,29 @@ function ActionWithCount({
   active: boolean;
   count: number;
   onPress: () => void;
+  onCountPress?: () => void;
   iconColor: string;
   countColor: string;
   label: string;
 }) {
   const { a11yProps } = useA11yProps();
   return (
-    <TouchableOpacity
-      style={styles.action}
-      onPress={onPress}
-      activeOpacity={0.75}
-      {...a11yProps(`${label}, ${formatCompactNumber(count)}`, { role: "button" })}
-    >
-      <Lucide name={active ? activeIcon : icon} size={24} color={active && icon === "heart" ? "#FF3B30" : iconColor} />
-      <Text style={[styles.count, { color: countColor }]}>{formatCompactNumber(count)}</Text>
-    </TouchableOpacity>
+    <View style={styles.action}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.75}
+        {...a11yProps(`${label}, ${formatCompactNumber(count)}`, { role: "button" })}
+      >
+        <Lucide name={active ? activeIcon : icon} size={24} color={active && icon === "heart" ? "#FF3B30" : iconColor} />
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={onCountPress || onPress}
+        activeOpacity={0.7}
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+      >
+        <Text style={[styles.count, { color: countColor }]}>{formatCompactNumber(count)}</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -60,6 +70,7 @@ export function PostActionRow({
   sharesCount,
   repostsCount = 0,
   onLike,
+  onOpenLikesCount,
   onComment,
   onShare,
   onReshare,
@@ -80,6 +91,7 @@ export function PostActionRow({
           active={isLiked}
           count={likesCount}
           onPress={onLike}
+          onCountPress={onOpenLikesCount}
           iconColor={iconColor}
           countColor={countColor}
           label={isLiked ? "Unlike" : "Like"}
