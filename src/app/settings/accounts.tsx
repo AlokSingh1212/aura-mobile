@@ -11,6 +11,7 @@ import {
 } from "@/components/settings/InstagramSettingsUI";
 import { useStore } from "@/store/useStore";
 import { loadSavedAccounts, removeSavedAccount, type SavedAccount } from "@/lib/multiAccountSession";
+import { ConvertAccountTypeSheet } from "@/components/settings/ConvertAccountTypeSheet";
 import { IG } from "@/theme/settingsTheme";
 
 export default function AccountsSettingsScreen() {
@@ -25,6 +26,7 @@ export default function AccountsSettingsScreen() {
 
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
   const [switchingUserId, setSwitchingUserId] = useState<string | null>(null);
+  const [showConvertSheet, setShowConvertSheet] = useState(false);
 
   const refreshSavedAccounts = useCallback(async () => {
     setSavedAccounts(await loadSavedAccounts());
@@ -166,7 +168,21 @@ export default function AccountsSettingsScreen() {
 
       <IgDivider />
 
-      <IgSectionTitle>Account settings</IgSectionTitle>
+      <IgSectionTitle>Account type & tools</IgSectionTitle>
+      <IgRow
+        label={
+          activeProfile?.type === "PERSONAL"
+            ? "Switch to Professional Account"
+            : activeProfile?.type === "INFLUENCER"
+            ? "Switch to Atelier or Personal Account"
+            : "Switch to Creator or Personal Account"
+        }
+        sublabel={`Currently: ${activeProfile?.type || "PERSONAL"} (@${activeProfile?.username || "profile"})`}
+        onPress={() => {
+          triggerHaptic("medium");
+          setShowConvertSheet(true);
+        }}
+      />
       <IgRow
         label="Personal details"
         sublabel="Contact info, birthday, gender"
@@ -186,12 +202,16 @@ export default function AccountsSettingsScreen() {
       <IgDivider />
 
       <IgSectionTitle>Data</IgSectionTitle>
-      <IgRow label="Download your information" onPress={() => router.push("/settings/data" as any)} />
       <IgRow
         label="Deactivate or delete"
         danger
         onPress={() => router.push("/settings/delete-account" as any)}
         last
+      />
+
+      <ConvertAccountTypeSheet
+        visible={showConvertSheet}
+        onClose={() => setShowConvertSheet(false)}
       />
     </IgSettingsScreen>
   );
