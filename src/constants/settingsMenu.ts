@@ -295,6 +295,24 @@ export const SETTINGS_MENU: SettingsMenuItem[] = [
     keywords: ["deactivate", "remove"],
     danger: true,
   },
+
+  // —— Login & Sessions ——
+  {
+    id: "logout",
+    label: "Log out",
+    sublabel: "Sign out of your active account",
+    section: "Login & Sessions",
+    keywords: ["logout", "sign out", "exit", "leave", "switch"],
+    danger: true,
+  },
+  {
+    id: "logout-all",
+    label: "Log out all accounts",
+    sublabel: "Clear all saved device sessions",
+    section: "Login & Sessions",
+    keywords: ["logout", "sign out", "clear", "all"],
+    danger: true,
+  },
 ];
 
 export function groupSettingsMenu(items: SettingsMenuItem[]) {

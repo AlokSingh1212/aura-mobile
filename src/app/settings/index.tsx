@@ -50,6 +50,25 @@ export default function SettingsHubScreen() {
     );
   };
 
+  const handleLogOutAll = () => {
+    triggerHaptic("heavy");
+    Alert.alert(
+      "Log Out All Accounts",
+      "This will clear all saved sessions from this device. You will need to log back in.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out All",
+          style: "destructive",
+          onPress: () => {
+            authLogOut();
+            router.replace("/(auth)/login" as any);
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <IgSettingsScreen
       title="Settings and activity"
@@ -72,53 +91,33 @@ export default function SettingsHubScreen() {
           <IgSectionTitle>{section.title}</IgSectionTitle>
           {section.items.map((item, idx) => {
             if (item.id === "accounts-center") return null;
+            const onPress =
+              item.id === "logout"
+                ? handleLogOut
+                : item.id === "logout-all"
+                ? handleLogOutAll
+                : item.route
+                ? () => open(item.route!)
+                : undefined;
+
             return (
               <IgRow
                 key={item.id}
-                label={item.label}
+                label={
+                  item.id === "logout"
+                    ? `Log out @${activeProfile?.username || currentUser?.username || "account"}`
+                    : item.label
+                }
                 sublabel={item.sublabel}
                 danger={item.danger}
                 last={idx === section.items.length - 1}
-                onPress={item.route ? () => open(item.route!) : undefined}
+                onPress={onPress}
               />
             );
           })}
           <IgDivider />
         </React.Fragment>
       ))}
-
-      {/* —— Login & Account Actions (Instagram-style) —— */}
-      <IgSectionTitle>Login & Sessions</IgSectionTitle>
-      <IgRow
-        label={`Log out @${activeProfile?.username || currentUser?.username || "account"}`}
-        danger
-        onPress={handleLogOut}
-      />
-      <IgRow
-        label="Log out all accounts"
-        danger
-        last
-        onPress={() => {
-          triggerHaptic("heavy");
-          Alert.alert(
-            "Log Out All Accounts",
-            "This will clear all saved sessions from this device. You will need to log back in.",
-            [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Log Out All",
-                style: "destructive",
-                onPress: () => {
-                  authLogOut();
-                  router.replace("/(auth)/login" as any);
-                },
-              },
-            ]
-          );
-        }}
-      />
-
-      <IgDivider />
 
       {filtered.length === 0 ? (
         <Text style={styles.empty}>No settings match "{query}"</Text>
