@@ -178,14 +178,35 @@ export function useChatConversations({
         setActiveChat((prevActive: any) => {
           if (!prevActive) return null;
           const updatedConvo = mapped.find((c: any) => c.id === prevActive.id);
-          if (updatedConvo) {
-            return {
-              ...prevActive,
-              ...updatedConvo,
-              messages: updatedConvo.messages || []
-            };
+          if (!updatedConvo) return prevActive;
+
+          const prevMsgs = prevActive.messages || [];
+          const newMsgs = updatedConvo.messages || [];
+
+          // If message count and latest message ID match, skip state update to prevent UI re-renders
+          if (
+            prevMsgs.length === newMsgs.length &&
+            prevMsgs[prevMsgs.length - 1]?.id === newMsgs[newMsgs.length - 1]?.id &&
+            prevActive.name === updatedConvo.name &&
+            prevActive.avatar === updatedConvo.avatar
+          ) {
+            return prevActive;
           }
-          return prevActive;
+
+          // Preserve pending optimistic messages that have not landed in backend yet
+          const pendingOptimistic = prevMsgs.filter((m: any) => m.id?.startsWith("tmp_") || m.id?.startsWith("c_"));
+          const mergedMsgs = [...newMsgs];
+          pendingOptimistic.forEach((om: any) => {
+            if (!mergedMsgs.some((m: any) => m.text === om.text)) {
+              mergedMsgs.push(om);
+            }
+          });
+
+          return {
+            ...prevActive,
+            ...updatedConvo,
+            messages: mergedMsgs,
+          };
         });
 
         const labelMap: Record<string, string> = {};

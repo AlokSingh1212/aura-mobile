@@ -156,13 +156,13 @@ export function ChatActiveConversation(props: ChatActiveConversationProps) {
       style={[styles.dmSlidePanel, { top: 0, bottom: 0, left: 0, right: 0, zIndex: 3000, transform: [{ translateX: chatTranslateX }] }]}
       {...panHandlers}
     >
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-      >
-        <SafeAreaView style={[styles.dmSafeArea, { paddingBottom: Math.max(insets.bottom, 6) }]}>
-            {/* Chat header */}
+      <SafeAreaView style={[styles.dmSafeArea, { flex: 1, paddingBottom: Platform.OS === "ios" ? Math.max(insets.bottom, 4) : 0 }]}>
+        <KeyboardAvoidingView 
+          style={{ flex: 1 }} 
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        >
+          {/* Chat header */}
             <View style={styles.dmHeaderRow}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <TouchableOpacity onPress={() => closeActiveChat()}>
@@ -439,8 +439,6 @@ export function ChatActiveConversation(props: ChatActiveConversationProps) {
                 )}
               </View>
             </View>
-          </SafeAreaView>
-         </KeyboardAvoidingView>
 
           <ChatAttachMenuSheet
             visible={showAttachMenu}
@@ -504,6 +502,8 @@ export function ChatActiveConversation(props: ChatActiveConversationProps) {
             onFlip={handleCoinFlipPress}
             onViewProfile={handleViewTargetProfile}
           />
-        </Animated.View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Animated.View>
   );
 }
