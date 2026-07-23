@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_HOST } from "@/constants/api";
@@ -58,33 +58,36 @@ export function useChatConversations({
   const [mutedThreadIds, setMutedThreadIds] = useState<string[]>([]);
 
   useEffect(() => {
-    AsyncStorage.getItem("@pinned_threads").then((val) => {
+    if (!activeProfile?.id) return;
+    AsyncStorage.getItem(`@pinned_threads_${activeProfile.id}`).then((val) => {
       if (val) setPinnedThreadIds(JSON.parse(val));
     }).catch(() => {});
-    AsyncStorage.getItem("@muted_threads").then((val) => {
+    AsyncStorage.getItem(`@muted_threads_${activeProfile.id}`).then((val) => {
       if (val) setMutedThreadIds(JSON.parse(val));
     }).catch(() => {});
-  }, []);
+  }, [activeProfile?.id]);
 
   const handleTogglePin = useCallback((thread: any) => {
+    if (!activeProfile?.id) return;
     setPinnedThreadIds((prev) => {
       const next = prev.includes(thread.id)
         ? prev.filter((id) => id !== thread.id)
         : [...prev, thread.id];
-      AsyncStorage.setItem("@pinned_threads", JSON.stringify(next)).catch(() => {});
+      AsyncStorage.setItem(`@pinned_threads_${activeProfile.id}`, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [activeProfile?.id]);
 
   const handleToggleMute = useCallback((thread: any) => {
+    if (!activeProfile?.id) return;
     setMutedThreadIds((prev) => {
       const next = prev.includes(thread.id)
         ? prev.filter((id) => id !== thread.id)
         : [...prev, thread.id];
-      AsyncStorage.setItem("@muted_threads", JSON.stringify(next)).catch(() => {});
+      AsyncStorage.setItem(`@muted_threads_${activeProfile.id}`, JSON.stringify(next)).catch(() => {});
       return next;
     });
-  }, []);
+  }, [activeProfile?.id]);
 
   const handleToggleUnread = useCallback((thread: any) => {
     setConversations((prev) =>
@@ -194,8 +197,17 @@ export function useChatConversations({
           }
 
           // Preserve pending optimistic messages that have not landed in backend yet
-          const pendingOptimistic = prevMsgs.filter((m: any) => m.id?.startsWith("tmp_") || m.id?.startsWith("c_"));
-          const mergedMsgs = [...newMsgs];
+          const pendingOptimistic = prevMsgs.filter((m: any) => m.id?.startsWith("tmp_") || m.id?.startsWith("c_") || m.id?.startsWith("m_"));
+          let mergedMsgs = [...newMsgs];
+          
+          if (isBackground && prevMsgs.length > newMsgs.length) {
+            const newMsgIds = new Set(newMsgs.map((m: any) => m.id));
+            const oldMsgsToKeep = prevMsgs.filter((m: any) => 
+              !newMsgIds.has(m.id) && !m.id?.startsWith("tmp_") && !m.id?.startsWith("c_") && !m.id?.startsWith("m_")
+            );
+            mergedMsgs = [...oldMsgsToKeep, ...newMsgs];
+          }
+
           pendingOptimistic.forEach((om: any) => {
             if (!mergedMsgs.some((m: any) => m.text === om.text)) {
               mergedMsgs.push(om);
@@ -443,8 +455,19 @@ export function useChatConversations({
     return () => clearInterval(pollInterval);
   }, [visible, isSeller, sellerMaisonId, currentUserId, fetchChats]);
 
+  const prevConvoIdsRef = useRef<string>("");
+  const currentConvoIds = conversations.map((c: any) => c.id).sort().join(",");
+  const [stableConvoIds, setStableConvoIds] = useState(currentConvoIds);
+
   useEffect(() => {
-    if (!visible || conversations.length === 0) return;
+    if (prevConvoIdsRef.current !== currentConvoIds) {
+      prevConvoIdsRef.current = currentConvoIds;
+      setStableConvoIds(currentConvoIds);
+    }
+  }, [currentConvoIds]);
+
+  useEffect(() => {
+    if (!visible || stableConvoIds.length === 0) return;
 
     let pusher: any = null;
     const activeChannels: any[] = [];
@@ -457,8 +480,9 @@ export function useChatConversations({
         forceTLS: true,
       });
 
-      conversations.forEach((convo: any) => {
-        const channelName = `conversation-${convo.id}`;
+      stableConvoIds.split(",").forEach((convoId: string) => {
+        if (!convoId) return;
+        const channelName = `conversation-${convoId}`;
         const channel = pusher.subscribe(channelName);
         activeChannels.push({ channel, name: channelName });
 
@@ -526,7 +550,7 @@ export function useChatConversations({
     };
   }, [
     visible,
-    conversations.map((c: any) => c.id).join(","),
+    stableConvoIds,
     isSeller,
     activeMaisonId,
     currentUserId,

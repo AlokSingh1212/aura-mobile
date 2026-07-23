@@ -5,6 +5,7 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import { SafeVideoPlayer } from "@/components/SafeVideoPlayer";
 import { isReelVideoUrl } from "@/lib/reelMedia";
 import { Avatar } from "@/components/ui/Avatar";
+import { PostActionRow } from "@/components/post/PostActionRow";
 
 export interface HomeCreatorCommerceCardProps {
   item: any;
@@ -20,6 +21,17 @@ export interface HomeCreatorCommerceCardProps {
   shouldPlayVideo?: boolean;
   mountVideo?: boolean;
   isScreenFocused?: boolean;
+  isLiked?: boolean;
+  isSaved?: boolean;
+  likesCount?: number;
+  commentsCount?: number;
+  sharesCount?: number;
+  repostsCount?: number;
+  onLike?: () => void;
+  onComment?: () => void;
+  onShare?: () => void;
+  onReshare?: () => void;
+  onSave?: () => void;
 }
 
 export const HomeCreatorCommerceCard: React.FC<HomeCreatorCommerceCardProps> = ({
@@ -36,6 +48,17 @@ export const HomeCreatorCommerceCard: React.FC<HomeCreatorCommerceCardProps> = (
   shouldPlayVideo = false,
   mountVideo = false,
   isScreenFocused = true,
+  isLiked = false,
+  isSaved = false,
+  likesCount = 0,
+  commentsCount = 0,
+  sharesCount = 0,
+  repostsCount = 0,
+  onLike,
+  onComment,
+  onShare,
+  onReshare,
+  onSave,
 }) => {
   const prod = item.product || {};
   const video = item.content?.videoUrl || item.content?.mediaUrl || "";
@@ -177,32 +200,50 @@ export const HomeCreatorCommerceCard: React.FC<HomeCreatorCommerceCardProps> = (
           {caption}
         </Text>
 
-        <TouchableOpacity
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            backgroundColor: "#F5F5F7",
-            borderWidth: 1,
-            borderColor: "#EAEAEA",
-            borderRadius: 14,
-            padding: 10,
-            marginTop: 12,
-          }}
-          onPress={() => {
-            triggerHaptic("medium");
-            setSelectedProductForPreview(prod);
-            setPreviewFeedItemId(item.id);
-            setPreviewSheetVisible(true);
-          }}
-        >
-          <Image source={{ uri: prod.images?.[0] }} style={{ width: 44, height: 44, borderRadius: 8 }} />
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={{ fontSize: 12, fontWeight: "bold", color: "#8E8E93", textTransform: "uppercase" }}>FEATURED PRODUCT</Text>
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#111111", marginTop: 2 }}>{prod.name}</Text>
-          </View>
-          <Text style={{ fontSize: 13, fontWeight: "bold", color: "#111111", marginRight: 8 }}>{formatPrice(prod.price)}</Text>
-          <Lucide name="chevron-forward" size={16} color="#111111" />
-        </TouchableOpacity>
+        {prod?.id || prod?.name ? (
+          <TouchableOpacity
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: "#F5F5F7",
+              borderWidth: 1,
+              borderColor: "#EAEAEA",
+              borderRadius: 14,
+              padding: 10,
+              marginTop: 12,
+            }}
+            onPress={() => {
+              triggerHaptic("medium");
+              setSelectedProductForPreview(prod);
+              setPreviewFeedItemId(item.id);
+              setPreviewSheetVisible(true);
+            }}
+          >
+            <Image source={{ uri: prod.images?.[0] }} style={{ width: 44, height: 44, borderRadius: 8 }} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: "bold", color: "#8E8E93", textTransform: "uppercase" }}>FEATURED PRODUCT</Text>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: "#111111", marginTop: 2 }}>{prod.name}</Text>
+            </View>
+            <Text style={{ fontSize: 13, fontWeight: "bold", color: "#111111", marginRight: 8 }}>{formatPrice(prod.price)}</Text>
+            <Lucide name="chevron-forward" size={16} color="#111111" />
+          </TouchableOpacity>
+        ) : null}
+
+        <View style={{ marginTop: 12 }}>
+          <PostActionRow
+            isLiked={isLiked}
+            isSaved={isSaved}
+            likesCount={likesCount}
+            commentsCount={commentsCount}
+            sharesCount={sharesCount}
+            repostsCount={repostsCount}
+            onLike={onLike || (() => {})}
+            onComment={onComment || (() => {})}
+            onShare={onShare || (() => {})}
+            onReshare={onReshare || (() => {})}
+            onSave={onSave || (() => {})}
+          />
+        </View>
       </View>
     </View>
   );

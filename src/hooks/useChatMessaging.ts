@@ -9,6 +9,7 @@ import { cacheConversations, addPendingAction } from "@/utils/localDb";
 import { isConversationBlocked } from "@/lib/feedSocialFilter";
 import { reactToMessage, resolveChatScope } from "@/lib/chatEnhancements";
 import { authHeaders } from "@/lib/apiClient";
+import { useStore } from "@/store/useStore";
 
 export const CHAT_REACTION_EMOJIS = ["❤️", "😂", "😮", "😢", "👏"];
 
@@ -63,6 +64,8 @@ export function useChatMessaging({
   const [isTypingSent, setIsTypingSent] = useState(false);
   const typingTimeoutRef = useRef<any>(null);
   const isSendingMessageRef = useRef(false);
+  
+  const { activeProfile } = useStore();
 
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [sharingProductsList, setSharingProductsList] = useState(false);
@@ -107,8 +110,8 @@ export function useChatMessaging({
       }
       throw new Error(data.error || "Upload failed");
     } catch (e) {
-      console.warn("Image upload failed, falling back to local URI:", e);
-      return localUri;
+      console.warn("Image upload failed:", e);
+      throw e;
     }
   };
 
@@ -138,8 +141,8 @@ export function useChatMessaging({
       }
       throw new Error(data.error || "Upload failed");
     } catch (e) {
-      console.warn("Audio upload failed, falling back to local URI:", e);
-      return localUri;
+      console.warn("Audio upload failed:", e);
+      throw e;
     }
   };
 
@@ -147,7 +150,9 @@ export function useChatMessaging({
     attachType: "IMAGE" | "LOCATION" | "PRODUCT" | "AUDIO" | "GIF",
     content: string
   ) => {
+    if (isSendingMessageRef.current) return;
     if (!activeChat) return;
+    isSendingMessageRef.current = true;
     const currentSenderName = resolveChatSenderName(isSeller, activeMaisonId, currentUser);
     const formattedContent = `[ATTACHMENT:${attachType}]${content}`;
     const preview = attachmentPreview(attachType);
@@ -187,6 +192,7 @@ export function useChatMessaging({
           content: formattedContent,
           type: activeChat.type || "MAISON",
           isAdmin: isSeller,
+          profileId: activeProfile?.id || null,
         }),
       });
       const data = await res.json();
@@ -199,6 +205,8 @@ export function useChatMessaging({
       }
     } catch (err) {
       console.warn("Failed to dispatch attachment message:", err);
+    } finally {
+      isSendingMessageRef.current = false;
     }
   };
 
@@ -540,6 +548,7 @@ export function useChatMessaging({
           content: textToSend,
           type: activeChat.type || "MAISON",
           isAdmin: isSeller,
+          profileId: activeProfile?.id || null,
         }),
       });
       const data = await res.json();

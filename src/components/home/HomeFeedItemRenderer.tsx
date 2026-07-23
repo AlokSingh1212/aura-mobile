@@ -365,6 +365,12 @@ function HomeFeedItemRendererInner({ item, index, ctx }: HomeFeedItemRendererPro
   }
 
   if (item.type === "CREATOR_COMMERCE") {
+    const likesCount = ctx.likeCounts[item.id] ?? item.content?.likesCount ?? 0;
+    const commentsCount =
+      ctx.commentCounts[item.id] ?? ctx.postComments[item.id]?.length ?? item.content?.commentsCount ?? 0;
+    const sharesCount = ctx.shareCounts[item.id] ?? item.content?.sharesCount ?? 0;
+    const repostsCount = ctx.repostCounts[item.id] ?? item.content?.repostsCount ?? item.repostsCount ?? 0;
+
     return (
       <HomeCreatorCommerceCard
         item={item}
@@ -380,6 +386,17 @@ function HomeFeedItemRendererInner({ item, index, ctx }: HomeFeedItemRendererPro
         shouldPlayVideo={shouldPlayHomeVideo}
         mountVideo={mountHomeVideo}
         isScreenFocused={ctx.isScreenFocused}
+        isLiked={isLiked}
+        isSaved={isSaved}
+        likesCount={likesCount}
+        commentsCount={commentsCount}
+        sharesCount={sharesCount}
+        repostsCount={repostsCount}
+        onLike={() => ctx.handleLikePress(item.id)}
+        onComment={() => ctx.handleCommentsPress(item)}
+        onShare={() => ctx.handleShare(item)}
+        onReshare={() => ctx.handleReshare(item)}
+        onSave={() => ctx.handleFeedItemSave(item.id)}
       />
     );
   }

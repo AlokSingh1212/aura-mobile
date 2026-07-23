@@ -13,6 +13,7 @@ import { CaptionText } from "@/components/CaptionText";
 import { homeModalStyles as modalStyles } from "@/components/home/homeModalStyles";
 import { useA11yProps } from "@/hooks/useA11yProps";
 import { Avatar } from "@/components/ui/Avatar";
+import { useStore } from "@/store/useStore";
 
 type ReplyTarget = { commentId: string; username: string } | null;
 
@@ -64,6 +65,10 @@ export function HomeFeedCommentsModal({
   setExpandedComments,
 }: HomeFeedCommentsModalProps) {
   const { a11yProps } = useA11yProps();
+  const { activeProfile, currentUser } = useStore();
+  const avatarUri = activeProfile?.avatar || activeProfile?.logo || currentUser?.avatar || null;
+  const avatarInitial = (activeProfile?.name || currentUser?.name || "A")[0]?.toUpperCase();
+
   if (!targetPost) return null;
   return (
       
@@ -321,11 +326,7 @@ export function HomeFeedCommentsModal({
                                     onPress={() => onOpenProfile(reply.username)}
                                     activeOpacity={0.85}
                                   >
-                                    <View style={[modalStyles.commentAvatar, { width: 24, height: 24, borderRadius: 12, backgroundColor: "#3b82f6" }]}>
-                                      <Text style={[modalStyles.commentAvatarText, { fontSize: 10 }]}>
-                                        {reply.username[0]?.toUpperCase()}
-                                      </Text>
-                                    </View>
+                                    <Avatar uri={reply.avatar || reply.userAvatar || reply.profilePic} name={reply.username} size={24} />
                                   </TouchableOpacity>
                                   <View style={{ flex: 1 }}>
                                     <TouchableOpacity 
@@ -428,9 +429,7 @@ export function HomeFeedCommentsModal({
 
               {/* Bottom text input row */}
               <View style={[modalStyles.commentsInputRow, { paddingBottom: bottomInset + 8 }]}>
-                <View style={[modalStyles.commentAvatar, { width: 32, height: 32, borderRadius: 16 }]}>
-                  <Text style={[modalStyles.commentAvatarText, { fontSize: 13.5 }]}>A</Text>
-                </View>
+                <Avatar uri={avatarUri} name={avatarInitial} size={32} />
                 
                 <TextInput
                   ref={commentInputRef}
