@@ -150,7 +150,9 @@ export async function fetchProfileNetwork(
   const params = new URLSearchParams({ profileId, type });
   if (viewerProfileId) params.set("viewerProfileId", viewerProfileId);
 
-  const res = await fetch(`${API_HOST}/api/mobile/profile/network?${params}`);
+  const res = await fetch(`${API_HOST}/api/mobile/profile/network?${params}`, {
+    headers: authHeaders(),
+  });
   const data = await res.json();
   if (data.success && Array.isArray(data.profiles)) {
     return data.profiles.map(

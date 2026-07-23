@@ -23,11 +23,12 @@ export function useProfileNetwork({
   const [shareSearch, setShareSearch] = useState("");
 
   const loadNetworkList = useCallback(
-    async (tab: "followers" | "following") => {
-      if (!activeProfile?.id) return;
+    async (tab: "followers" | "following", targetProfileId?: string) => {
+      const targetId = targetProfileId || activeProfile?.id;
+      if (!targetId) return;
       setLoadingNetwork(true);
       try {
-        const list = await fetchProfileNetwork(activeProfile.id, tab, activeProfile.id);
+        const list = await fetchProfileNetwork(targetId, tab, activeProfile?.id);
         setNetworkUsers(list);
       } catch (e) {
         console.warn("Could not load profile network.", e);
