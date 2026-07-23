@@ -237,9 +237,11 @@ export async function deleteProfilePost(
 export interface PostComment {
   id: string;
   username: string;
+  avatar?: string | null;
   text: string;
   time: string;
   userId?: string;
+  parentId?: string;
 }
 
 export async function fetchPostComments(postId: string): Promise<PostComment[]> {

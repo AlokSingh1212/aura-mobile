@@ -108,9 +108,11 @@ export function useHomeFeedEngagement({
     triggerHaptic("success");
     const postId = commentsTargetPost.id;
     const username = activeProfile?.username || currentUser.email?.split("@")[0] || "you";
+    const userAvatar = activeProfile?.avatar || activeProfile?.logo || currentUser?.avatar || currentUser?.photoURL || null;
     const optimistic = {
       id: `c_${Date.now()}`,
       username,
+      avatar: userAvatar,
       text: moderation.cleanText,
       time: "now",
       parentId: replyingTo ? replyingTo.commentId : undefined,
@@ -124,9 +126,13 @@ export function useHomeFeedEngagement({
     setReplyingTo(null);
     const result = await addPostComment(postId, currentUser.id, text);
     if (result.success && result.comment) {
+      const savedComment = {
+        ...result.comment,
+        avatar: result.comment.avatar || userAvatar,
+      };
       setPostComments((prev) => ({
         ...prev,
-        [postId]: (prev[postId] || []).filter((c) => c.id !== optimistic.id).concat(result.comment),
+        [postId]: (prev[postId] || []).filter((c) => c.id !== optimistic.id).concat(savedComment),
       }));
       setCommentCounts((prev) => ({
         ...prev,

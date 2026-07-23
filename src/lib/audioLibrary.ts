@@ -1,5 +1,6 @@
 import { API_HOST } from "@/constants/api";
 import { AUDIO_LIBRARY } from "@/constants/audio";
+import { authHeaders } from "@/lib/apiClient";
 
 export type AudioTrack = {
   id: string;
@@ -47,15 +48,18 @@ export async function fetchAudioCatalog(opts?: {
     if (opts?.q) params.set("q", opts.q);
     if (opts?.category && opts.category !== "all") params.set("category", opts.category);
 
-    const res = await fetch(`${API_HOST}/api/mobile/media/audio?${params.toString()}`);
+    const res = await fetch(`${API_HOST}/api/mobile/media/audio?${params.toString()}`, {
+      headers: authHeaders(),
+    });
     const data = await res.json();
     if (data.success && Array.isArray(data.tracks) && data.tracks.length > 0) {
       const playable = data.tracks.filter(
         (t: AudioTrack) =>
           typeof t.url === "string" &&
-          (t.url.includes("soundhelix.com") || t.url.includes("aisastra.com") || t.url.endsWith(".mp3") || t.url.endsWith(".m4a") || t.url.endsWith(".wav"))
+          t.url.trim().length > 0 &&
+          (t.url.startsWith("http://") || t.url.startsWith("https://"))
       );
-      const tracks = playable.length > 0 ? playable : data.tracks.slice(0, 10);
+      const tracks = playable.length > 0 ? playable : data.tracks;
       if (!opts?.q && !opts?.category) {
         cachedTracks = tracks;
         cacheTime = now;

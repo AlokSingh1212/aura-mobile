@@ -267,9 +267,11 @@ export function usePostEngagement(opts?: {
         return;
       }
 
+      const userAvatar = activeProfile?.avatar || activeProfile?.logo || currentUser?.avatar || currentUser?.photoURL || null;
       const optimistic: PostComment = {
         id: `tmp_${Date.now()}`,
         username: activeProfile?.username || currentUser.email?.split("@")[0] || "you",
+        avatar: userAvatar,
         text: text.trim(),
         time: "now",
         userId: currentUser.id,
@@ -282,11 +284,15 @@ export function usePostEngagement(opts?: {
 
       const result = await addPostComment(postId, currentUser.id, text.trim());
       if (result.success && result.comment) {
+        const savedComment = {
+          ...result.comment,
+          avatar: result.comment.avatar || userAvatar,
+        };
         setPostComments((prev) => ({
           ...prev,
           [postId]: (prev[postId] || [])
             .filter((c) => c.id !== optimistic.id)
-            .concat(result.comment!),
+            .concat(savedComment),
         }));
         setCommentCounts((prev) => ({
           ...prev,
