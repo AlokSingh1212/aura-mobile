@@ -70,7 +70,7 @@ export function ProfileSwitcherModal({
 
           <TouchableOpacity style={styles.addBrandBtn} onPress={onAddBrandProfile}>
             <Lucide name="add-circle-outline" size={22} color="#00f5ff" />
-            <Text style={styles.addBrandBtnText}>Add brand profile</Text>
+            <Text style={styles.addBrandBtnText}>Add new profile</Text>
           </TouchableOpacity>
         </View>
       </View>
