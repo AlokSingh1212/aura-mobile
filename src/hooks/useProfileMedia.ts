@@ -302,6 +302,12 @@ export function useProfileMedia({
 
   const handleLaunchMediaPicker = async (mode: MediaPickMode) => {
     triggerHaptic("medium");
+    if ((mode as string) === "remove_avatar") {
+      setLogo(null);
+      setEditLogo(null);
+      patchActiveProfile({ logo: null });
+      return;
+    }
     setIsOpeningPicker(true);
     try {
       const asset = await pickMediaFromLibrary(mode);

@@ -146,6 +146,11 @@ export function useProfileCreateActions({
         onPress: () => handleLaunchMediaPicker("avatar"),
       },
       {
+        text: "Remove current photo",
+        style: "destructive",
+        onPress: () => handleLaunchMediaPicker("remove_avatar" as any),
+      },
+      {
         text: "Add story from gallery",
         onPress: () => router.push("/create/story"),
       },

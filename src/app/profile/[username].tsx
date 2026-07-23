@@ -1675,21 +1675,25 @@ export default function ViewProfileScreen() {
                 shadowRadius: 24,
                 overflow: "hidden"
               }}>
-                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={() => handlePickAvatar(false)} style={{ padding: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
+                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={() => handlePickAvatar(false)} style={{ padding: 18, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
                    <Text style={{ fontSize: 16, fontWeight: "500", color: "#000" }}>Choose from library</Text>
                    <Lucide name="image-outline" size={20} color="#000" />
                  </TouchableOpacity>
-                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={() => { triggerHaptic("light"); Alert.alert("Facebook Import", "Integration not yet configured."); setShowAvatarOverlay(false); }} style={{ padding: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
+                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={() => { triggerHaptic("light"); Alert.alert("Facebook Import", "Integration not yet configured."); setShowAvatarOverlay(false); }} style={{ padding: 18, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
                    <Text style={{ fontSize: 16, fontWeight: "500", color: "#000" }}>Import from Facebook</Text>
                    <Lucide name="logo-facebook" size={20} color="#000" />
                  </TouchableOpacity>
-                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={() => handlePickAvatar(true)} style={{ padding: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
+                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={() => handlePickAvatar(true)} style={{ padding: 18, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
                    <Text style={{ fontSize: 16, fontWeight: "500", color: "#000" }}>Take photo</Text>
                    <Lucide name="camera-outline" size={20} color="#000" />
                  </TouchableOpacity>
-                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={handleDeleteAvatar} style={{ padding: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                   <Text style={{ fontSize: 16, fontWeight: "500", color: "#ff3b30" }}>Delete</Text>
+                 <TouchableOpacity disabled={isUpdatingAvatar} onPress={handleDeleteAvatar} style={{ padding: 18, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" }}>
+                   <Text style={{ fontSize: 16, fontWeight: "500", color: "#ff3b30" }}>Remove profile photo</Text>
                    <Lucide name="trash-outline" size={20} color="#ff3b30" />
+                 </TouchableOpacity>
+                 <TouchableOpacity onPress={() => { triggerHaptic("light"); setShowEditAvatarMenu(false); }} style={{ padding: 18, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                   <Text style={{ fontSize: 16, fontWeight: "600", color: "#007aff" }}>Cancel</Text>
+                   <Lucide name="close-circle-outline" size={20} color="#007aff" />
                  </TouchableOpacity>
               </View>
             )}

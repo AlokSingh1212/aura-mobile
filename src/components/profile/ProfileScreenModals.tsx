@@ -50,6 +50,7 @@ export type ProfileScreenModalsProps = {
   isSavingProfile: boolean;
   handleSaveProfile: () => void;
   handleAvatarPress: () => void;
+  handleDeleteAvatar?: () => void;
   setEditUsername: (v: string) => void;
   setEditProfileName: (v: string) => void;
   setEditCategory: (v: string) => void;
@@ -202,6 +203,7 @@ export function ProfileScreenModals({
   isSavingProfile,
   handleSaveProfile,
   handleAvatarPress,
+  handleDeleteAvatar,
   setEditUsername,
   setEditProfileName,
   setEditCategory,
@@ -361,6 +363,7 @@ export function ProfileScreenModals({
         onClose={() => setShowEditModal(false)}
         onSave={handleSaveProfile}
         onAvatarPress={handleAvatarPress}
+        onRemoveAvatar={handleDeleteAvatar}
         setEditUsername={setEditUsername}
         setEditProfileName={setEditProfileName}
         setEditCategory={setEditCategory}

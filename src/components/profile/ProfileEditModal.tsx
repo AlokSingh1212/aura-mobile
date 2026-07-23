@@ -27,6 +27,7 @@ type ProfileEditModalProps = {
   onClose: () => void;
   onSave: () => void;
   onAvatarPress: () => void;
+  onRemoveAvatar?: () => void;
   setEditUsername: (v: string) => void;
   setEditProfileName: (v: string) => void;
   setEditCategory: (v: string) => void;
@@ -50,6 +51,7 @@ export function ProfileEditModal({
   onClose,
   onSave,
   onAvatarPress,
+  onRemoveAvatar,
   setEditUsername,
   setEditProfileName,
   setEditCategory,
@@ -82,9 +84,16 @@ export function ProfileEditModal({
                 <Text style={styles.editModalAvatarText}>{profileName[0]?.toUpperCase() || "R"}</Text>
               )}
             </View>
-            <TouchableOpacity onPress={onAvatarPress}>
-              <Text style={styles.editModalChangeAvatarText}>Change profile photo</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
+              <TouchableOpacity onPress={onAvatarPress}>
+                <Text style={styles.editModalChangeAvatarText}>Change profile photo</Text>
+              </TouchableOpacity>
+              {logo ? (
+                <TouchableOpacity onPress={onRemoveAvatar || onAvatarPress}>
+                  <Text style={[styles.editModalChangeAvatarText, { color: "#ff3b30" }]}>Remove photo</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
 
           <View style={styles.inputGroup}>
