@@ -1,5 +1,5 @@
 import React from "react";
-import { Modal, View, Text, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { Modal, View, Text, TouchableOpacity, ScrollView, Alert, Image } from "react-native";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { homeSwitcherStyles as styles } from "@/components/home/homeSwitcherStyles";
 
@@ -10,6 +10,8 @@ type UserProfile = {
   type?: string;
   category?: string;
   isPrivate?: boolean;
+  logo?: string | null;
+  avatar?: string | null;
 };
 
 type HomeProfileSwitcherModalProps = {
@@ -71,6 +73,8 @@ export function HomeProfileSwitcherModal({
                   bgOverlay = "rgba(251, 146, 60, 0.08)";
                 }
 
+                const avatarUri = p.logo || p.avatar || null;
+
                 return (
                   <TouchableOpacity
                     key={p.id}
@@ -88,8 +92,12 @@ export function HomeProfileSwitcherModal({
                       }
                     }}
                   >
-                    <View style={[styles.profileIconCircle, { backgroundColor: bgOverlay }]}>
-                      <Lucide name={profileIcon as any} size={22} color={iconColor} />
+                    <View style={[styles.profileIconCircle, { backgroundColor: bgOverlay, overflow: "hidden" }]}>
+                      {avatarUri ? (
+                        <Image source={{ uri: avatarUri }} style={{ width: "100%", height: "100%" }} />
+                      ) : (
+                        <Lucide name={profileIcon as any} size={22} color={iconColor} />
+                      )}
                     </View>
                     <View style={styles.profileTextBlock}>
                       <Text style={styles.profileNameText}>{p.name}</Text>

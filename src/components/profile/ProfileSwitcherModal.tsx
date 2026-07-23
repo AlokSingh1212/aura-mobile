@@ -1,5 +1,5 @@
 import React from "react";
-import { Modal, View, Text, TouchableOpacity, ScrollView, Pressable, StyleSheet } from "react-native";
+import { Modal, View, Text, TouchableOpacity, ScrollView, Pressable, StyleSheet, Image } from "react-native";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { profileModalStyles as styles } from "@/components/profile/profileModalStyles";
 
@@ -8,6 +8,8 @@ type UserProfile = {
   name?: string;
   username?: string;
   category?: string;
+  logo?: string | null;
+  avatar?: string | null;
 };
 
 type ProfileSwitcherModalProps = {
@@ -38,6 +40,7 @@ export function ProfileSwitcherModal({
           <ScrollView style={styles.switcherList} showsVerticalScrollIndicator={false}>
             {userProfiles.map((m) => {
               const isActive = m.id === activeProfileId;
+              const avatarUri = m.logo || m.avatar;
               const initials = m.name
                 ? m.name.substring(0, 2).toUpperCase()
                 : (m.username || "").substring(0, 2).toUpperCase();
@@ -48,8 +51,12 @@ export function ProfileSwitcherModal({
                   style={[styles.switcherItem, isActive && styles.switcherItemActive]}
                   onPress={() => onSwitchProfile(m.id)}
                 >
-                  <View style={[styles.switcherAvatar, isActive && styles.switcherAvatarActive]}>
-                    <Text style={styles.switcherAvatarText}>{initials}</Text>
+                  <View style={[styles.switcherAvatar, isActive && styles.switcherAvatarActive, { overflow: "hidden" }]}>
+                    {avatarUri ? (
+                      <Image source={{ uri: avatarUri }} style={{ width: "100%", height: "100%" }} />
+                    ) : (
+                      <Text style={styles.switcherAvatarText}>{initials}</Text>
+                    )}
                   </View>
                   <View style={styles.switcherInfo}>
                     <Text style={styles.switcherMaisonId}>@{m.username}</Text>
