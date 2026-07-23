@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Text, StyleSheet } from "react-native";
+import { Text, StyleSheet, Alert } from "react-native";
 import { router } from "expo-router";
 import {
   IgSettingsScreen,
@@ -16,7 +16,7 @@ import { useStore } from "@/store/useStore";
 import { IG } from "@/theme/settingsTheme";
 
 export default function SettingsHubScreen() {
-  const { triggerHaptic, currentUser, activeProfile } = useStore();
+  const { triggerHaptic, currentUser, activeProfile, authLogOut } = useStore();
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => filterSettingsMenu(query), [query]);
@@ -29,6 +29,25 @@ export default function SettingsHubScreen() {
   const open = (route: string) => {
     triggerHaptic("light");
     router.push(route as any);
+  };
+
+  const handleLogOut = () => {
+    triggerHaptic("medium");
+    Alert.alert(
+      "Log Out",
+      `Are you sure you want to log out of @${activeProfile?.username || currentUser?.username || "your account"}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: () => {
+            authLogOut();
+            router.replace("/(auth)/login" as any);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -67,6 +86,39 @@ export default function SettingsHubScreen() {
           <IgDivider />
         </React.Fragment>
       ))}
+
+      {/* —— Login & Account Actions (Instagram-style) —— */}
+      <IgSectionTitle>Login & Sessions</IgSectionTitle>
+      <IgRow
+        label={`Log out @${activeProfile?.username || currentUser?.username || "account"}`}
+        danger
+        onPress={handleLogOut}
+      />
+      <IgRow
+        label="Log out all accounts"
+        danger
+        last
+        onPress={() => {
+          triggerHaptic("heavy");
+          Alert.alert(
+            "Log Out All Accounts",
+            "This will clear all saved sessions from this device. You will need to log back in.",
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Log Out All",
+                style: "destructive",
+                onPress: () => {
+                  authLogOut();
+                  router.replace("/(auth)/login" as any);
+                },
+              },
+            ]
+          );
+        }}
+      />
+
+      <IgDivider />
 
       {filtered.length === 0 ? (
         <Text style={styles.empty}>No settings match "{query}"</Text>
