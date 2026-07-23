@@ -9,7 +9,7 @@ import {
   Platform,
   Animated,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Lucide from "@expo/vector-icons/Ionicons";
 import { chatDrawerStyles as styles } from "@/components/chat/chatDrawerStyles";
 import { CHAT_CONVERSATION_LABELS } from "@/components/chat/ChatPersonalInbox";
@@ -149,17 +149,19 @@ export function ChatActiveConversation(props: ChatActiveConversationProps) {
     callRemoteUid,
   } = props;
 
+  const insets = useSafeAreaInsets();
+
   return (
-        <Animated.View 
-          style={[styles.dmSlidePanel, { top: 0, bottom: 0, left: 0, right: 0, zIndex: 3000, transform: [{ translateX: chatTranslateX }] }]}
-          {...panHandlers}
-        >
-          <KeyboardAvoidingView 
-            style={{ flex: 1 }} 
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-          >
-            <SafeAreaView style={styles.dmSafeArea}>
+    <Animated.View 
+      style={[styles.dmSlidePanel, { top: 0, bottom: 0, left: 0, right: 0, zIndex: 3000, transform: [{ translateX: chatTranslateX }] }]}
+      {...panHandlers}
+    >
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+      >
+        <SafeAreaView style={[styles.dmSafeArea, { paddingBottom: Math.max(insets.bottom, 6) }]}>
             {/* Chat header */}
             <View style={styles.dmHeaderRow}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>

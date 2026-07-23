@@ -20,8 +20,8 @@ export function Avatar({ uri, name, size = 36, style }: AvatarProps) {
     ...style,
   };
 
-  if (uri && !uri.includes("images.unsplash.com")) {
-    return <Image source={{ uri }} style={containerStyle as any} />;
+  if (uri && uri.trim().length > 0) {
+    return <Image source={{ uri: uri.trim() }} style={containerStyle as any} />;
   }
 
   const initial = name ? name.charAt(0).toUpperCase() : "?";

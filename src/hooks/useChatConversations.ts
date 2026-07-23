@@ -127,8 +127,13 @@ export function useChatConversations({
       setLoadingChats(true);
     }
     try {
+      const activeProfileId = activeProfile?.id || "";
+      const activeProfileType = activeProfile?.type || "PERSONAL";
+      const effectiveMaisonId = activeProfile?.maisonId || activeProfile?.username || activeMaisonId || sellerMaisonId || "";
+      const effectiveSellerMode = isSeller || activeProfileType === "BUSINESS" || !!activeProfile?.maisonId;
+
       const res = await fetch(
-        `${API_HOST}/api/mobile/chat?userId=${currentUserId}&maisonId=${isSeller ? sellerMaisonId : activeMaisonId}&mode=${isSeller ? "seller" : "buyer"}`,
+        `${API_HOST}/api/mobile/chat?userId=${currentUserId}&profileId=${activeProfileId}&maisonId=${effectiveMaisonId}&mode=${effectiveSellerMode ? "seller" : "buyer"}`,
         { headers: authHeaders() }
       );
       const data = await res.json();
