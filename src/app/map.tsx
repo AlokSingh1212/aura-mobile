@@ -20,6 +20,8 @@ import * as Location from "expo-location";
 import { API_HOST } from "@/constants/api";
 import { useStore } from "@/store/useStore";
 import { authHeaders } from "@/lib/apiClient";
+import { HomeStoryViewerModal } from "@/components/home/HomeStoryViewerModal";
+import { useHomeStoryViewer } from "@/hooks/useHomeStoryViewer";
 
 const { width, height } = Dimensions.get("window");
 
@@ -45,13 +47,33 @@ export default function MapScreen() {
   const [noteText, setNoteText] = useState("");
   const [updatingNote, setUpdatingNote] = useState(false);
 
-  // Story/Video Viewer Modal State
-  const [viewingStory, setViewingStory] = useState<any>(null);
-
   // Map Click Explore State
   const [exploreCoords, setExploreCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [exploreData, setExploreData] = useState<{ reels: any[]; stories: any[] } | null>(null);
   const [loadingExplore, setLoadingExplore] = useState(false);
+
+  // Integrated Platform Story Viewer Hook
+  const {
+    selectedStoriesGroup,
+    setSelectedStoriesGroup,
+    activeSlideIndex,
+    storyProgress,
+    storyReplyText,
+    storyPaused,
+    activeSlideAddYours,
+    handleStoryNext,
+    handleStoryPrev,
+    setStoryPaused,
+    setStoryReplyText,
+    handleSendStoryReply,
+    handleStoryAddYours,
+    openStoryTemplateSheet,
+  } = useHomeStoryViewer({
+    activeInstaStories: exploreData?.stories || [],
+    currentUser,
+    activeProfile,
+    triggerHaptic: (style) => useStore.getState().triggerHaptic(style),
+  });
   
   useEffect(() => {
     requestLocationPermission();
@@ -208,10 +230,20 @@ export default function MapScreen() {
         if (isSelf) {
           setShowNoteModal(true);
         } else if (profile.stories && profile.stories.length > 0) {
-          setViewingStory({
-            url: profile.stories[0].url,
-            caption: profile.stories[0].caption,
-            isVideo: profile.stories[0].url.includes(".mp4") || profile.stories[0].url.includes("video"),
+          const slides = profile.stories.map((s: any, idx: number) => ({
+            id: s.id || `map-story-${idx}`,
+            url: s.url || s.mediaUrl,
+            mediaUrl: s.url || s.mediaUrl,
+            type: (s.url || s.mediaUrl || "").includes(".mp4") || (s.url || s.mediaUrl || "").includes("video") ? "video" : "image",
+            mediaType: (s.url || s.mediaUrl || "").includes(".mp4") || (s.url || s.mediaUrl || "").includes("video") ? "video" : "image",
+            caption: s.caption || profile.note || "",
+          }));
+
+          setSelectedStoriesGroup({
+            id: profile.id || profile.username,
+            username: profile.username || profile.name || "Aura User",
+            avatar: profile.avatar || profile.logo || "",
+            slides,
           });
         } else {
           Alert.alert(`@${profile.username}`, profile.note || "Active on Aura Map");
@@ -507,11 +539,23 @@ export default function MapScreen() {
                 <TouchableOpacity
                   key={reel.id}
                   style={localStyles.exploreItem}
-                  onPress={() => setViewingStory({
-                    url: reel.videoUrl,
-                    caption: reel.title,
-                    isVideo: true
-                  })}
+                  onPress={() => {
+                    setSelectedStoriesGroup({
+                      id: reel.id || reel.username,
+                      username: reel.username || "Aura Creator",
+                      avatar: reel.avatar || reel.logo || "",
+                      slides: [
+                        {
+                          id: reel.id,
+                          url: reel.videoUrl || reel.url,
+                          mediaUrl: reel.videoUrl || reel.url,
+                          type: "video",
+                          mediaType: "video",
+                          caption: reel.title || reel.caption || "",
+                        },
+                      ],
+                    });
+                  }}
                 >
                   <View style={[localStyles.exploreItemThumb, { backgroundColor: "#2C2C2E", justifyContent: "center", alignItems: "center" }]}>
                     <Text style={{ color: "#fff", fontSize: 24, fontWeight: "bold" }}>{reel.username?.[0]?.toUpperCase() || "?"}</Text>
@@ -529,11 +573,23 @@ export default function MapScreen() {
                 <TouchableOpacity
                   key={story.id}
                   style={localStyles.exploreItem}
-                  onPress={() => setViewingStory({
-                    url: story.url,
-                    caption: story.caption,
-                    isVideo: false
-                  })}
+                  onPress={() => {
+                    setSelectedStoriesGroup({
+                      id: story.id || story.username,
+                      username: story.username || "Aura User",
+                      avatar: story.avatar || story.logo || "",
+                      slides: [
+                        {
+                          id: story.id,
+                          url: story.url,
+                          mediaUrl: story.url,
+                          type: "image",
+                          mediaType: "image",
+                          caption: story.caption || "",
+                        },
+                      ],
+                    });
+                  }}
                 >
                   <Image source={{ uri: story.url }} style={localStyles.exploreItemThumb} />
                   <View style={localStyles.exploreItemLabel}>
@@ -629,58 +685,34 @@ export default function MapScreen() {
         </View>
       </Modal>
 
-      {/* Modal - Story & Video Viewer */}
-      <Modal
-        visible={viewingStory !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setViewingStory(null)}
-      >
-        <TouchableOpacity
-          style={localStyles.storyOverlay}
-          activeOpacity={1}
-          onPress={() => setViewingStory(null)}
-        >
-          <View style={localStyles.storyContent}>
-            {viewingStory && (
-              <>
-                <View style={localStyles.storyHeader}>
-                  <Text style={localStyles.storyCaption} numberOfLines={1}>
-                    {viewingStory.caption || "Aura Location Moment"}
-                  </Text>
-                  <TouchableOpacity onPress={() => setViewingStory(null)}>
-                    <Lucide name="close" size={28} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-                {viewingStory.isVideo ? (
-                  <View style={{ width: width, height: height * 0.7, backgroundColor: "#000", borderRadius: 16, overflow: "hidden" }}>
-                    <WebView
-                      style={{ flex: 1, backgroundColor: "#000" }}
-                      originWhitelist={["*"]}
-                      source={{
-                        html: `
-                          <!DOCTYPE html>
-                          <html>
-                          <body style="margin:0;padding:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;">
-                            <video src="${viewingStory.url}" autoplay loop playsinline controls style="max-width:100%;max-height:100%;object-fit:contain;"></video>
-                          </body>
-                          </html>
-                        `
-                      }}
-                    />
-                  </View>
-                ) : (
-                  <Image
-                    source={{ uri: viewingStory.url }}
-                    style={localStyles.storyImage}
-                    resizeMode="contain"
-                  />
-                )}
-              </>
-            )}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* Full-Featured Platform Story Viewer Modal */}
+      <HomeStoryViewerModal
+        storiesGroup={selectedStoriesGroup}
+        activeSlideIndex={activeSlideIndex}
+        storyProgress={storyProgress}
+        storyPaused={storyPaused}
+        storyReplyText={storyReplyText}
+        activeSlideAddYours={activeSlideAddYours}
+        userId={currentUser?.id}
+        onClose={() => setSelectedStoriesGroup(null)}
+        onPrev={handleStoryPrev}
+        onNext={handleStoryNext}
+        setStoryPaused={setStoryPaused}
+        setStoryReplyText={setStoryReplyText}
+        onSendReply={handleSendStoryReply}
+        onOpenProfile={(username) => {
+          setSelectedStoriesGroup(null);
+          router.push(`/profile?username=${username}` as any);
+        }}
+        onOpenProduct={(productId) => {
+          setSelectedStoriesGroup(null);
+          router.push(`/product/${productId}` as any);
+        }}
+        onQuestionPress={(question) => setStoryReplyText(`Re: ${question} — `)}
+        onAddYoursPress={handleStoryAddYours}
+        onAddYoursStickerPress={openStoryTemplateSheet}
+        triggerHaptic={(style) => useStore.getState().triggerHaptic(style as any)}
+      />
     </View>
   );
 }
