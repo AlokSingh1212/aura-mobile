@@ -12,6 +12,7 @@ import Lucide from "@expo/vector-icons/Ionicons";
 import { CaptionText } from "@/components/CaptionText";
 import { homeModalStyles as modalStyles } from "@/components/home/homeModalStyles";
 import { useA11yProps } from "@/hooks/useA11yProps";
+import { Avatar } from "@/components/ui/Avatar";
 
 type ReplyTarget = { commentId: string; username: string } | null;
 
@@ -112,11 +113,11 @@ export function HomeFeedCommentsModal({
                         }}
                         activeOpacity={0.85}
                       >
-                        <View style={modalStyles.commentAvatar}>
-                          <Text style={modalStyles.commentAvatarText}>
-                            {(targetPost.profile?.name || targetPost.user?.name || "A")[0]?.toUpperCase()}
-                          </Text>
-                        </View>
+                        <Avatar
+                          uri={targetPost.profile?.avatar || targetPost.user?.avatar}
+                          name={targetPost.profile?.name || targetPost.user?.name || "A"}
+                          size={36}
+                        />
                       </TouchableOpacity>
                       <View style={{ flex: 1 }}>
                         <TouchableOpacity 
@@ -217,11 +218,11 @@ export function HomeFeedCommentsModal({
                             onPress={() => onOpenProfile(comm.username)}
                             activeOpacity={0.85}
                           >
-                            <View style={[modalStyles.commentAvatar, { backgroundColor: "#fb923c" }]}>
-                              <Text style={modalStyles.commentAvatarText}>
-                                {comm.username[0]?.toUpperCase()}
-                              </Text>
-                            </View>
+                            <Avatar
+                              uri={comm.avatar || comm.userAvatar || comm.profilePic}
+                              name={comm.username || comm.authorName}
+                              size={34}
+                            />
                           </TouchableOpacity>
                           <View style={{ flex: 1 }}>
                             <TouchableOpacity 

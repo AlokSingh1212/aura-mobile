@@ -20,7 +20,7 @@ export function resolvePostProducts(
     item?.productStickers ||
     item?.content?.productStickers ||
     item?.metadata?.productStickers;
-  if (Array.isArray(fromMeta) && fromMeta.length) {
+  if (Array.isArray(fromMeta) && fromMeta.length > 0) {
     return fromMeta.map((p: ProductSticker) => ({
       productId: p.productId,
       title: p.title,
@@ -29,18 +29,23 @@ export function resolvePostProducts(
     }));
   }
 
-  const primary =
-    item?.product || item?.artifact || catalogProducts.find((p) => p.id === item?.artifactId);
-  if (!primary) return [];
+  // Only return primary product if explicit product post or explicitly tagged artifactId
+  if (item?.isProductPost === true || item?.isProductTagged === true) {
+    const primary =
+      item?.product || item?.artifact || catalogProducts.find((p) => p.id === item?.artifactId);
+    if (primary) {
+      return [
+        {
+          productId: primary.id,
+          title: primary.title || primary.name || "Product",
+          image: primary.images?.[0] || primary.image || primary.thumbnail || "",
+          price: primary.price,
+        },
+      ];
+    }
+  }
 
-  return [
-    {
-      productId: primary.id,
-      title: primary.title || primary.name || "Product",
-      image: primary.images?.[0] || primary.image || primary.thumbnail || "",
-      price: primary.price,
-    },
-  ];
+  return [];
 }
 
 interface ProductThumbnailStripProps {
