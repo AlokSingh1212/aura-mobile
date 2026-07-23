@@ -72,7 +72,7 @@ export function useProfileData({
     category?.toLowerCase().includes("influencer") ||
     category?.toLowerCase().includes("artist");
   const isBusinessProfile = !isPersonalProfile && !isCreatorProfile;
-  const displayLogo = logo || activeProfile?.logo || currentUser?.avatar || null;
+  const displayLogo = logo || activeProfile?.logo || activeProfile?.avatar || currentUser?.avatar || null;
 
   const visiblePresetPosts = useMemo(() => {
     if (!socialGraph) return presetPosts;
@@ -95,9 +95,9 @@ export function useProfileData({
     setPostsCount(p.postsCount ?? 0);
     setFollowersCount(p.followersCount ?? 0);
     setFollowingCount(p.followingCount ?? 0);
-    setAuraScore(p.auraScore ?? p.auragramScore ?? 0);
-    setLogo(p.logo || null);
-    setEditLogo(p.logo || null);
+    const resolvedAvatar = p.logo || p.avatar || null;
+    setLogo(resolvedAvatar);
+    setEditLogo(resolvedAvatar);
     setEditUsername(p.username || "");
     setEditProfileName(p.profileName || p.name || "");
     setEditCategory(p.category || "");
@@ -114,7 +114,8 @@ export function useProfileData({
         website: p.websiteLink || p.website,
         externalLinks: p.externalLinks || [],
         allLinks: p.allLinks || normalizeProfileLinks(p),
-        logo: p.logo,
+        logo: resolvedAvatar,
+        avatar: resolvedAvatar,
         postsCount: p.postsCount,
         followersCount: p.followersCount,
         followingCount: p.followingCount,
