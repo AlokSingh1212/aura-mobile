@@ -30,6 +30,7 @@ import {
   buildYourStoryNode,
 } from "@/lib/sessionIdentity";
 import { syncCloudUserState, clearCloudUserState } from "@/lib/cloudSync";
+import { fetchServerCart, syncServerCart } from "@/lib/cartApi";
 import { refreshSettingsEnforcement } from "@/lib/ecosystemSettings";
 import { validateAuthSession } from "@/lib/authApi";
 import { refreshI18nLanguage } from "@/lib/i18n";
@@ -168,6 +169,8 @@ interface StoreState {
   products: any[];
   stories: any[];
   cart: any[];
+  syncCartFromServer: () => Promise<void>;
+  persistCartToServer: () => Promise<void>;
   warehouses: any[];
   orders: any[];
 
@@ -216,8 +219,8 @@ interface StoreState {
   addToCart: (product: any) => void;
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
-  initiateCheckout: (payload: { userId: string; cartItems: any[]; shippingAddress?: string; couponCode?: string }) => Promise<any>;
-  verifyPayment: (payload: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature?: string }) => Promise<any>;
+  initiateCheckout: (payload: { userId: string; cartItems: any[]; shippingAddress?: string; couponCode?: string; profileId?: string | null }) => Promise<any>;
+  verifyPayment: (payload: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature?: string; profileId?: string | null }) => Promise<any>;
   applyCoupon: (payload: { code: string; maisonId?: string }) => Promise<any>;
   triggerHaptic: (type?: "light" | "medium" | "heavy" | "success") => void;
 
@@ -285,6 +288,7 @@ interface StoreState {
   isAccountSuspended: boolean;
   setAccountSuspended: (suspended: boolean) => void;
   activeProfile: any | null;
+  primaryProfile: any | null;
   userProfiles: any[];
   fetchProfiles: (userId: string) => Promise<void>;
   createNewProfile: (payload: any) => Promise<{ success: boolean; error?: string }>;
@@ -515,6 +519,35 @@ export const useStore = create<StoreState>((set, get) => ({
   products: [],
   stories: [],
   cart: [],
+
+  syncCartFromServer: async () => {
+    const user = get().currentUser;
+    const profileId = get().activeProfile?.id;
+    if (!user?.id || !profileId) return;
+    try {
+      const items = await fetchServerCart(user.id, profileId);
+      set({ cart: items });
+    } catch (e) {
+      console.warn("Could not load profile cart:", e);
+    }
+  },
+
+  persistCartToServer: async () => {
+    const user = get().currentUser;
+    const profileId = get().activeProfile?.id;
+    if (!user?.id || !profileId) return;
+    try {
+      const items = get().cart.map((item) => ({
+        id: item.id,
+        quantity: item.quantity || 1,
+        variantId: item.variantId ?? null,
+      }));
+      const synced = await syncServerCart(user.id, profileId, items);
+      set({ cart: synced });
+    } catch (e) {
+      console.warn("Could not persist profile cart:", e);
+    }
+  },
   warehouses: [],
   orders: [],
   wishlist: [],
@@ -868,22 +901,25 @@ export const useStore = create<StoreState>((set, get) => ({
         return {
           cart: state.cart.map((item) =>
             item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-          )
+          ),
         };
       }
       return { cart: [...state.cart, { ...product, quantity: 1 }] };
     });
+    get().persistCartToServer();
   },
 
   removeFromCart: (productId) => {
     get().triggerHaptic("light");
     set((state) => ({
-      cart: state.cart.filter((item) => item.id !== productId)
+      cart: state.cart.filter((item) => item.id !== productId),
     }));
+    get().persistCartToServer();
   },
 
   clearCart: () => {
     set({ cart: [] });
+    get().persistCartToServer();
   },
 
   triggerHaptic: (type = "light") => {
@@ -1130,7 +1166,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ loadingWMS: true });
     try {
       const url = maisonId ? `${API_BASE}/wms?maisonId=${maisonId}` : `${API_BASE}/wms`;
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: authHeaders() });
       const data = await res.json();
       set({ pickTasks: data });
     } catch (e) {
@@ -1144,7 +1180,7 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const res = await fetch(`${API_BASE}/wms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ action: "COMPLETE_PICK_TASK", taskId, pickerId })
       });
       const data = await res.json();
@@ -1163,7 +1199,7 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const res = await fetch(`${API_BASE}/wms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ action: "BULK_INGEST_CATALOG", ...payload })
       });
       const data = await res.json();
@@ -1221,6 +1257,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   activeProfile: null,
+  primaryProfile: null,
   userProfiles: [],
   isAccountSuspended: false,
   setAccountSuspended: (suspended) => set({ isAccountSuspended: suspended }),
@@ -1468,12 +1505,14 @@ export const useStore = create<StoreState>((set, get) => ({
       if (data.success) {
         const profiles = (data.profiles || []).map(hydrateProfileFromApi);
         const activeProfile = hydrateProfileFromApi(data.activeProfile);
-        set({ userProfiles: profiles, activeProfile });
+        const primaryProfile = hydrateProfileFromApi(data.primaryProfile);
+        set({ userProfiles: profiles, activeProfile, primaryProfile });
         get().syncProfileIdentity();
         syncDevicePushToken(userId);
         AuraPixel.loadConfig(userId);
         await syncCloudUserState(userId, activeProfile?.id);
         await refreshSettingsEnforcement();
+        await get().syncCartFromServer();
       }
     } catch (e) {
       console.warn("Could not fetch sovereign profiles:", e);
@@ -1492,9 +1531,11 @@ export const useStore = create<StoreState>((set, get) => ({
         get().triggerHaptic("success");
         const profiles = (data.profiles || []).map(hydrateProfileFromApi);
         const activeProfile = hydrateProfileFromApi(data.activeProfile);
+        const primaryProfile = hydrateProfileFromApi(data.primaryProfile);
         set({
           userProfiles: profiles,
           activeProfile,
+          primaryProfile,
           currentUser: get().currentUser
             ? {
                 ...get().currentUser,
@@ -1534,14 +1575,18 @@ export const useStore = create<StoreState>((set, get) => ({
         get().triggerHaptic("success");
         const profiles = (data.profiles || []).map(hydrateProfileFromApi);
         const activeProfile = hydrateProfileFromApi(data.activeProfile);
+        const primaryProfile = hydrateProfileFromApi(data.primaryProfile);
         set({
           userProfiles: profiles,
           activeProfile,
+          primaryProfile,
           currentUser: data.user,
         });
         get().syncProfileIdentity();
         get().fetchProducts();
         get().fetchFeed();
+        await get().syncCartFromServer();
+        await syncCloudUserState(user.id, activeProfile.id);
         return { success: true };
       }
       return { success: false, error: data.message || data.error };
@@ -1656,6 +1701,7 @@ export const useStore = create<StoreState>((set, get) => ({
     set({
       currentUser: null,
       activeProfile: null,
+      primaryProfile: null,
       userProfiles: [],
       activeMaisonId: "",
       authToken: null,
@@ -1734,10 +1780,11 @@ export const useStore = create<StoreState>((set, get) => ({
   initiateCheckout: async (payload) => {
     try {
       get().triggerHaptic("medium");
+      const profileId = payload.profileId ?? get().activeProfile?.id ?? null;
       const res = await fetch(`${API_BASE}/checkout/create-order`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, profileId }),
       });
       const data = await res.json();
       return data;
@@ -1750,10 +1797,11 @@ export const useStore = create<StoreState>((set, get) => ({
   verifyPayment: async (payload) => {
     try {
       get().triggerHaptic("success");
+      const profileId = payload.profileId ?? get().activeProfile?.id ?? null;
       const res = await fetch(`${API_BASE}/checkout/verify-payment`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, profileId }),
       });
       const data = await res.json();
       if (data.success) {
@@ -1764,6 +1812,7 @@ export const useStore = create<StoreState>((set, get) => ({
           val: total,
           currency: "INR",
         });
+        set({ cart: [] });
         await get().fetchOrders();
       }
       return data;
@@ -1873,7 +1922,9 @@ export const useStore = create<StoreState>((set, get) => ({
     try {
       const user = get().currentUser;
       const userId = user?.id || "";
-      const url = `${API_BASE}/feed?userId=${userId}&category=${encodeURIComponent(category)}&tab=${tab}&limit=15`;
+      const profileId = get().activeProfile?.id || "";
+      const profileQuery = profileId ? `&profileId=${encodeURIComponent(profileId)}` : "";
+      const url = `${API_BASE}/feed?userId=${userId}${profileQuery}&category=${encodeURIComponent(category)}&tab=${tab}&limit=15`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.success && data.feedItems) {
@@ -1930,12 +1981,13 @@ export const useStore = create<StoreState>((set, get) => ({
 
   logEngagement: async (feedItemId, type) => {
     const user = get().currentUser;
+    const profileId = get().activeProfile?.id;
     if (!user) return null;
     try {
       const res = await fetch(`${API_BASE}/feed/engagement`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ userId: user.id, postId: feedItemId, type }),
+        body: JSON.stringify({ userId: user.id, profileId, postId: feedItemId, type }),
       });
       if (!res.ok) throw new Error("Server returned error status");
       const data = await res.json();
@@ -1945,19 +1997,25 @@ export const useStore = create<StoreState>((set, get) => ({
       return null;
     } catch (e) {
       console.warn("logEngagement failed, queuing action offline:", e);
-      addPendingAction("logEngagement", { userId: user.id, postId: feedItemId, type });
+      addPendingAction("logEngagement", {
+        userId: user.id,
+        profileId,
+        postId: feedItemId,
+        type,
+      });
       return null;
     }
   },
 
   toggleFeedSave: async (feedItemId) => {
     const user = get().currentUser;
+    const profileId = get().activeProfile?.id;
     if (!user) return;
     try {
       const res = await fetch(`${API_BASE}/feed/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ userId: user.id, postId: feedItemId }),
+        body: JSON.stringify({ userId: user.id, profileId, postId: feedItemId }),
       });
       const data = await res.json();
       if (data.success) {
@@ -1993,12 +2051,18 @@ export const useStore = create<StoreState>((set, get) => ({
 
   logFeedCartAdd: async (feedItemId, productId) => {
     const user = get().currentUser;
+    const profileId = get().activeProfile?.id;
     if (!user) return;
     try {
       await fetch(`${API_BASE}/feed/cart`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, productId, postId: feedItemId }),
+        body: JSON.stringify({
+          userId: user.id,
+          profileId,
+          productId,
+          postId: feedItemId,
+        }),
       });
       get().triggerHaptic("success");
     } catch (e) {

@@ -39,6 +39,7 @@ type HomeFeedCommentsModalProps = {
   setLikedComments: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setCommentLikeCounts: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   setExpandedComments: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  onToggleCommentLike?: (commentId: string) => void | Promise<void>;
 };
 
 export function HomeFeedCommentsModal({
@@ -63,9 +64,27 @@ export function HomeFeedCommentsModal({
   setLikedComments,
   setCommentLikeCounts,
   setExpandedComments,
+  onToggleCommentLike,
 }: HomeFeedCommentsModalProps) {
   const { a11yProps } = useA11yProps();
   const { activeProfile, currentUser } = useStore();
+
+  const bumpLocalCommentLike = (commentId: string, isLiked: boolean) => {
+    triggerHaptic("medium");
+    setLikedComments((prev) => ({ ...prev, [commentId]: !isLiked }));
+    setCommentLikeCounts((prev) => ({
+      ...prev,
+      [commentId]: Math.max(0, (prev[commentId] || 0) + (isLiked ? -1 : 1)),
+    }));
+  };
+
+  const handleCommentLikePress = (commentId: string, isLiked: boolean, isSynthetic = false) => {
+    if (!isSynthetic && onToggleCommentLike) {
+      void onToggleCommentLike(commentId);
+      return;
+    }
+    bumpLocalCommentLike(commentId, isLiked);
+  };
   const avatarUri = activeProfile?.avatar || activeProfile?.logo || currentUser?.avatar || null;
   const avatarInitial = (activeProfile?.name || currentUser?.name || "A")[0]?.toUpperCase();
 
@@ -149,18 +168,6 @@ export function HomeFeedCommentsModal({
                             </Text>
                           )}
                           <TouchableOpacity onPress={() => {
-                            triggerHaptic("medium");
-                            setLikedComments(prev => ({ ...prev, [authorCommentId]: !isAuthorLiked }));
-                            setCommentLikeCounts(prev => ({
-                              ...prev,
-                              [authorCommentId]: (prev[authorCommentId] || 0) + (isAuthorLiked ? -1 : 1)
-                            }));
-                          }}>
-                            <Text style={[modalStyles.commentTime, { fontWeight: "700", color: isAuthorLiked ? "#FF3B30" : "rgba(255,255,255,0.6)" }]}>
-                              {isAuthorLiked ? "Liked" : "Like"}
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => {
                             triggerHaptic("light");
                             setReplyingTo({ commentId: "author", username: authorUsername });
                             setNewCommentText(`@${authorUsername} `);
@@ -180,22 +187,6 @@ export function HomeFeedCommentsModal({
                           </TouchableOpacity>
                         </View>
                       </View>
-
-                      {/* Comment Heart Toggle */}
-                      <TouchableOpacity onPress={() => {
-                        triggerHaptic("medium");
-                        setLikedComments(prev => ({ ...prev, [authorCommentId]: !isAuthorLiked }));
-                        setCommentLikeCounts(prev => ({
-                          ...prev,
-                          [authorCommentId]: (prev[authorCommentId] || 0) + (isAuthorLiked ? -1 : 1)
-                        }));
-                      }}>
-                        <Lucide 
-                          name={isAuthorLiked ? "heart" : "heart-outline"} 
-                          size={15} 
-                          color={isAuthorLiked ? "#FF3B30" : "rgba(255,255,255,0.4)"} 
-                        />
-                      </TouchableOpacity>
                     </View>
                   );
                 })()}
@@ -209,9 +200,9 @@ export function HomeFeedCommentsModal({
                   const replies = allComments.filter((c: any) => c.parentId);
 
                   return parentComments.map((comm: any) => {
-                    const commentId = `${targetPost.id}_${comm.id}`;
-                    const isCommentLiked = likedComments[commentId] || false;
-                    const likeCount = commentLikeCounts[commentId] || 0;
+                    const commentId = comm.id;
+                    const isCommentLiked = likedComments[commentId] || comm.liked || false;
+                    const likeCount = commentLikeCounts[commentId] ?? comm.likeCount ?? 0;
                     const commentReplies = replies.filter((r: any) => r.parentId === comm.id);
                     const isExpanded = expandedComments[commentId] || false;
 
@@ -246,14 +237,7 @@ export function HomeFeedCommentsModal({
                                   {likeCount} {likeCount === 1 ? "like" : "likes"}
                                 </Text>
                               )}
-                              <TouchableOpacity onPress={() => {
-                                triggerHaptic("medium");
-                                setLikedComments(prev => ({ ...prev, [commentId]: !isCommentLiked }));
-                                setCommentLikeCounts(prev => ({
-                                  ...prev,
-                                  [commentId]: (prev[commentId] || 0) + (isCommentLiked ? -1 : 1)
-                                }));
-                              }}>
+                              <TouchableOpacity onPress={() => handleCommentLikePress(commentId, isCommentLiked)}>
                                 <Text style={[modalStyles.commentTime, { fontWeight: "700", color: isCommentLiked ? "#FF3B30" : "rgba(255,255,255,0.6)" }]}>
                                   {isCommentLiked ? "Liked" : "Like"}
                                 </Text>
@@ -280,14 +264,7 @@ export function HomeFeedCommentsModal({
                           </View>
 
                           {/* Comment Heart Toggle */}
-                          <TouchableOpacity onPress={() => {
-                            triggerHaptic("medium");
-                            setLikedComments(prev => ({ ...prev, [commentId]: !isCommentLiked }));
-                            setCommentLikeCounts(prev => ({
-                              ...prev,
-                              [commentId]: (prev[commentId] || 0) + (isCommentLiked ? -1 : 1)
-                            }));
-                          }}>
+                          <TouchableOpacity onPress={() => handleCommentLikePress(commentId, isCommentLiked)}>
                             <Lucide 
                               name={isCommentLiked ? "heart" : "heart-outline"} 
                               size={15} 
@@ -316,9 +293,9 @@ export function HomeFeedCommentsModal({
                             </TouchableOpacity>
 
                             {isExpanded && commentReplies.map((reply: any) => {
-                              const replyCommentId = `${targetPost.id}_${reply.id}`;
-                              const isReplyLiked = likedComments[replyCommentId] || false;
-                              const replyLikeCount = commentLikeCounts[replyCommentId] || 0;
+                              const replyCommentId = reply.id;
+                              const isReplyLiked = likedComments[replyCommentId] || reply.liked || false;
+                              const replyLikeCount = commentLikeCounts[replyCommentId] ?? reply.likeCount ?? 0;
 
                               return (
                                 <View key={reply.id} style={[modalStyles.commentRow, { paddingLeft: 8, marginTop: 4, marginBottom: 8 }]}>
@@ -344,14 +321,7 @@ export function HomeFeedCommentsModal({
                                           {replyLikeCount} {replyLikeCount === 1 ? "like" : "likes"}
                                         </Text>
                                       )}
-                                      <TouchableOpacity onPress={() => {
-                                        triggerHaptic("medium");
-                                        setLikedComments(prev => ({ ...prev, [replyCommentId]: !isReplyLiked }));
-                                        setCommentLikeCounts(prev => ({
-                                          ...prev,
-                                          [replyCommentId]: (prev[replyCommentId] || 0) + (isReplyLiked ? -1 : 1)
-                                        }));
-                                      }}>
+                                      <TouchableOpacity onPress={() => handleCommentLikePress(replyCommentId, isReplyLiked)}>
                                         <Text style={[modalStyles.commentTime, { fontWeight: "700", color: isReplyLiked ? "#FF3B30" : "rgba(255,255,255,0.6)" }]}>
                                           {isReplyLiked ? "Liked" : "Like"}
                                         </Text>
@@ -377,14 +347,7 @@ export function HomeFeedCommentsModal({
                                     </View>
                                   </View>
 
-                                  <TouchableOpacity onPress={() => {
-                                    triggerHaptic("medium");
-                                    setLikedComments(prev => ({ ...prev, [replyCommentId]: !isReplyLiked }));
-                                    setCommentLikeCounts(prev => ({
-                                      ...prev,
-                                      [replyCommentId]: (prev[replyCommentId] || 0) + (isReplyLiked ? -1 : 1)
-                                    }));
-                                  }}>
+                                  <TouchableOpacity onPress={() => handleCommentLikePress(replyCommentId, isReplyLiked)}>
                                     <Lucide 
                                       name={isReplyLiked ? "heart" : "heart-outline"} 
                                       size={13} 
