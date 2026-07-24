@@ -8,27 +8,30 @@
       },
       "android": {
         "buildType": "apk"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_HOST": "https://ai-marketplace-delta-five.vercel.app"
+        "EXPO_PUBLIC_API_HOST": "https://aura.aisastra.com"
       },
       "android": {
         "buildType": "apk"
       },
       "ios": {
         "simulator": false
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_API_HOST": "https://ai-marketplace-delta-five.vercel.app"
+        "EXPO_PUBLIC_API_HOST": "https://aura.aisastra.com"
       },
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {
